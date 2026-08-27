@@ -1,0 +1,242 @@
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import {
+  ArrowDownToLine,
+  ArrowsRotateRight,
+  Gear,
+  NodesRight,
+} from '@gravity-ui/icons';
+import { Button, Tooltip } from '@heroui/react';
+import { useNavigate } from '@tanstack/react-router';
+import { JuejinLoginConsentModal } from '@/components/JuejinLoginConsentModal';
+import { ThemeToggle } from '@/components/ThemeToggle';
+import { useInstallGuideUi } from '@/hooks/InstallGuideUiContext';
+import { fetchConfig, isCliBackend, triggerSync } from '@/lib/api';
+import { openJuejinLogin } from '@/lib/juejin-client-link';
+import {
+  DATA_SYNCED_EVENT,
+  JUEJIN_LINK_CHANGED_EVENT,
+  OPEN_SETTINGS_EVENT,
+  dispatchDataSynced,
+  dispatchOpenSettings,
+  shareCurrentPage,
+} from '@/lib/shell-events';
+import { cn } from '@/lib/utils';
+
+const linkJuejinBtn =
+  'inline-flex h-7 shrink-0 items-center gap-1 rounded-full bg-[#1e80ff] px-2.5 text-[12px] font-medium text-white outline-none transition-colors hover:bg-[#1171ee] focus-visible:ring-2 focus-visible:ring-[#1e80ff]/40 disabled:pointer-events-none disabled:opacity-40 dark:bg-[#4b9cff] dark:hover:bg-[#3a8ff0]';
+const RANK_PAGE_URL = 'https://juejin.cn/aiusage/rank';
+
+function openRankPage(): void {
+  const opened = window.open(RANK_PAGE_URL, '_blank');
+  if (opened) {
+    opened.opener = null;
+    return;
+  }
+  window.location.assign(RANK_PAGE_URL);
+}
+
+function JuejinMark({ className }: { className?: string }) {
+  return (
+    <svg
+      aria-hidden="true"
+      className={className}
+      fill="currentColor"
+      role="img"
+      viewBox="0 0 24 24"
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <path
+        d="m12 14.316 7.454-5.88-2.022-1.625L12 11.1l-.004.003-5.432-4.288-2.02 1.624 7.452 5.88Zm0-7.247 2.89-2.298L12 2.453l-.004-.005-2.884 2.318 2.884 2.3Zm0 11.266-.005.002-9.975-7.87L0 12.088l.194.156 11.803 9.308 7.463-5.885L24 12.085l-2.023-1.624Z"
+        transform="translate(2.4 2.4) scale(.8)"
+      />
+    </svg>
+  );
+}
+
+/**
+ * Filter-bar chrome: link / share / refresh / settings + theme toggle.
+ * Public web shows share + theme; CLI also shows refresh / settings / 关联掘金.
+ */
+export function FilterChromeActions() {
+  const navigate = useNavigate();
+  const cliBackend = isCliBackend();
+  const installGuideUi = useInstallGuideUi();
+  const [busy, setBusy] = useState(false);
+  const [linked, setLinked] = useState<boolean | null>(null);
+  const [consentOpen, setConsentOpen] = useState(false);
+  const refreshLabel = cliBackend ? '同步数据' : '刷新数据';
+  const showDownloadEntry = !cliBackend;
+  const hasUserData = installGuideUi?.hasUserData === true;
+
+  const openDownloadPage = () => {
+    void navigate({ to: '/download' });
+  };
+
+  const refreshLinkState = useCallback(() => {
+    if (!cliBackend) {
+      setLinked(null);
+      return;
+    }
+    void (async () => {
+      try {
+        const config = await fetchConfig();
+        setLinked(Boolean(config.juejin.userId));
+      } catch {
+        setLinked(null);
+      }
+    })();
+  }, [cliBackend]);
+
+  useEffect(() => {
+    refreshLinkState();
+    if (!cliBackend) return;
+    const onRefresh = () => refreshLinkState();
+    const onSettings = (event: Event) => {
+      const detail = (event as CustomEvent<{ loginSuccess?: boolean }>).detail;
+      if (detail?.loginSuccess) {
+        setLinked(true);
+      }
+      refreshLinkState();
+    };
+    window.addEventListener('focus', onRefresh);
+    window.addEventListener(DATA_SYNCED_EVENT, onRefresh);
+    window.addEventListener(OPEN_SETTINGS_EVENT, onSettings);
+    window.addEventListener(JUEJIN_LINK_CHANGED_EVENT, onRefresh);
+    return () => {
+      window.removeEventListener('focus', onRefresh);
+      window.removeEventListener(DATA_SYNCED_EVENT, onRefresh);
+      window.removeEventListener(OPEN_SETTINGS_EVENT, onSettings);
+      window.removeEventListener(JUEJIN_LINK_CHANGED_EVENT, onRefresh);
+    };
+  }, [cliBackend, refreshLinkState]);
+
+  const refreshData = async () => {
+    setBusy(true);
+    try {
+      if (cliBackend) {
+        await triggerSync();
+        // Electron IPC already pushes DATA_SYNCED; a second dispatch double-reloads charts.
+        if (
+          typeof (window as { tud?: { onDataSynced?: unknown } }).tud
+            ?.onDataSynced !== 'function'
+        ) {
+          dispatchDataSynced();
+        }
+      } else {
+        dispatchDataSynced();
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="flex items-center gap-1">
+      {cliBackend && linked === false ? (
+        <button
+          className={linkJuejinBtn}
+          onClick={() => setConsentOpen(true)}
+          type="button"
+        >
+          <JuejinMark className="size-3.5" />
+          关联掘金
+        </button>
+      ) : null}
+      <JuejinLoginConsentModal
+        isOpen={consentOpen}
+        onConfirm={() => {
+          void openJuejinLogin();
+        }}
+        onOpenChange={setConsentOpen}
+      />
+      {showDownloadEntry ? (
+        hasUserData ? (
+          <ChromeAction
+            icon={<ArrowDownToLine className="size-4" />}
+            label="下载客户端"
+            onPress={openDownloadPage}
+          />
+        ) : (
+          <button
+            className={linkJuejinBtn}
+            onClick={openDownloadPage}
+            type="button"
+          >
+            <ArrowDownToLine className="size-3.5" />
+            下载客户端
+          </button>
+        )
+      ) : null}
+      {cliBackend ? (
+        <Button
+          className="h-8 min-h-8 shrink-0 px-2.5 text-xs font-normal"
+          onPress={openRankPage}
+          size="sm"
+          variant="tertiary"
+        >
+          排行榜
+        </Button>
+      ) : null}
+      <ChromeAction
+        icon={<NodesRight className="size-4" />}
+        label="分享"
+        onPress={() => {
+          void shareCurrentPage();
+        }}
+      />
+      {cliBackend ? (
+        <>
+          <ChromeAction
+            disabled={busy}
+            icon={
+              <ArrowsRotateRight
+                className={cn('size-4', busy && 'animate-spin')}
+              />
+            }
+            label={refreshLabel}
+            onPress={() => {
+              void refreshData();
+            }}
+          />
+          <ChromeAction
+            icon={<Gear className="size-4" />}
+            label="设置"
+            onPress={() => dispatchOpenSettings()}
+          />
+        </>
+      ) : null}
+      <ThemeToggle />
+    </div>
+  );
+}
+
+function ChromeAction({
+  icon,
+  label,
+  onPress,
+  disabled,
+}: {
+  icon: ReactNode;
+  label: string;
+  onPress: () => void;
+  disabled?: boolean;
+}) {
+  return (
+    <Tooltip closeDelay={80} delay={100}>
+      <Button
+        aria-label={label}
+        className="size-8 min-h-8 min-w-8 shrink-0 p-0"
+        isDisabled={disabled}
+        isIconOnly
+        onPress={onPress}
+        size="sm"
+        variant="tertiary"
+      >
+        {icon}
+      </Button>
+      <Tooltip.Content placement="bottom">
+        <p>{label}</p>
+      </Tooltip.Content>
+    </Tooltip>
+  );
+}

@@ -1,0 +1,72 @@
+# @juejin-opensource/jusage
+
+本地优先的 AI Agent Token 用量看板：采集 Claude / Codex / Cursor 用量，启动本地面板，可选上报掘金云端。
+
+## 安装
+
+需要 Node.js >= 20。
+
+```bash
+npm i -g @juejin-opensource/jusage
+```
+
+## 快速开始
+
+推荐用后台服务启动（常驻，支持开机自启，macOS / Windows）：
+
+```bash
+jusage service start
+# 面板: http://127.0.0.1:8452
+```
+
+首次启动会写入数据目录 `~/.ai-usage/`，尝试注册 Claude / Codex Hook，并同步本地用量。
+
+常用管理：
+
+```bash
+jusage service status
+jusage service stop
+jusage status                 # 查看面板与同步状态
+```
+
+需要前台跑（当前终端占用、方便看日志）时再用：
+
+```bash
+jusage start                  # 或直接 jusage
+# Ctrl+C 停止
+```
+
+## 命令
+
+| 命令 | 说明 |
+|------|------|
+| `jusage service <action>` | **推荐** 后台服务与开机自启；`action`: `start` \| `stop` \| `status` |
+| `jusage` / `jusage start` | 前台启动本地面板与同步 |
+| `jusage stop` | 停止当前进程内的前台服务 |
+| `jusage status` | 查看 CLI / 面板当前状态 |
+| `jusage sync` | 手动同步本地用量数据 |
+| `jusage upload` | 上报数据到云端 |
+| `jusage help` | 显示帮助 |
+
+## 常用选项
+
+```bash
+jusage service start
+jusage start --port 8452
+jusage sync --source=claude          # claude | codex | cursor | all
+jusage upload --force                # 忽略云端同步开关，强制上报
+jusage upload --reconcile            # 全量对账后上报
+```
+
+## 数据与同步
+
+- 数据目录：`~/.ai-usage/`
+- Claude / Codex：优先 Hook 触发 `jusage sync`；失败时回退定时轮询
+- Cursor：轮询模式（无 Hook）
+- 云端同步：面板「设置」可配置 Server 地址、Token 与开关；也可手动 `jusage upload`
+
+调试日志：`~/.ai-usage/logs/notify.log`、`~/.ai-usage/logs/sync.log`。
+
+## License
+
+MIT

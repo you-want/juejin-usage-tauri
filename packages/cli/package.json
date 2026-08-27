@@ -1,0 +1,55 @@
+{
+  "name": "@juejin-opensource/jusage",
+  "version": "0.1.5",
+  "description": "Juejin AI Usage 统计 CLI：Token 用量明细追踪，本地记录、云端同步，内置用量看板。",
+  "type": "module",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/juejin-cn/juejin-usage.git",
+    "directory": "packages/cli"
+  },
+  "bugs": {
+    "url": "https://github.com/juejin-cn/juejin-usage/issues"
+  },
+  "homepage": "https://github.com/juejin-cn/juejin-usage#readme",
+  "keywords": [
+    "ai",
+    "token",
+    "usage",
+    "claude",
+    "codex",
+    "cursor",
+    "cli"
+  ],
+  "bin": {
+    "jusage": "./bin/jusage.js"
+  },
+  "files": [
+    "bin",
+    "dist",
+    "package.json"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json && node ./scripts/copy-dashboard.mjs",
+    "start": "node ./bin/jusage.js start",
+    "sync": "node ./bin/jusage.js sync",
+    "status": "node ./bin/jusage.js status",
+    "upload": "node ./bin/jusage.js upload",
+    "service": "node ./bin/jusage.js service"
+  },
+  "dependencies": {
+    "@juejin-opensource/jusage-core": "workspace:*"
+  },
+  "devDependencies": {
+    "@juejin-opensource/jusage-dashboard": "workspace:*",
+    "@types/node": "^22.13.10",
+    "typescript": "^5.8.2"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

@@ -1,0 +1,9 @@
+packages:
+  - 'packages/*'
+  - 'apps/*'
+overrides:
+  tailwind-variants: 3.3.0
+allowBuilds:
+  electron: true
+  esbuild: true
+  protobufjs: false

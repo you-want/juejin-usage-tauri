@@ -1,0 +1,25 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+dist-test/
+out/
+*.tsbuildinfo
+
+# Tooling caches
+.tanstack/
+.vite/
+.heroui-docs/
+
+# Env & secrets
+.env
+.env.*
+!.env.production.example
+!.env.development.example
+
+# OS
+.DS_Store
+
+# Logs
+*.log

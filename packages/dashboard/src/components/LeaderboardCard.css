@@ -1,0 +1,10 @@
+.table__row.leaderboard-table-row {
+  cursor: pointer;
+}
+
+@media (hover: hover) {
+  .table__row.leaderboard-table-row:hover .table__cell,
+  .table__row.leaderboard-table-row[data-hovered="true"] .table__cell {
+    background-color: var(--surface);
+  }
+}

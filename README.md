@@ -29,7 +29,7 @@
   ·
   <a href="https://juejin.cn/aiusage/rank">排行榜</a>
   ·
-  <a href="#-常见问题">常见问题</a>
+  <a href="./FAQ.md">常见问题</a>
   ·
   <a href="#-用户隐私协议">用户隐私协议</a>
   ·
@@ -70,140 +70,17 @@ Juejin Usage 提供 macOS / Windows 桌面客户端，安装即用，无需额�
 - 多设备用量合并查看
 - 参与 [AI 使用排行榜](https://juejin.cn/aiusage/rank)
 
-## ⌨️ CLI使用
+## ⌨️ CLI 使用
 
-### 安装
-
-需要 Node.js >= 20。
+需要 Node.js >= 20。安装后后台启动即可打开本地面板：
 
 ```bash
 npm i -g @juejin-opensource/jusage
-```
-
-> 💡 国内网络较慢时，可使用镜像源安装：
-
-```bash
-npm i -g @juejin-opensource/jusage --registry=https://registry.npmmirror.com/
-```
-
-> 💡 也可免安装直接用 `npx` 启动：
-
-```bash
-# 后台常驻（推荐，支持开机自启）
-npx @juejin-opensource/jusage service start
-
-# 前台运行（当前终端占用，方便看日志，Ctrl+C 停止）
-npx @juejin-opensource/jusage start
-
-# 面板: http://127.0.0.1:8452
-```
-
-### 快速开始
-
-推荐用后台服务启动（常驻，支持开机自启，macOS / Windows）：
-
-```bash
 jusage service start
 # 面板: http://127.0.0.1:8452
 ```
 
-首次启动会写入数据目录 `~/.ai-usage/`，尝试注册 Claude / Codex Hook，并同步本地用量。
-
-常用管理：
-
-```bash
-jusage service status
-jusage service stop
-jusage status
-```
-
-需要前台运行（当前终端占用、方便看日志）时再用：
-
-```bash
-jusage start
-# Ctrl+C 停止
-```
-
-### 命令一览
-
-| 命令                   | 说明                                                                 |
-| ---------------------- | -------------------------------------------------------------------- |
-| `jusage service <action>` | **推荐** 后台服务与开机自启；`action`: `start` \| `stop` \| `status` |
-| `jusage` / `jusage start`    | 前台启动本地面板与同步                                               |
-| `jusage stop`             | 停止当前进程内的前台服务                                             |
-| `jusage status`           | 查看 CLI / 面板当前状态                                              |
-| `jusage sync`             | 手动同步本地用量数据                                                 |
-| `jusage upload`           | 上报数据到云端                                                       |
-| `jusage help`             | 显示帮助                                                             |
-
-### 常用选项
-
-```bash
-jusage start --port 8452
-jusage sync --source=claude
-```
-
-
-## ❓ 常见问题
-
-### 本地 90 天用量和线上对不上，怎么强制同步？
-
-需要 Node.js 20+。桌面端和 CLI 共用 `~/.ai-usage`。
-
-```bash
-npx @juejin-opensource/jusage@latest upload --force --reconcile
-```
-
-### 客户端提示 `LOCAL_RUNTIME_NOT_READY` 怎么办？
-
-关窗口不会退出（会留在托盘）。先从托盘点 **退出**，再按下面的 case 排查。
-
-**Case 1：刚启动 / 刚自动更新**
-
-等 2 秒，从托盘退出后重开。不要在更新过程中刷新。
-
-- macOS：菜单栏图标 → 右键 **退出**
-- Windows：任务栏右下角托盘（可能在 `^` 里）→ **退出**
-
-**Case 2：同时开着 CLI**
-
-```bash
-npx @juejin-opensource/jusage@latest service stop
-```
-
-然后重开桌面端。
-
-**Case 3：`config.json` 格式坏了（parse 失败）**
-
-```bash
-# macOS
-python3 -m json.tool ~/.ai-usage/config.json
-# 修不好则备份后让应用重建（需重新登录）
-mv ~/.ai-usage/config.json ~/.ai-usage/config.json.bak
-```
-
-```powershell
-# Windows
-python -m json.tool $env:USERPROFILE\.ai-usage\config.json
-Move-Item $env:USERPROFILE\.ai-usage\config.json $env:USERPROFILE\.ai-usage\config.json.bak
-```
-
-修好或改名后，托盘退出再打开。
-
-**Case 4：残留进程 / 锁文件**
-
-```bash
-# macOS
-killall "Juejin Usage" 2>/dev/null; pkill -f jusage || true
-rm -f ~/.ai-usage/tud.pid
-```
-
-```powershell
-# Windows（任务管理器结束 Juejin Usage / jusage 后）
-Remove-Item $env:USERPROFILE\.ai-usage\tud.pid -ErrorAction SilentlyContinue
-```
-
-然后重开。日志：macOS `~/.ai-usage/logs/`，Windows `%USERPROFILE%\.ai-usage\logs\`。
+国内网络较慢可用 `npm i -g @juejin-opensource/jusage --registry=https://registry.npmmirror.com/`。完整命令、选项与数据说明见 [CLI 使用说明](./CLI.md)。
 
 ## 🏆 排行榜
 
@@ -225,7 +102,11 @@ Remove-Item $env:USERPROFILE\.ai-usage\tud.pid -ErrorAction SilentlyContinue
 
 ## 🤝 贡献指南
 
-查阅 [Contributing Guide](./CONTRIBUTING.md) 了解如何参与本项目。
+源码按 Desktop / CLI / Web 三端贡献。分支规范与本地启动见 [Contributing Guide](./CONTRIBUTING.md)。
+
+- [Desktop](./CONTRIBUTING.md#desktop) — Electron 桌面端
+- [CLI](./CONTRIBUTING.md#cli) — 命令行与本地面板
+- [Web](./CONTRIBUTING.md#web) — 线上看板
 
 ## 📚 参考项目
 

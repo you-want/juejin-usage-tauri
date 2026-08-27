@@ -1,0 +1,23 @@
+.pet-running-loader {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: visible;
+}
+
+.pet-running-loader__sprite {
+  display: block;
+  width: 80px;
+  height: auto;
+  object-fit: contain;
+  will-change: transform;
+  filter: drop-shadow(0 0 10px color-mix(in srgb, var(--pet-glow-primary, #ff7a1a) 55%, transparent))
+    drop-shadow(0 0 18px color-mix(in srgb, var(--pet-glow-accent, #ffd21f) 35%, transparent));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pet-running-loader__sprite {
+    transform: none !important;
+  }
+}

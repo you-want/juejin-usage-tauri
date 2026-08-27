@@ -1,0 +1,64 @@
+appId: com.juejin.tud.desktop
+productName: Juejin Usage
+publish:
+  provider: github
+  owner: juejin-cn
+  repo: juejin-usage
+afterPack: ./scripts/after-pack.cjs
+# Desktop deps are bundled by electron-vite; no native modules need @electron/rebuild.
+# Skipping rebuild also avoids broken pnpm symlinks failing `stat` during native dependency install.
+npmRebuild: false
+directories:
+  output: release/${version}
+  buildResources: resources
+files:
+  - out/**
+  - package.json
+  - resources/**/*
+  # Renderer and main-process dependencies are bundled into out/ by electron-vite.
+  # Do not ship their complete source, maps, docs, or build-time native modules.
+  - "!node_modules/**/*"
+asar: true
+extraResources:
+  - from: resources
+    filter:
+      - juejinTemplate.png
+      - juejinTemplate@2x.png
+      - icon.png
+      - icon-512.png
+    to: resources
+protocols:
+  - name: Juejin Usage
+    schemes:
+      - juejin-usage
+mac:
+  icon: resources/icon.png
+  electronLanguages:
+    - zh-CN
+  target:
+    - target: dmg
+      arch: [arm64, x64]
+    - target: zip
+      arch: [arm64, x64]
+  category: public.app-category.developer-tools
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: resources/entitlements.mac.plist
+  entitlementsInherit: resources/entitlements.mac.plist
+  notarize: true
+  extendInfo:
+    CFBundleURLTypes:
+      - CFBundleURLName: Juejin Usage
+        CFBundleURLSchemes:
+          - juejin-usage
+dmg:
+  format: UDBZ
+win:
+  icon: resources/icon.png
+  electronLanguages:
+    - zh-CN
+  target:
+    - target: nsis
+      arch: [x64]
+    - target: portable
+      arch: [x64]

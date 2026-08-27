@@ -1,0 +1,65 @@
+{
+  "name": "@juejin-opensource/jusage-core",
+  "version": "0.1.5",
+  "description": "AI Agent Token 用量采集与本地 API 核心库（parsers / sync / hooks / pricing / upload）",
+  "type": "module",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/juejin-cn/juejin-usage.git",
+    "directory": "packages/core"
+  },
+  "bugs": {
+    "url": "https://github.com/juejin-cn/juejin-usage/issues"
+  },
+  "homepage": "https://github.com/juejin-cn/juejin-usage#readme",
+  "keywords": [
+    "ai",
+    "token",
+    "usage",
+    "parser",
+    "sync"
+  ],
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./leaderboard": {
+      "types": "./dist/leaderboard.d.ts",
+      "import": "./dist/leaderboard.js"
+    },
+    "./daily-model-key": {
+      "types": "./dist/daily-model-key.d.ts",
+      "import": "./dist/daily-model-key.js"
+    },
+    "./timezone": {
+      "types": "./dist/timezone.d.ts",
+      "import": "./dist/timezone.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json && cp src/pricing/pricing.json dist/pricing/pricing.json",
+    "dev": "tsc -p tsconfig.json --watch",
+    "test": "pnpm test:compile && node --test dist-test/test/*.test.js",
+    "test:compile": "tsc -p tsconfig.test.json && cp src/pricing/pricing.json dist-test/src/pricing/pricing.json"
+  },
+  "dependencies": {
+    "hono": "^4.7.5"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.10",
+    "typescript": "^5.8.2"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
