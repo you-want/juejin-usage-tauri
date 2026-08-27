@@ -3,6 +3,7 @@ import {
   ArrowDownToLine,
   ArrowsRotateRight,
   Gear,
+  LogoGithub,
   NodesRight,
 } from '@gravity-ui/icons';
 import { Button, Tooltip } from '@heroui/react';
@@ -11,6 +12,7 @@ import { JuejinLoginConsentModal } from '@/components/JuejinLoginConsentModal';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { useInstallGuideUi } from '@/hooks/InstallGuideUiContext';
 import { fetchConfig, isCliBackend, triggerSync } from '@/lib/api';
+import { GITHUB_REPO_URL } from '@/lib/downloads';
 import { openJuejinLogin } from '@/lib/juejin-client-link';
 import {
   DATA_SYNCED_EVENT,
@@ -33,6 +35,15 @@ function openRankPage(): void {
     return;
   }
   window.location.assign(RANK_PAGE_URL);
+}
+
+function openGithubRepository(): void {
+  const opened = window.open(GITHUB_REPO_URL, '_blank');
+  if (opened) {
+    opened.opener = null;
+    return;
+  }
+  window.location.assign(GITHUB_REPO_URL);
 }
 
 function JuejinMark({ className }: { className?: string }) {
@@ -167,6 +178,11 @@ export function FilterChromeActions() {
           </button>
         )
       ) : null}
+      <ChromeAction
+        icon={<LogoGithub className="size-4" />}
+        label="GitHub 仓库"
+        onPress={openGithubRepository}
+      />
       {cliBackend ? (
         <Button
           className="h-8 min-h-8 shrink-0 px-2.5 text-xs font-normal"
