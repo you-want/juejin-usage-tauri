@@ -1,9 +1,11 @@
 import { useState } from 'react';
+import { LogoGithub } from '@gravity-ui/icons';
 import { Button, Label, ListBox, Select, Tabs, Tooltip } from '@heroui/react';
 import { Share2 } from 'lucide-react';
 import { ProviderIcon } from '@/components/ProviderIcon';
 import { RankShareModal } from '@/components/RankShareModal';
 import { ThemeToggle } from '@/components/ThemeToggle';
+import { GITHUB_REPO_URL } from '@/lib/downloads';
 import type {
   LeaderboardBoard,
   LeaderboardMetric,
@@ -19,6 +21,15 @@ const RANGE_OPTIONS: readonly { id: RankRange; label: string }[] = [
 ];
 
 const FILTER_CONTROL_HEIGHT = '!h-8 !min-h-8';
+
+function openGithubRepository(): void {
+  const opened = window.open(GITHUB_REPO_URL, '_blank');
+  if (opened) {
+    opened.opener = null;
+    return;
+  }
+  window.location.assign(GITHUB_REPO_URL);
+}
 
 export function RankFilter({
   loading,
@@ -99,6 +110,21 @@ export function RankFilter({
         onChange={onModelChange}
       />
       <div className="ml-auto flex shrink-0 items-center gap-1">
+        <Tooltip closeDelay={80} delay={100}>
+          <Button
+            aria-label="GitHub 仓库"
+            className="size-8 min-h-8 min-w-8 shrink-0 p-0"
+            isIconOnly
+            onPress={openGithubRepository}
+            size="sm"
+            variant="tertiary"
+          >
+            <LogoGithub className="size-4" />
+          </Button>
+          <Tooltip.Content placement="bottom">
+            <p>GitHub 仓库</p>
+          </Tooltip.Content>
+        </Tooltip>
         <Tooltip closeDelay={80} delay={100}>
           <Button
             aria-label="分享排行榜"
