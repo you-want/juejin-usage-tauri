@@ -104,7 +104,10 @@ export function RankFilter({
       <ToolSelect tools={tools} value={tool} onChange={onToolChange} />
       <RankSelect
         ariaLabel="模型筛选"
-        options={modelOptions.map((item) => ({ id: item.model, label: item.model }))}
+        options={[...new Set(modelOptions.map((item) => item.model))].map((model) => ({
+          id: model,
+          label: model,
+        }))}
         placeholder="全部模型"
         value={model}
         onChange={onModelChange}
