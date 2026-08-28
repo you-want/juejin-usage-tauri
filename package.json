@@ -24,6 +24,7 @@
     "dev:web": "VITE_API_TARGET=server VITE_API_BASE=https://api.juejin.cn/aiusage_api VITE_BASE=/aiusage/ VITE_ROUTER_BASE=/aiusage/ pnpm --filter @juejin-opensource/jusage-dashboard dev",
     "dev:web:proxy": "DEV_API_PROXY=https://api.juejin.cn/aiusage_api VITE_API_TARGET=server VITE_BASE=/aiusage/ VITE_ROUTER_BASE=/aiusage/ pnpm --filter @juejin-opensource/jusage-dashboard dev",
     "sync": "pnpm --filter @juejin-opensource/jusage sync",
+    "sync:pricing": "pnpm --filter @juejin-opensource/jusage-core sync:pricing",
     "dev:dashboard": "pnpm --filter @juejin-opensource/jusage-dashboard dev",
     "start:dashboard": "pnpm --filter @juejin-opensource/jusage-dashboard preview",
     "dev:desktop": "pnpm --filter \"@juejin-opensource/jusage-desktop^...\" build && pnpm --filter @juejin-opensource/jusage-desktop dev",

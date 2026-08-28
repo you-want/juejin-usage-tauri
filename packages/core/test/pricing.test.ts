@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -17,7 +18,7 @@ import {
   startPricingRefresh,
   validatePricingData,
 } from '../src/pricing/index.js';
-import { lookupPricingStacked, type PricingData } from '../src/pricing/matcher.js';
+import { lookupPricing, lookupPricingStacked, type PricingData } from '../src/pricing/matcher.js';
 import { pricingOverlayPath } from '../src/paths.js';
 
 function makeRow(partial: Partial<QueueBucket> & Pick<QueueBucket, 'source' | 'model'>): QueueBucket {
@@ -44,6 +45,162 @@ test('getModelPricing resolves claude-opus-4-6 from pricing table', () => {
   const p = getModelPricing('claude-opus-4-6');
   assert.ok(p.input > 0);
   assert.ok(p.output > 0);
+});
+
+test('claude-fable-5 resolves to its own price, not the fuzzy claude catch-all', () => {
+  const p = getModelPricing('claude-fable-5', { source: 'claude' });
+  assert.equal(p.input, 10);
+  assert.equal(p.output, 50);
+  assert.equal(p.cache_read, 1);
+  assert.equal(p.cache_write, 12.5);
+});
+
+test('claude-fable-5 with spaces normalizes and still avoids the catch-all', () => {
+  const p = getModelPricing('Claude Fable 5', { source: 'claude' });
+  assert.equal(p.input, 10);
+  assert.equal(p.output, 50);
+});
+
+test('bare claude still falls through to the fuzzy catch-all', () => {
+  const p = getModelPricing('claude', { source: 'claude' });
+  assert.equal(p.input, 3);
+  assert.equal(p.output, 15);
+});
+
+test('gpt-5-mini resolves to its own price, not the gpt-5 catch-all', () => {
+  const p = getModelPricing('gpt-5-mini');
+  assert.equal(p.input, 0.25);
+  assert.equal(p.output, 2);
+});
+
+test('claude-sonnet-5 resolves to 2/10, not the sonnet-4-5 catch-all', () => {
+  const p = getModelPricing('claude-sonnet-5');
+  assert.equal(p.input, 2);
+  assert.equal(p.output, 10);
+});
+
+test('claude-opus-4 resolves to its own price, not the claude-opus family rule', () => {
+  const p = getModelPricing('claude-opus-4');
+  assert.equal(p.input, 15);
+  assert.equal(p.output, 75);
+});
+
+test('gemini-3.1-pro resolves to 2/12, not the gemini catch-all', () => {
+  const p = getModelPricing('gemini-3.1-pro');
+  assert.equal(p.input, 2);
+  assert.equal(p.output, 12);
+});
+
+test('deepseek-v3.2 resolves to 0.28/0.42, not the deepseek-v3 rule', () => {
+  const p = getModelPricing('deepseek-v3.2');
+  assert.equal(p.input, 0.28);
+  assert.equal(p.output, 0.42);
+});
+
+test('grok-4.20 resolves to 1.25/2.5, not the grok-4 rule', () => {
+  const p = getModelPricing('grok-4.20');
+  assert.equal(p.input, 1.25);
+  assert.equal(p.output, 2.5);
+});
+
+test('kimi-k2.7-code resolves to 0.95/4, not the kimi-k2 rule', () => {
+  const p = getModelPricing('kimi-k2.7-code');
+  assert.equal(p.input, 0.95);
+  assert.equal(p.output, 4);
+});
+
+test('exact-derived match beats every fuzzy catch-all: each exact short name resolves to its own price or a same-name regional variant', () => {
+  const data = JSON.parse(
+    readFileSync(new URL('../src/pricing/pricing.json', import.meta.url), 'utf8'),
+  ) as PricingData;
+  const exact = data.exact;
+  const shortOf = (k: string): string => (k.includes('/') ? k.slice(k.lastIndexOf('/') + 1) : k);
+  const sameRates = (a: PricingData['exact'][string] | null, b: PricingData['exact'][string] | null): boolean =>
+    !!a &&
+    !!b &&
+    a.input === b.input &&
+    a.output === b.output &&
+    (a.cache_read ?? 0) === (b.cache_read ?? 0) &&
+    (a.cache_write ?? 0) === (b.cache_write ?? 0);
+
+  const byShort = new Map<string, PricingData['exact'][string][]>();
+  for (const k of Object.keys(exact)) {
+    const s = shortOf(k).toLowerCase();
+    const list = byShort.get(s) ?? [];
+    list.push(exact[k]!);
+    byShort.set(s, list);
+  }
+
+  const mismatches: string[] = [];
+  for (const k of Object.keys(exact)) {
+    const short = shortOf(k);
+    const r = lookupPricing(short, data, null);
+    if (!r.value) {
+      mismatches.push(`${short}: unresolved`);
+      continue;
+    }
+    const allowed = byShort.get(short.toLowerCase()) ?? [];
+    if (!allowed.some((v) => sameRates(v, r.value))) {
+      mismatches.push(
+        `${short}: got ${JSON.stringify(r.value)} via ${r.source}, expected one of ${allowed
+          .map((a) => JSON.stringify(a))
+          .join(' | ')}`,
+      );
+    }
+  }
+  assert.equal(
+    mismatches.length,
+    0,
+    `shadowed exact short names (${mismatches.length}):\n${mismatches.slice(0, 12).join('\n')}`,
+  );
+});
+
+test('cursor gpt-5.5 reasoning tiers resolve to gpt-5.5, not the gpt-5 catch-all', () => {
+  for (const m of ['gpt-5.5-extra-high', 'gpt-5.5-extra-high-fast', 'gpt-5.5-medium']) {
+    const p = getModelPricing(m, { source: 'cursor' });
+    assert.equal(p.input, 5, m);
+    assert.equal(p.output, 30, m);
+  }
+});
+
+test('cursor claude-4.6-opus reasoning tiers resolve to opus-4-6, not sonnet', () => {
+  for (const m of ['claude-4.6-opus-high-thinking', 'claude-4.6-opus-medium-thinking']) {
+    const p = getModelPricing(m, { source: 'cursor' });
+    assert.equal(p.input, 5, m);
+    assert.equal(p.output, 25, m);
+  }
+});
+
+test('cursor gpt-5.6 sol/terra tiers resolve to their own model', () => {
+  const sol = getModelPricing('gpt-5.6-sol-xhigh-fast', { source: 'cursor' });
+  assert.equal(sol.input, 4);
+  assert.equal(sol.output, 20);
+  const terra = getModelPricing('gpt-5.6-terra-medium', { source: 'cursor' });
+  assert.equal(terra.input, 2);
+  assert.equal(terra.output, 12);
+});
+
+test('cursor gpt-5.4-mini tier resolves to mini, not gpt-5.4', () => {
+  const p = getModelPricing('gpt-5.4-mini-medium', { source: 'cursor' });
+  assert.equal(p.input, 0.75);
+  assert.equal(p.output, 4.5);
+});
+
+test('cursor claude-fable-5 reasoning tiers resolve to fable-5, not sonnet', () => {
+  for (const m of ['claude-fable-5-thinking-max', 'claude-fable-5-thinking-high']) {
+    const p = getModelPricing(m, { source: 'cursor' });
+    assert.equal(p.input, 10, m);
+    assert.equal(p.output, 50, m);
+  }
+});
+
+test('cursor composer fast tiers fall back to their base composer price', () => {
+  const c2 = getModelPricing('composer-2-fast', { source: 'cursor' });
+  assert.equal(c2.input, 0.5);
+  assert.equal(c2.output, 2.5);
+  const c25 = getModelPricing('composer-2.5-fast', { source: 'cursor' });
+  assert.equal(c25.input, 0.5);
+  assert.equal(c25.output, 2.5);
 });
 
 test('cursor auto uses the Cursor-specific price instead of a global alias', () => {
