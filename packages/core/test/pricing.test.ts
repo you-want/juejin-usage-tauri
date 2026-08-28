@@ -46,18 +46,23 @@ test('getModelPricing resolves claude-opus-4-6 from pricing table', () => {
   assert.ok(p.output > 0);
 });
 
-test('cursor auto resolves via sourceAlias', () => {
+test('cursor auto uses the Cursor-specific price instead of a global alias', () => {
   const p = getModelPricing('auto', { source: 'cursor' });
-  assert.equal(p.input, 0.3);
-  assert.equal(p.output, 1.2);
-  assert.equal(p.cache_read, 0.06);
+  assert.equal(p.input, 1.25);
+  assert.equal(p.output, 6);
+  assert.equal(p.cache_read, 0.25);
 });
 
-test('cursor composer alias uses MiniMax rates', () => {
+test('cursor composer without a concrete version does not resolve to MiniMax', () => {
   const p = getModelPricing('composer', { source: 'cursor' });
-  assert.equal(p.input, 0.3);
-  assert.equal(p.output, 1.2);
-  assert.equal(p.cache_read, 0.06);
+  assert.notEqual(p.input, 0.3);
+  assert.notEqual(p.output, 1.2);
+});
+
+test('auto does not globally resolve to MiniMax', () => {
+  const p = getModelPricing('auto');
+  assert.notEqual(p.input, 0.3);
+  assert.notEqual(p.output, 1.2);
 });
 
 test('codex row folds reasoning into output cost only', () => {
@@ -98,7 +103,7 @@ test('cursor row without reported_cost falls back to pricing table', () => {
     total_tokens: 1_000_000,
   });
   const cost = computeRowCost(row);
-  assert.ok(Math.abs(cost - 0.3) < 0.001);
+  assert.ok(Math.abs(cost - 1.25) < 0.001);
 });
 
 test('unknown model uses builtin default rates', () => {
