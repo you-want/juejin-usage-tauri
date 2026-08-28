@@ -1,5 +1,12 @@
 # @juejin-opensource/jusage-core
 
+## 0.1.6
+
+### Patch Changes
+
+- 内置定价表按 models.dev 官方渠道增量同步，手工补充的模型价保留不丢。
+- 定价匹配增强：Claude 模型名归一化、推理档后缀剥离，精确命中优先于 fuzzy 兜底，减少错价。
+
 ## 0.1.5
 
 ### Patch Changes

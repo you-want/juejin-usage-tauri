@@ -1,5 +1,15 @@
 # @juejin-opensource/jusage-desktop
 
+## 0.1.6
+
+### Patch Changes
+
+- 用量页时间范围刷新后仍保留上次选择。
+- 筛选栏补充 GitHub 仓库入口。
+- 同步 core 的定价表增量更新与模型匹配增强。
+- Updated dependencies
+  - @juejin-opensource/jusage-core@0.1.6
+
 ## 0.1.5
 
 ### Patch Changes

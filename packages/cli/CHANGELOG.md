@@ -1,5 +1,14 @@
 # @juejin-opensource/jusage
 
+## 0.1.6
+
+### Patch Changes
+
+- 内置面板：用量页时间范围刷新后仍保留上次选择。
+- 同步 core 的定价表增量更新与模型匹配增强。
+- Updated dependencies
+  - @juejin-opensource/jusage-core@0.1.6
+
 ## 0.1.5
 
 ### Patch Changes
