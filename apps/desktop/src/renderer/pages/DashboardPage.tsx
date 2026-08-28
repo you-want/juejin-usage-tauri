@@ -18,6 +18,7 @@ import { ProjectUsagePanel } from '@/components/ProjectUsagePanel';
 import { ToolModelUsagePanel } from '@/components/ToolModelUsagePanel';
 import { UsageDistributionCard } from '@/components/UsageDistributionCard';
 import { useDashboardData } from '@/hooks/useDashboardData';
+import { useLocalStorage } from '@/hooks/useLocalStorage';
 import { projectDashboardForDate } from '@/lib/dashboard-data';
 import { scheduleAfterPaint } from '@/lib/schedule-after-paint';
 import { DATA_SYNCED_EVENT } from '@/lib/shell-events';
@@ -57,7 +58,12 @@ function useDeferredDashboardRange(range: DashboardRange): DashboardRange {
 
 /** HeroUI dashboard backed by the same usage dataset as the root route. */
 export function DashboardPage() {
-  const [range, setRange] = useState<DashboardRange>('last-7-days');
+  const [range, setRange] = useLocalStorage<DashboardRange>(
+    'tud.dashboardRange',
+    'last-7-days',
+    (value): value is DashboardRange =>
+      typeof value === 'string' && value in DASHBOARD_RANGE_DAYS,
+  );
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [selectedTools, setSelectedTools] = useState<string[]>([]);
   const { publishSnapshot } = useShareSnapshot();
