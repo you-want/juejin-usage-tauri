@@ -173,7 +173,32 @@ export function lookupPricing(
     if (aliased) return { ...aliased, source: 'alias' };
   }
 
-  // 4. fuzzy
+  // 4. suffix strip (reasoning-effort suffixes: -high / -low / -fast …)
+  const stripped = stripReasoningSuffix(lookupModel);
+  if (stripped !== lookupModel && exact[stripped]) {
+    return { hit: true, source: 'suffix-strip', value: exact[stripped]! };
+  }
+
+  // 5. provider-prefix strip — exact table is the source of truth, so an
+  // exact-derived hit (e.g. `anthropic/claude-fable-5` for `claude-fable-5`)
+  // must win over a fuzzy guess that could shadow it. Prefer canonical
+  // two-segment keys (`provider/model`) over nested hosts, then
+  // lexicographically smallest.
+  const suffix = `/${lower}`;
+  let best: string | null = null;
+  let bestSegments = Infinity;
+  for (const key of Object.keys(exact)) {
+    if (key.length > suffix.length && key.toLowerCase().endsWith(suffix)) {
+      const segments = key.split('/').length;
+      if (segments < bestSegments || (segments === bestSegments && (best === null || key < best))) {
+        best = key;
+        bestSegments = segments;
+      }
+    }
+  }
+  if (best) return { hit: true, source: 'prefix-strip', value: exact[best]! };
+
+  // 6. fuzzy
   if (Array.isArray(data.fuzzy)) {
     for (const { match, ref } of data.fuzzy) {
       if (!match || !ref) continue;
@@ -185,22 +210,6 @@ export function lookupPricing(
       }
     }
   }
-
-  // 5. suffix strip
-  const stripped = stripReasoningSuffix(lookupModel);
-  if (stripped !== lookupModel && exact[stripped]) {
-    return { hit: true, source: 'suffix-strip', value: exact[stripped]! };
-  }
-
-  // 6. provider-prefix strip
-  const suffix = `/${lower}`;
-  let best: string | null = null;
-  for (const key of Object.keys(exact)) {
-    if (key.length > suffix.length && key.toLowerCase().endsWith(suffix)) {
-      if (best === null || key < best) best = key;
-    }
-  }
-  if (best) return { hit: true, source: 'prefix-strip', value: exact[best]! };
 
   // 7. reverse substring
   for (const key of getSortedKeys(exact)) {
