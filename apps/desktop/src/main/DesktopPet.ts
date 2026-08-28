@@ -399,7 +399,9 @@ export async function syncDesktopPet(): Promise<void> {
   latestPosition = pref.position;
   if (!pref.enabled) {
     stopAutoMove();
-    if (isPetWindow(petWindow)) petWindow.hide();
+    // Disabling the pet releases its renderer process entirely instead of
+    // keeping a hidden window (and its Chromium process) resident.
+    if (isPetWindow(petWindow)) petWindow.destroy();
     return;
   }
   const window = await ensurePetWindow();

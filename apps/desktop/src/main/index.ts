@@ -154,7 +154,22 @@ async function showMainWindowAsync(): Promise<void> {
   pokeSyncOnForeground();
   const w = getMainWindow();
   if (!w) {
+    // Window was destroyed on close (tray-resident app). Rebuild it. On
+    // macOS the dock was hidden at close; await the accessory→regular
+    // transform so the freshly built window is not hidden by macOS mid-flight.
+    if (process.platform === 'darwin' && !app.dock.isVisible()) {
+      try {
+        await app.dock.show();
+      } catch {
+        // ignore: window is still created below even if the dock stays hidden
+      }
+    }
     createWindow();
+    if (process.platform === 'darwin') {
+      // Rebuilt window shows on ready-to-show; activate the app so it lands
+      // in the foreground like the existing-window path below.
+      app.focus({ steal: true });
+    }
     return;
   }
   if (process.platform === 'darwin' && !app.dock.isVisible()) {

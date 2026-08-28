@@ -10,7 +10,7 @@ import {
 import { useAnimatedNumber } from '@/hooks/useAnimatedNumber';
 import { fetchSummary } from '@/lib/api';
 import { formatTokens, formatTokensExact, formatUsd } from '@/lib/format';
-import { getDesktopPet } from '@/pets';
+import { getDesktopPet, loadPetSpritesheet } from '@/pets';
 import {
   DESKTOP_PET_SOURCE_HEIGHT,
   DESKTOP_PET_SOURCE_WIDTH,
@@ -57,6 +57,7 @@ export function DesktopPetView() {
   const [isTokenTooltipOpen, setIsTokenTooltipOpen] = useState(false);
   const [summary, setSummary] = useState<{ totalTokens: number; totalCostUsd: number } | null>(null);
   const [summaryError, setSummaryError] = useState(false);
+  const [spritesheetUrl, setSpritesheetUrl] = useState<string | null>(null);
   const alphaCanvas = useRef<HTMLCanvasElement | null>(null);
   const ignored = useRef(false);
   const dragState = useRef<{
@@ -104,6 +105,18 @@ export function DesktopPetView() {
   }, []);
 
   useEffect(() => { alphaCanvas.current = null; }, [selectedPetId]);
+
+  // Load only the selected pet's atlas; unchosen spritesheets stay unloaded.
+  useEffect(() => {
+    let cancelled = false;
+    setSpritesheetUrl(null);
+    void loadPetSpritesheet(selectedPetId).then((url) => {
+      if (!cancelled) setSpritesheetUrl(url);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedPetId]);
 
   useEffect(() => {
     if (!isTokenTooltipOpen) return;
@@ -220,7 +233,7 @@ export function DesktopPetView() {
     <div className="desktop-pet-root" onMouseMove={(event) => {
       if (!dragState.current && event.target === event.currentTarget) setMouseIgnored(true);
     }}>
-      <img alt="" aria-hidden="true" className="hidden" src={pet.spritesheet} onLoad={(event) => loadAlphaMap(event.currentTarget)} />
+      <img alt="" aria-hidden="true" className="hidden" src={spritesheetUrl ?? undefined} onLoad={(event) => loadAlphaMap(event.currentTarget)} />
       <Popover isOpen={isTokenTooltipOpen} onOpenChange={setIsTokenTooltipOpen}>
         <Popover.Trigger
           className="desktop-pet-popover-trigger"
@@ -249,7 +262,7 @@ export function DesktopPetView() {
             style={{
               width,
               height,
-              backgroundImage: `url(${pet.spritesheet})`,
+              backgroundImage: spritesheetUrl ? `url(${spritesheetUrl})` : undefined,
               backgroundPosition: `${-currentFrame * width}px ${-row * height}px`,
               backgroundSize: `${SPRITESHEET_WIDTH * scale}px ${SPRITESHEET_HEIGHT * scale}px`,
               transform: renderedAnimation.mirrorX ? 'scaleX(-1)' : undefined,

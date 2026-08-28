@@ -105,12 +105,14 @@ export class DesktopWindow {
       this.browserWindow.setWindowButtonVisibility(true);
     }
 
-    // Close (X / traffic light) hides to tray; real exit goes through
+    // Close (X / traffic light) destroys the window and frees its renderer
+    // process — the app stays alive in the tray and rebuilds the window on
+    // demand (see index.ts showMainWindowAsync). Real exit goes through
     // tray "退出" / app:quit which sets appIsQuitting first.
     this.browserWindow.on('close', (e) => {
       if (appIsQuitting) return;
       e.preventDefault();
-      this.browserWindow.hide();
+      this.browserWindow.destroy();
       if (isMac) {
         app.dock.hide();
       }
@@ -118,7 +120,10 @@ export class DesktopWindow {
 
     this.browserWindow.on('ready-to-show', () => {
       if (options.startHidden) {
-        this.browserWindow.hide();
+        // Start hidden (login autostart): destroy the window like close-to-
+        // tray does, so no renderer process stays resident. Rebuild on tray
+        // click via showMainWindowAsync.
+        this.browserWindow.destroy();
         if (isMac) {
           app.dock.hide();
         }
