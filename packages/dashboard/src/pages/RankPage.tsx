@@ -12,7 +12,7 @@ import {
   type LeaderboardMetric,
 } from '@/lib/api';
 import { isMockDataEnabled } from '@/lib/env';
-import type { RankRange } from '@/lib/leaderboard';
+import { uniqueRankModelOptions, type RankRange } from '@/lib/leaderboard';
 import {
   DATA_SYNCED_EVENT,
   dispatchOpenSettings,
@@ -78,7 +78,7 @@ export function RankPage() {
 
   const filterOptions = data?.filterOptions;
   const modelOptions = useMemo(
-    () => (filterOptions?.models ?? []).filter((item) => !tool || item.tool === tool),
+    () => uniqueRankModelOptions(filterOptions?.models ?? [], tool),
     [filterOptions?.models, tool],
   );
 
