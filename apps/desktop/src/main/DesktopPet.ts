@@ -339,16 +339,22 @@ function stopDragTicker(): void {
 }
 
 async function loadPetRenderer(window: BrowserWindow): Promise<void> {
-  const devUrl = process.env['ELECTRON_RENDERER_URL'];
-  if (!app.isPackaged && devUrl) {
-    const url = new URL(devUrl);
-    url.searchParams.set('view', 'desktop-pet');
-    await window.loadURL(url.toString());
-    return;
+  try {
+    const devUrl = process.env['ELECTRON_RENDERER_URL'];
+    if (!app.isPackaged && devUrl) {
+      const url = new URL(devUrl);
+      url.searchParams.set('view', 'desktop-pet');
+      await window.loadURL(url.toString());
+      return;
+    }
+    await window.loadFile(path.join(__dirname, '../renderer/index.html'), {
+      search: '?view=desktop-pet',
+    });
+  } catch (err) {
+    // Window destroyed mid-load (pet disabled / toggled away) — swallow.
+    if (window.isDestroyed()) return;
+    throw err;
   }
-  await window.loadFile(path.join(__dirname, '../renderer/index.html'), {
-    search: '?view=desktop-pet',
-  });
 }
 
 async function ensurePetWindow(): Promise<BrowserWindow> {
@@ -381,19 +387,41 @@ async function ensurePetWindow(): Promise<BrowserWindow> {
       nodeIntegration: false,
     },
   });
-  petWindow.setAlwaysOnTop(true, 'floating');
-  petWindow.on('move', onPetMoved);
-  petWindow.on('closed', () => {
+  const window = petWindow;
+  window.setAlwaysOnTop(true, 'floating');
+  window.on('move', onPetMoved);
+  window.on('closed', () => {
     stopAutoMove();
-    petWindow = null;
-    lastBounds = null;
+    // Only clear the ref if it still points at this window; a newer window
+    // created by a queued toggle must not be nulled out by the old one.
+    if (petWindow === window) {
+      petWindow = null;
+      lastBounds = null;
+    }
   });
-  await loadPetRenderer(petWindow);
+  await loadPetRenderer(window);
   sendPreferences(pref);
-  return petWindow;
+  return window;
 }
 
-export async function syncDesktopPet(): Promise<void> {
+/**
+ * Rapid toggles previously raced: one call was mid-loadURL while another
+ * destroyed the window, killing the navigation with ERR_FAILED (-2). Serialize
+ * through a promise chain so each toggle runs to completion before the next.
+ */
+let syncQueue: Promise<void> = Promise.resolve();
+
+export function syncDesktopPet(): Promise<void> {
+  const run = syncQueue.then(() => doSyncDesktopPet());
+  // Keep the chain alive even if one run rejects so later toggles still apply.
+  syncQueue = run.then(
+    () => undefined,
+    () => undefined,
+  );
+  return run;
+}
+
+async function doSyncDesktopPet(): Promise<void> {
   const pref = await loadDesktopPetPref();
   stopAutoMove();
   latestPosition = pref.position;
@@ -405,6 +433,7 @@ export async function syncDesktopPet(): Promise<void> {
     return;
   }
   const window = await ensurePetWindow();
+  if (window.isDestroyed()) return;
   const { width, height } = petDimensions(pref.scale);
   const bounds = window.getBounds();
   const position = clampPosition({

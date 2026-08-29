@@ -194,8 +194,8 @@ function showMainWindow(): void {
   void showMainWindowAsync();
 }
 
-function openSettings(detail?: OpenSettingsPayload): void {
-  showMainWindow();
+async function openSettings(detail?: OpenSettingsPayload): Promise<void> {
+  await showMainWindowAsync();
   const w = getMainWindow();
   if (!w) return;
   // Defer until the renderer has subscribed (cold start / newly created window).
@@ -212,11 +212,11 @@ function openSettings(detail?: OpenSettingsPayload): void {
 }
 
 /** Silent login callback: focus window + notify renderer (no settings modal). */
-function notifyJuejinLinkResult(detail: {
+async function notifyJuejinLinkResult(detail: {
   ok: boolean;
   message?: string;
-}): void {
-  showMainWindow();
+}): Promise<void> {
+  await showMainWindowAsync();
   const w = getMainWindow();
   if (!w) return;
   const send = () => {
@@ -236,7 +236,7 @@ async function handleDeepLinkUrl(raw: string): Promise<void> {
     console.warn('[tud-desktop] ignored invalid deep link:', raw);
     // Avoid createWindow before app.whenReady (macOS open-url can be early).
     if (runtimeReady || getMainWindow()) {
-      notifyJuejinLinkResult({
+      void notifyJuejinLinkResult({
         ok: false,
         message: '无效的关联链接',
       });
@@ -258,7 +258,7 @@ async function handleDeepLinkUrl(raw: string): Promise<void> {
   }
   // Silent association (same as CLI): no settings modal. Renderer hides
   // 「关联掘金」via link-changed event; optional toast for success/failure.
-  notifyJuejinLinkResult({
+  void notifyJuejinLinkResult({
     ok: result.ok,
     message: result.ok
       ? undefined
@@ -408,7 +408,7 @@ void acquireDesktopInstanceLock().then((gotLock) => {
       if (runtimeReady) {
         void handleDeepLinkUrl(url);
       } else {
-        notifyJuejinLinkResult({
+        void notifyJuejinLinkResult({
           ok: false,
           message: '本地服务未就绪，无法完成关联',
         });
