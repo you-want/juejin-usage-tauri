@@ -32,6 +32,8 @@ declare global {
       onThemeChanged: (callback: (theme: 'light' | 'dark') => void) => () => void;
       getOpenAtLogin: () => Promise<boolean>;
       setOpenAtLogin: (enabled: boolean) => Promise<boolean>;
+      getLaunchHidden: () => Promise<boolean>;
+      setLaunchHidden: (hidden: boolean) => Promise<boolean>;
       getDesktopPet: () => Promise<{
         enabled: boolean;
         selectedPetId: string;

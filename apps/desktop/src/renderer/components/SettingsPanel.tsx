@@ -703,6 +703,7 @@ function AppSettingsPanel() {
   const [openAtLogin, setOpenAtLogin] = useState(true);
   const [autostartLoading, setAutostartLoading] = useState(true);
   const [autostartError, setAutostartError] = useState<string | null>(null);
+  const [launchHidden, setLaunchHidden] = useState(true);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -739,6 +740,12 @@ function AppSettingsPanel() {
           setAutostartError(null);
         }
       })
+      .then(() => {
+        if (cancelled) return;
+        return window.tud.getLaunchHidden().then((value) => {
+          if (!cancelled) setLaunchHidden(value);
+        });
+      })
       .catch((e) => {
         if (!cancelled) {
           setAutostartError(
@@ -768,6 +775,19 @@ function AppSettingsPanel() {
     }
   };
 
+  const onLaunchHiddenChange = async (next: boolean) => {
+    const prev = launchHidden;
+    setLaunchHidden(next);
+    try {
+      await window.tud.setLaunchHidden(next);
+    } catch (e) {
+      setLaunchHidden(prev);
+      setAutostartError(
+        e instanceof Error ? e.message : '更新静默启动设置失败',
+      );
+    }
+  };
+
   return (
     <div className="flex h-full flex-col gap-5 overflow-y-auto pr-1">
       {error && <StatusBanner tone="error" title={error} />}
@@ -793,6 +813,21 @@ function AppSettingsPanel() {
                 <Checkbox.Indicator />
               </Checkbox.Control>
               开机时自动启动
+            </Checkbox.Content>
+          </Checkbox>
+          <Checkbox
+            id="desktop-launch-hidden"
+            isDisabled={autostartLoading || !openAtLogin}
+            isSelected={launchHidden}
+            onChange={(checked) => {
+              void onLaunchHiddenChange(checked);
+            }}
+          >
+            <Checkbox.Content>
+              <Checkbox.Control>
+                <Checkbox.Indicator />
+              </Checkbox.Control>
+              开机时静默启动（不显示主窗口，仅托盘）
             </Checkbox.Content>
           </Checkbox>
         </div>
