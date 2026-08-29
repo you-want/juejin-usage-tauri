@@ -17,6 +17,11 @@ import {
   waitForServiceReady,
 } from './daemon.js';
 import {
+  isLinuxAutostartRegistered,
+  registerLinuxAutostart,
+  unregisterLinuxAutostart,
+} from './service-linux.js';
+import {
   isMacosAutostartRegistered,
   registerMacosAutostart,
   unregisterMacosAutostart,
@@ -27,16 +32,19 @@ import {
   unregisterWindowsAutostart,
 } from './service-windows.js';
 
-function assertSupportedPlatform(): 'darwin' | 'win32' {
+type ServicePlatform = 'darwin' | 'win32' | 'linux';
+
+function assertSupportedPlatform(): ServicePlatform {
   const p = platform();
-  if (p === 'darwin' || p === 'win32') return p;
-  throw new Error(`jusage service 仅支持 macOS 与 Windows（当前: ${p}）`);
+  if (p === 'darwin' || p === 'win32' || p === 'linux') return p;
+  throw new Error(`jusage service 仅支持 macOS、Windows 与 Linux（当前: ${p}）`);
 }
 
 async function isAutostartRegistered(): Promise<boolean> {
   const p = assertSupportedPlatform();
   if (p === 'darwin') return isMacosAutostartRegistered();
-  return isWindowsAutostartRegistered();
+  if (p === 'win32') return isWindowsAutostartRegistered();
+  return isLinuxAutostartRegistered();
 }
 
 async function registerAutostart(cliBinPath: string, dataDir: string): Promise<void> {
@@ -45,7 +53,11 @@ async function registerAutostart(cliBinPath: string, dataDir: string): Promise<v
     await registerMacosAutostart(cliBinPath, dataDir);
     return;
   }
-  await registerWindowsAutostart(cliBinPath, dataDir);
+  if (p === 'win32') {
+    await registerWindowsAutostart(cliBinPath, dataDir);
+    return;
+  }
+  await registerLinuxAutostart(cliBinPath, dataDir);
 }
 
 async function unregisterAutostart(): Promise<void> {
@@ -54,7 +66,11 @@ async function unregisterAutostart(): Promise<void> {
     await unregisterMacosAutostart();
     return;
   }
-  await unregisterWindowsAutostart();
+  if (p === 'win32') {
+    await unregisterWindowsAutostart();
+    return;
+  }
+  await unregisterLinuxAutostart();
 }
 
 export async function cmdServiceStart(cliBinPath: string, daysAgo?: number): Promise<void> {

@@ -181,7 +181,7 @@ Commands:
   status                查看 CLI / 面板当前启动状态
   sync                  手动同步本地用量数据
   upload                上报数据到云端
-  service <action>      后台服务与开机自启（macOS / Windows）
+  service <action>      后台服务与开机自启（macOS / Windows / Linux）
                         action: start | stop | status
   help                  显示帮助
 
