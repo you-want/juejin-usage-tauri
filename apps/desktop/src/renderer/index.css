@@ -286,11 +286,4 @@
   textarea {
     font: inherit;
   }
-
-  /* Keep dashboard cards on their own compositor layer so a refresh overlay
-     cannot leave --background gray mixed into --surface white. */
-  .dashboard-page [data-slot="card"] {
-    isolation: isolate;
-    background-color: var(--surface);
-  }
 }
