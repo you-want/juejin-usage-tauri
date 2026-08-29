@@ -11,15 +11,15 @@
   },
   "main": "./out/main/index.js",
   "scripts": {
-    "dev": "VITE_ENABLE_MOCK_DATA=false electron-vite dev",
-    "dev:mock": "VITE_ENABLE_MOCK_DATA=true electron-vite dev",
-    "build": "VITE_ENABLE_MOCK_DATA=false electron-vite build",
+    "dev": "electron-vite dev",
+    "dev:mock": "cross-env VITE_ENABLE_MOCK_DATA=true electron-vite dev",
+    "build": "electron-vite build",
     "start": "electron-vite preview",
-    "build:mac": "VITE_ENABLE_MOCK_DATA=false electron-vite build && electron-builder --mac",
-    "build:mac:arm": "VITE_ENABLE_MOCK_DATA=false electron-vite build && electron-builder --mac --arm64",
-    "build:win": "VITE_ENABLE_MOCK_DATA=false electron-vite build && electron-builder --win",
-    "release:mac": "VITE_ENABLE_MOCK_DATA=false electron-vite build && electron-builder --mac --publish always",
-    "release:win": "VITE_ENABLE_MOCK_DATA=false electron-vite build && electron-builder --win --publish always",
+    "build:mac": "electron-vite build && electron-builder --mac",
+    "build:mac:arm": "electron-vite build && electron-builder --mac --arm64",
+    "build:win": "electron-vite build && electron-builder --win",
+    "release:mac": "electron-vite build && electron-builder --mac --publish always",
+    "release:win": "electron-vite build && electron-builder --win --publish always",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
