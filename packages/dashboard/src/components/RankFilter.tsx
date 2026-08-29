@@ -21,6 +21,8 @@ const RANGE_OPTIONS: readonly { id: RankRange; label: string }[] = [
 ];
 
 const FILTER_CONTROL_HEIGHT = '!h-8 !min-h-8';
+const FILTER_POPOVER = 'w-50 !max-h-64 overflow-hidden rounded-xl bg-surface shadow-md';
+const FILTER_POPOVER_LIST = '!max-h-64 overflow-y-auto!';
 
 function openGithubRepository(): void {
   const opened = window.open(GITHUB_REPO_URL, '_blank');
@@ -197,8 +199,8 @@ function ToolSelect({
         </Select.Value>
         <Select.Indicator className="size-3.5 text-muted" />
       </Select.Trigger>
-      <Select.Popover className="w-50 rounded-xl bg-surface shadow-md" placement="bottom start">
-        <ListBox aria-label="工具筛选">
+      <Select.Popover className={FILTER_POPOVER} placement="bottom start">
+        <ListBox aria-label="工具筛选" className={FILTER_POPOVER_LIST}>
           <ListBox.Item id="all" textValue="全部工具">
             全部工具
             <ListBox.ItemIndicator />
@@ -260,8 +262,8 @@ function RankSelect({
         <Select.Value className="min-w-0 max-w-20 !text-xs sm:max-w-40" />
         <Select.Indicator className="size-3.5 text-muted" />
       </Select.Trigger>
-      <Select.Popover className="w-50 rounded-xl bg-surface shadow-md" placement="bottom start">
-        <ListBox aria-label={ariaLabel}>
+      <Select.Popover className={FILTER_POPOVER} placement="bottom start">
+        <ListBox aria-label={ariaLabel} className={FILTER_POPOVER_LIST}>
           {allowEmpty ? (
             <ListBox.Item id="all" textValue={placeholder}>
               {placeholder}

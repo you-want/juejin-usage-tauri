@@ -157,7 +157,7 @@ async function showMainWindowAsync(): Promise<void> {
     createWindow();
     return;
   }
-  if (process.platform === 'darwin' && !app.dock.isVisible()) {
+  if (process.platform === 'darwin' && app.dock && !app.dock.isVisible()) {
     // The dock icon was hidden (accessory mode, set on main-window close).
     // `dock.show()` transforms the activation policy asynchronously and any
     // window shown mid-transform gets hidden by macOS — await it first.

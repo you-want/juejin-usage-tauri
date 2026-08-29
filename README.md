@@ -72,7 +72,7 @@ Juejin Usage 提供 macOS / Windows 桌面客户端，安装即用，无需额�
 
 ## ⌨️ CLI 使用
 
-需要 Node.js >= 20。安装后后台启动即可打开本地面板：
+需要 Node.js >= 20。macOS / Windows / Linux 安装后后台启动即可打开本地面板：
 
 ```bash
 npm i -g @juejin-opensource/jusage
@@ -113,3 +113,4 @@ jusage service start
 - [Token Tracker](https://github.com/xiufengsun/TokenTracker): 自动采集 30 款 AI 编码工具 的 token 用量，用一套漂亮的 Dashboard 看真实成本与趋势。
 - [vibe-usage](https://github.com/vibe-cafe/vibe-usage): Token 使用量统计工具（CLI）
 - [OpenUsage](https://github.com/robinebers/openusage): The Only AI Usage Tracker That's Truly Yours
+- [models.dev](https://models.dev): 模型 Token 计价数据源，内置计价表由此增量同步

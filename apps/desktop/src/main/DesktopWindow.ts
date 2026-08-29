@@ -112,7 +112,7 @@ export class DesktopWindow {
       e.preventDefault();
       this.browserWindow.hide();
       if (isMac) {
-        app.dock.hide();
+        app.dock?.hide();
       }
     });
 
@@ -120,7 +120,7 @@ export class DesktopWindow {
       if (options.startHidden) {
         this.browserWindow.hide();
         if (isMac) {
-          app.dock.hide();
+          app.dock?.hide();
         }
         return;
       }
@@ -238,7 +238,7 @@ function registerWindowControlHandlers(
     void (async () => {
       const w = getWindow();
       if (!w) return;
-      if (process.platform === 'darwin' && !app.dock.isVisible()) {
+      if (process.platform === 'darwin' && app.dock && !app.dock.isVisible()) {
         // Await the accessory→regular transform; showing a window while it is
         // in flight gets the window hidden by macOS.
         try {

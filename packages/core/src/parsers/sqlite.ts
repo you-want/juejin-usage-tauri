@@ -43,7 +43,8 @@ function openNodeSqlite(dbPath: string): SqliteDb | null {
   if (!mod?.DatabaseSync) return null;
   try {
     return new mod.DatabaseSync(dbPath, { readOnly: true });
-  } catch {
+  } catch (err) {
+    if (isSqliteLockError(err)) throw err;
     return null;
   }
 }
@@ -83,7 +84,20 @@ export function queryDbJson(
 }
 
 export function isSqliteLockError(err: unknown): boolean {
-  return err instanceof Error && /database is locked/i.test(err.message);
+  if (!err || typeof err !== 'object') return false;
+  const e = err as NodeJS.ErrnoException;
+  const msg = e.message ?? '';
+  const code = e.code ?? '';
+  if (code === 'EBUSY') return true;
+  if (
+    (code === 'EPERM' || code === 'EACCES') &&
+    /copyfile|open|resource busy|locked|operation not permitted/i.test(msg)
+  ) {
+    return true;
+  }
+  return /database is locked|SQLITE_BUSY|resource busy or locked|being used by another process|unable to open database file/i.test(
+    msg,
+  );
 }
 
 /** Copying a multi-GB DB (e.g. Cursor's state.vscdb) to tmp would cause a huge IO/CPU spike. */

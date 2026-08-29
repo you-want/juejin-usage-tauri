@@ -1,5 +1,15 @@
 # @juejin-opensource/jusage-dashboard
 
+## 0.1.5
+
+### Patch Changes
+
+- 个人用量页时间范围刷新后仍保留上次选择。
+- 排行榜筛选下拉过长时改为内部滚动；同名模型选项去重，避免异步刷新时列表异常。
+- 筛选栏补充 GitHub 仓库入口。
+- Updated dependencies
+  - @juejin-opensource/jusage-core@0.1.6
+
 ## 0.1.4
 
 ### Patch Changes
