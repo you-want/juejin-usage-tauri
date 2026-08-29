@@ -39,7 +39,8 @@
     "sync": "node ./bin/jusage.js sync",
     "status": "node ./bin/jusage.js status",
     "upload": "node ./bin/jusage.js upload",
-    "service": "node ./bin/jusage.js service"
+    "service": "node ./bin/jusage.js service",
+    "test": "tsc -p tsconfig.json && node --test \"test/**/*.test.js\""
   },
   "dependencies": {
     "@juejin-opensource/jusage-core": "workspace:*"
