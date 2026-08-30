@@ -116,6 +116,7 @@ function registerThemeIpc(): void {
     if (!isTheme(nextTheme) || nextTheme === currentTheme) return;
     currentTheme = nextTheme;
     for (const desktopWindow of windows) {
+      if (desktopWindow.window.isDestroyed()) continue;
       desktopWindow.setThemeBackground(currentTheme);
     }
     for (const window of BrowserWindow.getAllWindows()) {
@@ -143,8 +144,18 @@ function registerShareCardIpc(): void {
 }
 
 function getMainWindow(): BrowserWindow | null {
-  const w = [...windows][0]?.window;
-  return w && !w.isDestroyed() ? w : null;
+  // destroy() marks the BrowserWindow dead before 'closed' removes the
+  // wrapper from the set. Skip (and drop) stale entries so a just-rebuilt
+  // window is still found.
+  for (const wrapper of [...windows]) {
+    const w = wrapper.window;
+    if (!w || w.isDestroyed()) {
+      windows.delete(wrapper);
+      continue;
+    }
+    return w;
+  }
+  return null;
 }
 
 async function showMainWindowAsync(): Promise<void> {
@@ -194,21 +205,33 @@ function showMainWindow(): void {
   void showMainWindowAsync();
 }
 
+/** After a tray rebuild the page may still be loading, and SettingsPanel
+ *  only subscribes in useEffect — wait for both before sending IPC. */
+function sendToMainWindowWhenReady(
+  w: BrowserWindow,
+  send: (window: BrowserWindow) => void,
+): void {
+  const fire = () => {
+    if (w.isDestroyed()) return;
+    // Small delay so AppShell's listeners are attached after first paint.
+    setTimeout(() => {
+      if (!w.isDestroyed()) send(w);
+    }, 50);
+  };
+  if (w.webContents.isLoading()) {
+    w.webContents.once('did-finish-load', fire);
+    return;
+  }
+  fire();
+}
+
 async function openSettings(detail?: OpenSettingsPayload): Promise<void> {
   await showMainWindowAsync();
   const w = getMainWindow();
   if (!w) return;
-  // Defer until the renderer has subscribed (cold start / newly created window).
-  const send = () => {
-    if (w.isDestroyed()) return;
-    w.webContents.send(OPEN_SETTINGS_CHANNEL, detail ?? {});
-  };
-  if (w.webContents.isLoading()) {
-    w.webContents.once('did-finish-load', send);
-  } else {
-    // Small delay so AppShell's onOpenSettings listener is attached.
-    setTimeout(send, 50);
-  }
+  sendToMainWindowWhenReady(w, (window) => {
+    window.webContents.send(OPEN_SETTINGS_CHANNEL, detail ?? {});
+  });
 }
 
 /** Silent login callback: focus window + notify renderer (no settings modal). */
@@ -219,15 +242,9 @@ async function notifyJuejinLinkResult(detail: {
   await showMainWindowAsync();
   const w = getMainWindow();
   if (!w) return;
-  const send = () => {
-    if (w.isDestroyed()) return;
-    w.webContents.send(JUEJIN_LINK_RESULT_CHANNEL, detail);
-  };
-  if (w.webContents.isLoading()) {
-    w.webContents.once('did-finish-load', send);
-  } else {
-    setTimeout(send, 50);
-  }
+  sendToMainWindowWhenReady(w, (window) => {
+    window.webContents.send(JUEJIN_LINK_RESULT_CHANNEL, detail);
+  });
 }
 
 async function handleDeepLinkUrl(raw: string): Promise<void> {
