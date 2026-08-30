@@ -181,6 +181,7 @@ async function showMainWindowAsync(): Promise<void> {
       // in the foreground like the existing-window path below.
       app.focus({ steal: true });
     }
+    flushPendingConfigResetNotice();
     return;
   }
   if (process.platform === 'darwin' && !app.dock.isVisible()) {
@@ -199,6 +200,7 @@ async function showMainWindowAsync(): Promise<void> {
   if (process.platform === 'darwin') {
     app.focus({ steal: true });
   }
+  flushPendingConfigResetNotice();
 }
 
 function showMainWindow(): void {
@@ -211,8 +213,10 @@ function sendToMainWindowWhenReady(
   w: BrowserWindow,
   send: (window: BrowserWindow) => void,
 ): void {
+  let sent = false;
   const fire = () => {
-    if (w.isDestroyed()) return;
+    if (sent || w.isDestroyed()) return;
+    sent = true;
     // Small delay so AppShell's listeners are attached after first paint.
     setTimeout(() => {
       if (!w.isDestroyed()) send(w);
@@ -220,9 +224,18 @@ function sendToMainWindowWhenReady(
   };
   if (w.webContents.isLoading()) {
     w.webContents.once('did-finish-load', fire);
+    // Load can finish between isLoading() and once(); don't hang.
+    if (!w.webContents.isLoading()) fire();
     return;
   }
   fire();
+}
+
+function flushPendingConfigResetNotice(): void {
+  if (!pendingConfigResetNotice) return;
+  const main = getMainWindow();
+  if (!main) return;
+  sendToMainWindowWhenReady(main, () => broadcastConfigResetNotice());
 }
 
 async function openSettings(detail?: OpenSettingsPayload): Promise<void> {
@@ -390,17 +403,16 @@ void acquireDesktopInstanceLock().then((gotLock) => {
     }
     resumeLocalRuntimeWatchdog();
 
-    createWindow({ startHidden: shouldStartHidden() });
-    if (pendingConfigResetNotice) {
-      const main = getMainWindow();
-      if (main && !main.isDestroyed()) {
-        const send = () => broadcastConfigResetNotice();
-        if (main.webContents.isLoading()) {
-          main.webContents.once('did-finish-load', send);
-        } else {
-          setTimeout(send, 80);
-        }
+    // Login autostart (openAsHidden): stay tray-only. Creating a window just
+    // to destroy it on ready-to-show still pays for a full dashboard load and
+    // drops IPC (config-reset / deep-link) aimed at that doomed window.
+    if (shouldStartHidden()) {
+      if (process.platform === 'darwin') {
+        app.dock.hide();
       }
+    } else {
+      createWindow();
+      flushPendingConfigResetNotice();
     }
     await syncDesktopPet();
     createTrayPopover({

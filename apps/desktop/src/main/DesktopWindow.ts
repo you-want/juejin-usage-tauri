@@ -59,7 +59,7 @@ export function resolveAppIconPath(): string {
  *  3. 应用菜单 `null`，单窗 `autoHideMenuBar: true` — 不占用渲染区域。
  *  4. 注册 `window:minimize / toggle-maximize / close` IPC 监听；
  *     转发 maximize / unmaximize 事件到渲染层，更新图标状态。
- *  5. 点关闭按钮隐藏窗口（托盘保活），真正退出由托盘菜单触发。
+ *  5. 点关闭按钮销毁窗口（托盘保活），真正退出由托盘菜单触发。
  *
  * `main/index.ts` 仅负责 app 生命周期。
  */
@@ -174,14 +174,20 @@ export class DesktopWindow {
 
   /** dev 模式由 electron-vite 注入 URL；生产模式加载本地静态文件 */
   private async loadRenderer(): Promise<void> {
-    const devUrl = process.env['ELECTRON_RENDERER_URL'];
-    if (!app.isPackaged && devUrl) {
-      await this.browserWindow.loadURL(devUrl);
-      return;
+    try {
+      const devUrl = process.env['ELECTRON_RENDERER_URL'];
+      if (!app.isPackaged && devUrl) {
+        await this.browserWindow.loadURL(devUrl);
+        return;
+      }
+      await this.browserWindow.loadFile(
+        path.join(__dirname, '../renderer/index.html'),
+      );
+    } catch (err) {
+      // Close-to-tray destroy() aborts an in-flight load; same as the pet window.
+      if (this.browserWindow.isDestroyed()) return;
+      throw err;
     }
-    await this.browserWindow.loadFile(
-      path.join(__dirname, '../renderer/index.html'),
-    );
   }
 
   get window(): BrowserWindow {
