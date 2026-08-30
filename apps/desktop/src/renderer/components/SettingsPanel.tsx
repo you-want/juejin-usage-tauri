@@ -703,6 +703,7 @@ function AppSettingsPanel() {
   const [openAtLogin, setOpenAtLogin] = useState(true);
   const [autostartLoading, setAutostartLoading] = useState(true);
   const [autostartError, setAutostartError] = useState<string | null>(null);
+  const [launchHidden, setLaunchHidden] = useState(true);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -739,6 +740,12 @@ function AppSettingsPanel() {
           setAutostartError(null);
         }
       })
+      .then(() => {
+        if (cancelled) return;
+        return window.tud.getLaunchHidden().then((value) => {
+          if (!cancelled) setLaunchHidden(value);
+        });
+      })
       .catch((e) => {
         if (!cancelled) {
           setAutostartError(
@@ -768,6 +775,19 @@ function AppSettingsPanel() {
     }
   };
 
+  const onLaunchHiddenChange = async (next: boolean) => {
+    const prev = launchHidden;
+    setLaunchHidden(next);
+    try {
+      await window.tud.setLaunchHidden(next);
+    } catch (e) {
+      setLaunchHidden(prev);
+      setAutostartError(
+        e instanceof Error ? e.message : '更新静默启动设置失败',
+      );
+    }
+  };
+
   return (
     <div className="flex h-full flex-col gap-5 overflow-y-auto pr-1">
       {error && <StatusBanner tone="error" title={error} />}
@@ -776,10 +796,7 @@ function AppSettingsPanel() {
       )}
 
       {cliMode && (
-        <div>
-          <p className="mb-3 text-sm text-muted">
-            开机后在托盘后台启动，可从菜单栏图标打开主窗口。
-          </p>
+        <div className="flex flex-col gap-2">
           <Checkbox
             id="desktop-open-at-login"
             isDisabled={autostartLoading}
@@ -795,6 +812,30 @@ function AppSettingsPanel() {
               开机时自动启动
             </Checkbox.Content>
           </Checkbox>
+          {openAtLogin && (
+            <>
+              <Checkbox
+                id="desktop-launch-hidden"
+                isDisabled={autostartLoading}
+                isSelected={launchHidden}
+                onChange={(checked) => {
+                  void onLaunchHiddenChange(checked);
+                }}
+              >
+                <Checkbox.Content>
+                  <Checkbox.Control>
+                    <Checkbox.Indicator />
+                  </Checkbox.Control>
+                  静默启动
+                </Checkbox.Content>
+              </Checkbox>
+              {launchHidden && (
+                <p className="text-xs text-muted">
+                  开机后只出现托盘，不弹出主窗口
+                </p>
+              )}
+            </>
+          )}
         </div>
       )}
 

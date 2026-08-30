@@ -12,6 +12,8 @@ import { join } from 'node:path';
 
 const AUTOSTART_GET_CHANNEL = 'autostart:get';
 const AUTOSTART_SET_CHANNEL = 'autostart:set';
+const AUTOSTART_GET_HIDDEN_CHANNEL = 'autostart:get-hidden';
+const AUTOSTART_SET_HIDDEN_CHANNEL = 'autostart:set-hidden';
 
 export interface DesktopPetPosition {
   x: number;
@@ -35,12 +37,15 @@ export const DEFAULT_DESKTOP_PET_AUTO_MOVE_INTERVAL_MINUTES = 2;
 
 interface DesktopPrefs {
   openAtLogin: boolean;
+  /** 开机自启时是否静默启动（仅托盘，不显示主窗口）。默认开启。 */
+  launchHidden: boolean;
   desktopPet?: DesktopPetPref;
 }
 
 export interface AutostartPref {
   openAtLogin: boolean;
   isFirstRun: boolean;
+  launchHidden: boolean;
 }
 
 function prefsPath(): string {
@@ -60,6 +65,9 @@ async function readPrefsFile(): Promise<DesktopPrefs | null> {
       && Number.isFinite(desktopPet.position.y);
     return {
       openAtLogin: parsed.openAtLogin,
+      launchHidden: typeof parsed.launchHidden === 'boolean'
+        ? parsed.launchHidden
+        : true,
       desktopPet: desktopPet && typeof desktopPet.enabled === 'boolean'
         ? {
             enabled: desktopPet.enabled,
@@ -91,27 +99,66 @@ async function writePrefs(prefs: DesktopPrefs): Promise<void> {
   await writeFile(prefsPath(), `${JSON.stringify(prefs, null, 2)}\n`, 'utf8');
 }
 
-function setOsLoginItem(enabled: boolean): void {
+/** Frozen at init: was *this* process started as a silent login launch? */
+let silentThisLaunch = false;
+
+function setOsLoginItem(enabled: boolean, launchHidden: boolean): void {
   if (!app.isPackaged) return;
+  // Windows: openAsHidden is ignored; --hidden is the real signal.
+  // macOS 13+ SMAppService also ignores openAsHidden (wasOpenedAsHidden stays
+  // false). Pass --hidden on every platform and still set openAsHidden for
+  // older macOS login-item APIs.
   app.setLoginItemSettings({
     openAtLogin: enabled,
-    openAsHidden: true,
+    openAsHidden: launchHidden,
+    args: launchHidden ? ['--hidden'] : [],
   });
 }
 
 export async function loadAutostartPref(): Promise<AutostartPref> {
   const existing = await readPrefsFile();
   if (!existing) {
-    return { openAtLogin: true, isFirstRun: true };
+    return { openAtLogin: true, isFirstRun: true, launchHidden: true };
   }
-  return { openAtLogin: existing.openAtLogin, isFirstRun: false };
+  return {
+    openAtLogin: existing.openAtLogin,
+    isFirstRun: false,
+    launchHidden: existing.launchHidden,
+  };
 }
 
-export async function applyAutostart(enabled: boolean): Promise<boolean> {
+export async function applyAutostart(
+  enabled: boolean,
+  launchHidden?: boolean,
+): Promise<boolean> {
   const existing = await readPrefsFile();
-  await writePrefs({ openAtLogin: enabled, desktopPet: existing?.desktopPet });
-  setOsLoginItem(enabled);
+  const hidden = launchHidden ?? existing?.launchHidden ?? true;
+  await writePrefs({
+    openAtLogin: enabled,
+    launchHidden: hidden,
+    desktopPet: existing?.desktopPet,
+  });
+  setOsLoginItem(enabled, hidden);
   return enabled;
+}
+
+/** 读取「开机静默启动」偏好，默认开启。 */
+export async function loadLaunchHidden(): Promise<boolean> {
+  const existing = await readPrefsFile();
+  return existing?.launchHidden ?? true;
+}
+
+/** 切换「开机静默启动」偏好并同步到系统登录项。 */
+export async function setLaunchHidden(hidden: boolean): Promise<boolean> {
+  const existing = await readPrefsFile();
+  const openAtLogin = existing?.openAtLogin ?? true;
+  await writePrefs({
+    openAtLogin,
+    launchHidden: hidden,
+    desktopPet: existing?.desktopPet,
+  });
+  setOsLoginItem(openAtLogin, hidden);
+  return hidden;
 }
 
 export async function loadDesktopPetPref(): Promise<DesktopPetPref> {
@@ -130,6 +177,7 @@ export async function saveDesktopPetPref(pref: DesktopPetPref): Promise<DesktopP
   const existing = await readPrefsFile();
   await writePrefs({
     openAtLogin: existing?.openAtLogin ?? true,
+    launchHidden: existing?.launchHidden ?? true,
     desktopPet: pref,
   });
   return pref;
@@ -152,20 +200,30 @@ export async function initAutostartOnLaunch(): Promise<boolean> {
   const pref = await loadAutostartPref();
   if (pref.isFirstRun) {
     await applyAutostart(true);
+    silentThisLaunch = detectSilentThisLaunch(true);
     return true;
   }
-  setOsLoginItem(pref.openAtLogin);
+  setOsLoginItem(pref.openAtLogin, pref.launchHidden);
+  silentThisLaunch = detectSilentThisLaunch(pref.launchHidden);
   return pref.openAtLogin;
 }
 
-/** True when OS launched us via login item with openAsHidden. */
-export function shouldStartHidden(): boolean {
+function detectSilentThisLaunch(launchHidden: boolean): boolean {
   if (!app.isPackaged) return false;
+  if (process.argv.includes('--hidden')) return true;
   try {
-    return Boolean(app.getLoginItemSettings().wasOpenedAsHidden);
+    if (process.platform !== 'darwin') return false;
+    const settings = app.getLoginItemSettings();
+    if (settings.wasOpenedAsHidden) return true;
+    return Boolean(settings.wasOpenedAtLogin) && launchHidden;
   } catch {
     return false;
   }
+}
+
+/** True when *this* process was launched as a tray-only login item. */
+export function shouldStartHidden(): boolean {
+  return silentThisLaunch;
 }
 
 export function registerAutostartIpc(): void {
@@ -182,9 +240,22 @@ export function registerAutostartIpc(): void {
     }
     return applyAutostart(enabled);
   });
+
+  ipcMain.removeHandler(AUTOSTART_GET_HIDDEN_CHANNEL);
+  ipcMain.handle(AUTOSTART_GET_HIDDEN_CHANNEL, async () => loadLaunchHidden());
+
+  ipcMain.removeHandler(AUTOSTART_SET_HIDDEN_CHANNEL);
+  ipcMain.handle(AUTOSTART_SET_HIDDEN_CHANNEL, async (_event, hidden: unknown) => {
+    if (typeof hidden !== 'boolean') {
+      throw new Error('launchHidden must be a boolean');
+    }
+    return setLaunchHidden(hidden);
+  });
 }
 
 export function unregisterAutostartIpc(): void {
   ipcMain.removeHandler(AUTOSTART_GET_CHANNEL);
   ipcMain.removeHandler(AUTOSTART_SET_CHANNEL);
+  ipcMain.removeHandler(AUTOSTART_GET_HIDDEN_CHANNEL);
+  ipcMain.removeHandler(AUTOSTART_SET_HIDDEN_CHANNEL);
 }

@@ -27,6 +27,8 @@ const THEME_SET_CHANNEL = 'theme:set';
 const THEME_CHANGED_CHANNEL = 'theme:changed';
 const AUTOSTART_GET_CHANNEL = 'autostart:get';
 const AUTOSTART_SET_CHANNEL = 'autostart:set';
+const AUTOSTART_GET_HIDDEN_CHANNEL = 'autostart:get-hidden';
+const AUTOSTART_SET_HIDDEN_CHANNEL = 'autostart:set-hidden';
 const DESKTOP_PET_GET_CHANNEL = 'desktop-pet:get';
 const DESKTOP_PET_SET_ENABLED_CHANNEL = 'desktop-pet:set-enabled';
 const DESKTOP_PET_SET_MOUSE_IGNORE_CHANNEL = 'desktop-pet:set-ignore-mouse-events';
@@ -101,6 +103,12 @@ const tudApi = {
 
   setOpenAtLogin: (enabled: boolean): Promise<boolean> =>
     ipcRenderer.invoke(AUTOSTART_SET_CHANNEL, enabled),
+
+  getLaunchHidden: (): Promise<boolean> =>
+    ipcRenderer.invoke(AUTOSTART_GET_HIDDEN_CHANNEL),
+
+  setLaunchHidden: (hidden: boolean): Promise<boolean> =>
+    ipcRenderer.invoke(AUTOSTART_SET_HIDDEN_CHANNEL, hidden),
 
   getDesktopPet: (): Promise<{
     enabled: boolean;

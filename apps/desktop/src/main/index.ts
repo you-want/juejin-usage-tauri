@@ -445,6 +445,10 @@ void acquireDesktopInstanceLock().then((gotLock) => {
     }
 
     app.on('activate', () => {
+      // macOS emits activate at login launch as well as dock-click. A silent
+      // login start has no window yet; creating one here would undo tray-only
+      // startup. Dock is hidden in that mode — later opens go through the tray.
+      if (shouldStartHidden() && !getMainWindow()) return;
       showMainWindow();
     });
 
