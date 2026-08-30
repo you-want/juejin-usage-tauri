@@ -113,7 +113,9 @@ function assertSystemdUser(): void {
 }
 
 export async function isLinuxAutostartRegistered(): Promise<boolean> {
-  return existsSync(linuxUnitPath());
+  const unitPath = linuxUnitPath();
+  if (!existsSync(unitPath)) return false;
+  return runSystemctl(['is-enabled', '--quiet', `${LINUX_UNIT_NAME}.service`]).ok;
 }
 
 export async function registerLinuxAutostart(cliBinPath: string, dataDir: string): Promise<void> {
@@ -130,11 +132,13 @@ export async function registerLinuxAutostart(cliBinPath: string, dataDir: string
 
   const reloaded = runSystemctl(['daemon-reload']);
   if (!reloaded.ok) {
+    await unregisterLinuxAutostart();
     throw new Error(`注册 Linux 自启失败（daemon-reload）: ${reloaded.stderr || 'systemctl 返回非零'}`);
   }
 
   const enabled = runSystemctl(['enable', '--now', `${LINUX_UNIT_NAME}.service`]);
   if (!enabled.ok) {
+    await unregisterLinuxAutostart();
     throw new Error(`注册 Linux 自启失败: ${enabled.stderr || 'systemctl enable --now 返回非零'}`);
   }
 }
