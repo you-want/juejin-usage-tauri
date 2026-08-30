@@ -99,20 +99,18 @@ async function writePrefs(prefs: DesktopPrefs): Promise<void> {
   await writeFile(prefsPath(), `${JSON.stringify(prefs, null, 2)}\n`, 'utf8');
 }
 
+/** Frozen at init: was *this* process started as a silent login launch? */
+let silentThisLaunch = false;
+
 function setOsLoginItem(enabled: boolean, launchHidden: boolean): void {
   if (!app.isPackaged) return;
-  if (process.platform === 'darwin') {
-    // openAsHidden / wasOpenedAsHidden 仅 macOS 支持。
-    app.setLoginItemSettings({
-      openAtLogin: enabled,
-      openAsHidden: launchHidden,
-    });
-    return;
-  }
-  // Windows/Linux：openAsHidden 会被忽略，改为让登录项命令携带
-  // --hidden 参数，启动时经 shouldStartHidden() 检测 process.argv。
+  // Windows: openAsHidden is ignored; --hidden is the real signal.
+  // macOS 13+ SMAppService also ignores openAsHidden (wasOpenedAsHidden stays
+  // false). Pass --hidden on every platform and still set openAsHidden for
+  // older macOS login-item APIs.
   app.setLoginItemSettings({
     openAtLogin: enabled,
+    openAsHidden: launchHidden,
     args: launchHidden ? ['--hidden'] : [],
   });
 }
@@ -202,27 +200,30 @@ export async function initAutostartOnLaunch(): Promise<boolean> {
   const pref = await loadAutostartPref();
   if (pref.isFirstRun) {
     await applyAutostart(true);
+    silentThisLaunch = detectSilentThisLaunch(true);
     return true;
   }
   setOsLoginItem(pref.openAtLogin, pref.launchHidden);
+  silentThisLaunch = detectSilentThisLaunch(pref.launchHidden);
   return pref.openAtLogin;
 }
 
-/**
- * True when OS launched us via a silent login item (tray-only startup).
- * macOS reports it via wasOpenedAsHidden; Windows/Linux detect the --hidden
- * arg that setOsLoginItem registers on the login-item command line.
- */
-export function shouldStartHidden(): boolean {
+function detectSilentThisLaunch(launchHidden: boolean): boolean {
   if (!app.isPackaged) return false;
+  if (process.argv.includes('--hidden')) return true;
   try {
-    if (process.platform === 'darwin') {
-      return Boolean(app.getLoginItemSettings().wasOpenedAsHidden);
-    }
-    return process.argv.includes('--hidden');
+    if (process.platform !== 'darwin') return false;
+    const settings = app.getLoginItemSettings();
+    if (settings.wasOpenedAsHidden) return true;
+    return Boolean(settings.wasOpenedAtLogin) && launchHidden;
   } catch {
     return false;
   }
+}
+
+/** True when *this* process was launched as a tray-only login item. */
+export function shouldStartHidden(): boolean {
+  return silentThisLaunch;
 }
 
 export function registerAutostartIpc(): void {
