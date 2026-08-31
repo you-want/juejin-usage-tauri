@@ -71,14 +71,13 @@ async function startPricingOverlayRefresh(
 ): Promise<void> {
   pricingRefreshStop?.();
   pricingRefreshStop = null;
-  const { url, ttlMs } = resolvePricingRefreshConfig({
+  const { url } = resolvePricingRefreshConfig({
     url: config.pricing?.url,
     ttlMs: config.pricing?.ttlMs,
   });
   if (!url) return;
   const handle = startPricingRefresh({
     url,
-    ttlMs,
     dataDir: dir,
     firstFetchTimeoutMs: DEFAULT_PRICING_FIRST_FETCH_TIMEOUT_MS,
     onUpdate: () => {
@@ -101,7 +100,7 @@ async function startPricingOverlayRefresh(
     },
   });
   pricingRefreshStop = handle;
-  console.log(`定价覆盖层: ${url}（TTL ${ttlMs}ms）`);
+  console.log(`定价覆盖层: ${url}（启动时拉取一次）`);
   await handle.ready;
 }
 

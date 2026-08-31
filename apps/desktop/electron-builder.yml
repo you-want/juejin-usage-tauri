@@ -19,6 +19,8 @@ files:
   - package.json
   - resources/**/*
 asar: true
+asarUnpack:
+  - out/main/sync-worker*.js
 extraResources:
   - from: resources
     filter:

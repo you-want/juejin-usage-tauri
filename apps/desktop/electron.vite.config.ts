@@ -24,8 +24,9 @@ const sharedRenderPlugins = () => [
 /**
  * electron-vite 5 主配置。
  *
- * 三段式：
+ * 四段式：
  *  - main:     主进程入口 src/main/index.ts        → out/main/index.js
+ *  - sync-worker: `?modulePath` 打出的独立 chunk（utilityProcess）
  *  - preload:  预加载入口 src/preload/index.ts     → out/preload/index.js
  *  - renderer: 渲染层根 src/renderer               → out/renderer/index.html
  *
