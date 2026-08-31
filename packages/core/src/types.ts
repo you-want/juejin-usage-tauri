@@ -384,6 +384,7 @@ export interface TudConfig {
     ttlMs?: number | null;
   };
   serverPort?: number;
+  serverHost?: string;
   lastSyncAt?: string | null;
   lastUploadAt?: string | null;
 }

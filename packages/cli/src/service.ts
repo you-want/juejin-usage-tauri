@@ -6,6 +6,7 @@ import {
   getRunningOwner,
   loadConfig,
   runtimeKindLabel,
+  saveConfig,
   touchStatsSince,
 } from '@juejin-opensource/jusage-core';
 
@@ -16,6 +17,7 @@ import {
   stopPid,
   waitForServiceReady,
 } from './daemon.js';
+import { DEFAULT_HOST, formatListenUrl } from './args.js';
 import {
   isLinuxAutostartRegistered,
   registerLinuxAutostart,
@@ -73,7 +75,11 @@ async function unregisterAutostart(): Promise<void> {
   await unregisterLinuxAutostart();
 }
 
-export async function cmdServiceStart(cliBinPath: string, daysAgo?: number): Promise<void> {
+export async function cmdServiceStart(
+  cliBinPath: string,
+  daysAgo?: number,
+  listen?: { port?: number; host?: string },
+): Promise<void> {
   assertSupportedPlatform();
   const startedAt = Date.now();
   const waitTimer = setInterval(() => {
@@ -82,16 +88,25 @@ export async function cmdServiceStart(cliBinPath: string, daysAgo?: number): Pro
   }, 3_000);
 
   try {
-    await cmdServiceStartBody(cliBinPath, daysAgo);
+    await cmdServiceStartBody(cliBinPath, daysAgo, listen);
   } finally {
     clearInterval(waitTimer);
   }
 }
 
-async function cmdServiceStartBody(cliBinPath: string, daysAgo?: number): Promise<void> {
+async function cmdServiceStartBody(
+  cliBinPath: string,
+  daysAgo?: number,
+  listen?: { port?: number; host?: string },
+): Promise<void> {
   const { dir, config } = await loadConfig();
   // Seed statsSince before launchd starts `jusage start` (do not bake --days into plist).
   await touchStatsSince(dir, config, daysAgo != null ? { daysAgo } : undefined);
+  if (listen?.port != null) config.serverPort = listen.port;
+  if (listen?.host != null) config.serverHost = listen.host;
+  if (listen?.port != null || listen?.host != null) {
+    await saveConfig(dir, config);
+  }
   const existing = await getRunningOwner(dir);
 
   if (existing != null) {
@@ -110,13 +125,14 @@ async function cmdServiceStartBody(cliBinPath: string, daysAgo?: number): Promis
       console.log('  提示: 当前 runtime owner 是桌面端，同步/上报由桌面负责');
       console.log('  如需浏览器面板，可另开终端执行 jusage start（观察模式，只读）');
     }
-    console.log(`  面板: http://127.0.0.1:${config.serverPort || DEFAULT_PORT}`);
+    console.log(`  面板: ${formatListenUrl(config.serverHost || DEFAULT_HOST, config.serverPort || DEFAULT_PORT)}`);
     return;
   }
 
   await registerAutostart(cliBinPath, dir);
   const port = config.serverPort || DEFAULT_PORT;
-  const ready = await waitForServiceReady(dir, port);
+  const host = config.serverHost || DEFAULT_HOST;
+  const ready = await waitForServiceReady(dir, port, host);
   if (ready.pid == null && !ready.health) {
     const logPath = daemonLogPath(dir);
     const tail = await readDaemonLogTail(dir);
@@ -128,12 +144,13 @@ async function cmdServiceStartBody(cliBinPath: string, daysAgo?: number): Promis
 
   const { config: refreshed } = await loadConfig(dir);
   const panelPort = refreshed.serverPort || DEFAULT_PORT;
+  const panelHost = refreshed.serverHost || DEFAULT_HOST;
   if (ready.pid != null) {
     console.log(`✓ 服务已在后台启动 (pid ${ready.pid})`);
   } else {
     console.log('✓ 服务已在后台启动（面板 /health 已就绪）');
   }
-  console.log(`  面板: http://127.0.0.1:${panelPort}`);
+  console.log(`  面板: ${formatListenUrl(panelHost, panelPort)}`);
   console.log(`  数据: ${dir}`);
   console.log(`  开机自启: 已注册`);
   console.log(`  日志: ${dir}/logs/daemon.log`);
@@ -170,6 +187,7 @@ export async function cmdServiceStatus(): Promise<void> {
   const owner = await getRunningOwner(dir);
   const registered = await isAutostartRegistered();
   const port = config.serverPort || DEFAULT_PORT;
+  const host = config.serverHost || DEFAULT_HOST;
 
   if (owner != null) {
     console.log(
@@ -179,7 +197,7 @@ export async function cmdServiceStatus(): Promise<void> {
     console.log('服务: 未运行');
   }
   console.log(`开机自启: ${registered ? '已注册' : '未注册'}`);
-  console.log(`面板: http://127.0.0.1:${port}`);
+  console.log(`面板: ${formatListenUrl(host, port)}`);
   console.log(`数据: ${dir || DEFAULT_DATA_DIR}`);
   console.log(`云端同步: ${config.juejin.enabled ? '已开启' : '未开启'} → ${config.juejin.apiUrl}`);
   console.log(`上次同步: ${config.lastSyncAt ?? '从未'}`);

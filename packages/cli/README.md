@@ -55,6 +55,7 @@ jusage start                  # 或直接 jusage
 ```bash
 jusage service start
 jusage start --port 8452
+jusage start --host 0.0.0.0          # 局域网可访问；默认 127.0.0.1
 jusage sync --source=claude          # claude | codex | cursor | all
 jusage upload --force                # 忽略云端同步开关，强制上报
 jusage upload --reconcile            # 全量对账后上报
