@@ -230,9 +230,16 @@ export function DesktopPetView() {
   const width = layout.spriteWidth;
   const height = layout.spriteHeight;
   return (
-    <div className="desktop-pet-root" onMouseMove={(event) => {
-      if (!dragState.current && event.target === event.currentTarget) setMouseIgnored(true);
-    }}>
+    <div
+      className={
+        window.tud?.platform === 'win32'
+          ? 'desktop-pet-root desktop-pet-root--win'
+          : 'desktop-pet-root'
+      }
+      onMouseMove={(event) => {
+        if (!dragState.current && event.target === event.currentTarget) setMouseIgnored(true);
+      }}
+    >
       <img alt="" aria-hidden="true" className="hidden" src={spritesheetUrl ?? undefined} onLoad={(event) => loadAlphaMap(event.currentTarget)} />
       <Popover isOpen={isTokenTooltipOpen} onOpenChange={setIsTokenTooltipOpen}>
         <Popover.Trigger

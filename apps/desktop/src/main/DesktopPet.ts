@@ -338,6 +338,22 @@ function stopDragTicker(): void {
   dragTicker = null;
 }
 
+/**
+ * Windows draws the native window title as a hover tooltip (and, on Electron
+ * 35.5+, a phantom caption) on transparent frameless windows. An empty title
+ * is worse: Chromium synthesizes it from the file URL (`explicitSet: false`)
+ * so `setTitle('')` / `document.title = ''` becomes "index.html".
+ * Zero-width space keeps the OS caption invisible.
+ */
+const PET_WINDOW_TITLE = '\u200B';
+
+function suppressPetWindowTitle(window: BrowserWindow): void {
+  window.on('page-title-updated', (event) => {
+    event.preventDefault();
+  });
+  window.setTitle(PET_WINDOW_TITLE);
+}
+
 async function loadPetRenderer(window: BrowserWindow): Promise<void> {
   try {
     const devUrl = process.env['ELECTRON_RENDERER_URL'];
@@ -345,11 +361,11 @@ async function loadPetRenderer(window: BrowserWindow): Promise<void> {
       const url = new URL(devUrl);
       url.searchParams.set('view', 'desktop-pet');
       await window.loadURL(url.toString());
-      return;
+    } else {
+      await window.loadFile(path.join(__dirname, '../renderer/index.html'), {
+        search: '?view=desktop-pet',
+      });
     }
-    await window.loadFile(path.join(__dirname, '../renderer/index.html'), {
-      search: '?view=desktop-pet',
-    });
   } catch (err) {
     // Window destroyed mid-load (pet disabled / toggled away) — swallow.
     if (window.isDestroyed()) return;
@@ -372,6 +388,9 @@ async function ensurePetWindow(): Promise<BrowserWindow> {
     show: false,
     frame: false,
     transparent: true,
+    backgroundColor: '#00000000',
+    title: PET_WINDOW_TITLE,
+    titleBarStyle: 'hidden',
     resizable: false,
     movable: true,
     minimizable: false,
@@ -380,6 +399,9 @@ async function ensurePetWindow(): Promise<BrowserWindow> {
     skipTaskbar: true,
     alwaysOnTop: true,
     hasShadow: false,
+    ...(process.platform === 'win32'
+      ? { roundedCorners: false, thickFrame: false }
+      : {}),
     webPreferences: {
       preload: defaultPreloadPath(),
       sandbox: true,
@@ -388,8 +410,19 @@ async function ensurePetWindow(): Promise<BrowserWindow> {
     },
   });
   const window = petWindow;
+  suppressPetWindowTitle(window);
   window.setAlwaysOnTop(true, 'floating');
   window.on('move', onPetMoved);
+  if (process.platform === 'win32') {
+    // Electron ≥35.5 paints a phantom caption on transparent Win windows
+    // when they blur; restamping maximizable forces DWM to drop it.
+    // https://github.com/electron/electron/issues/46882
+    const restampCaption = () => {
+      if (!window.isDestroyed()) window.setMaximizable(false);
+    };
+    window.on('blur', restampCaption);
+    window.on('focus', restampCaption);
+  }
   window.on('closed', () => {
     stopAutoMove();
     // Only clear the ref if it still points at this window; a newer window

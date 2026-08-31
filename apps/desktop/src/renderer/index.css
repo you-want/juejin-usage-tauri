@@ -208,6 +208,12 @@
     }
   }
 
+  /* Electron 35 + Windows DWM composites filter:blur and near-black
+     color-mix as an opaque rectangle under the sprite. Skip the glow. */
+  .desktop-pet-root--win .desktop-pet-popover-trigger::before {
+    display: none;
+  }
+
   .desktop-pet-sprite:active {
     cursor: grabbing;
   }
