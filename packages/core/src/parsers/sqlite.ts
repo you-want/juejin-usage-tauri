@@ -67,20 +67,56 @@ function queryViaCli(
   return JSON.parse(trimmed) as Record<string, unknown>[];
 }
 
+function dbFileStamp(dbPath: string): string {
+  try {
+    const st = statSync(dbPath);
+    let wal = '0';
+    try {
+      const w = statSync(`${dbPath}-wal`);
+      wal = `${w.mtimeMs}:${w.size}`;
+    } catch {
+      // no WAL
+    }
+    return `${st.mtimeMs}:${st.size}:${wal}`;
+  } catch {
+    return 'missing';
+  }
+}
+
+const sqliteQueryCache = new Map<string, { stamp: string; rows: Record<string, unknown>[] }>();
+
+/** Test seam. */
+export function resetSqliteQueryCache(): void {
+  sqliteQueryCache.clear();
+}
+
 export function queryDbJson(
   dbPath: string,
   sql: string,
   opts?: { timeout?: number; maxBuffer?: number },
 ): Record<string, unknown>[] {
+  const stamp = dbFileStamp(dbPath);
+  const key = `${dbPath}\n${sql}`;
+  const hit = sqliteQueryCache.get(key);
+  if (hit && hit.stamp === stamp && stamp !== 'missing') {
+    return hit.rows;
+  }
+
   const db = openNodeSqlite(dbPath);
+  let rows: Record<string, unknown>[];
   if (db) {
     try {
-      return db.prepare(sql).all();
+      rows = db.prepare(sql).all();
     } finally {
       db.close();
     }
+  } else {
+    rows = queryViaCli(dbPath, sql, opts);
   }
-  return queryViaCli(dbPath, sql, opts);
+  if (stamp !== 'missing') {
+    sqliteQueryCache.set(key, { stamp, rows });
+  }
+  return rows;
 }
 
 export function isSqliteLockError(err: unknown): boolean {

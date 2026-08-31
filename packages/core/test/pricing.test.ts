@@ -377,6 +377,34 @@ test('failed refresh does not clear existing overlay', async () => {
   stop();
 });
 
+test('identical overlay fetch does not fire onUpdate', async () => {
+  applyRemotePricingOverlay({
+    exact: { 'stable-model': { input: 1, output: 2 } },
+  });
+  let updates = 0;
+  const stop = startPricingRefresh({
+    url: 'https://cdn.example/pricing.json',
+    firstFetchTimeoutMs: 1_000,
+    onUpdate: () => {
+      updates += 1;
+    },
+    fetchImpl: (async () =>
+      new Response(
+        JSON.stringify({
+          exact: { 'stable-model': { input: 1, output: 2 } },
+        }),
+        {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        },
+      )) as typeof fetch,
+  });
+
+  assert.equal(await stop.ready, true);
+  assert.equal(updates, 0);
+  stop();
+});
+
 test('successful refresh replaces overlay', async () => {
   const body = JSON.stringify({
     exact: { 'from-remote': { input: 5, output: 6 } },

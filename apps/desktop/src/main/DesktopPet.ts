@@ -338,18 +338,29 @@ function stopDragTicker(): void {
   dragTicker = null;
 }
 
+/**
+ * Keep the native window title from becoming "Juejin Usage" / "pet.html".
+ * Chromium synthesizes a title from the file URL when the document title is
+ * empty (`explicitSet: false`); preventDefault stops that from hitting HWND.
+ */
+const PET_WINDOW_TITLE = '\u200B';
+
+function suppressPetWindowTitle(window: BrowserWindow): void {
+  window.on('page-title-updated', (event) => {
+    event.preventDefault();
+  });
+  window.setTitle(PET_WINDOW_TITLE);
+}
+
 async function loadPetRenderer(window: BrowserWindow): Promise<void> {
   try {
     const devUrl = process.env['ELECTRON_RENDERER_URL'];
     if (!app.isPackaged && devUrl) {
-      const url = new URL(devUrl);
-      url.searchParams.set('view', 'desktop-pet');
+      const url = new URL('pet.html', devUrl.endsWith('/') ? devUrl : `${devUrl}/`);
       await window.loadURL(url.toString());
       return;
     }
-    await window.loadFile(path.join(__dirname, '../renderer/index.html'), {
-      search: '?view=desktop-pet',
-    });
+    await window.loadFile(path.join(__dirname, '../renderer/pet.html'));
   } catch (err) {
     // Window destroyed mid-load (pet disabled / toggled away) — swallow.
     if (window.isDestroyed()) return;
@@ -372,6 +383,9 @@ async function ensurePetWindow(): Promise<BrowserWindow> {
     show: false,
     frame: false,
     transparent: true,
+    backgroundColor: '#00000000',
+    title: PET_WINDOW_TITLE,
+    titleBarStyle: 'hidden',
     resizable: false,
     movable: true,
     minimizable: false,
@@ -380,6 +394,9 @@ async function ensurePetWindow(): Promise<BrowserWindow> {
     skipTaskbar: true,
     alwaysOnTop: true,
     hasShadow: false,
+    ...(process.platform === 'win32'
+      ? { roundedCorners: false, thickFrame: false }
+      : {}),
     webPreferences: {
       preload: defaultPreloadPath(),
       sandbox: true,
@@ -388,6 +405,7 @@ async function ensurePetWindow(): Promise<BrowserWindow> {
     },
   });
   const window = petWindow;
+  suppressPetWindowTitle(window);
   window.setAlwaysOnTop(true, 'floating');
   window.on('move', onPetMoved);
   window.on('closed', () => {
