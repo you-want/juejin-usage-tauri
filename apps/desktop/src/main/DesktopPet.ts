@@ -385,7 +385,6 @@ async function ensurePetWindow(): Promise<BrowserWindow> {
     transparent: true,
     backgroundColor: '#00000000',
     title: PET_WINDOW_TITLE,
-    titleBarStyle: 'hidden',
     resizable: false,
     movable: true,
     minimizable: false,
@@ -405,6 +404,9 @@ async function ensurePetWindow(): Promise<BrowserWindow> {
     },
   });
   const window = petWindow;
+  // `titleBarStyle` enables macOS traffic lights even on a frameless window.
+  // A floating pet must never expose native window controls over its sprite.
+  if (process.platform === 'darwin') window.setWindowButtonVisibility(false);
   suppressPetWindowTitle(window);
   window.setAlwaysOnTop(true, 'floating');
   window.on('move', onPetMoved);
