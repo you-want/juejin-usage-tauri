@@ -27,17 +27,43 @@ function writeSession(
   workspace: string,
   sessionId: string,
   cwd: string,
-  messages: Array<{ model: string; input: number; output: number; cacheRead: number; id: string; time: number }>,
-  opts: { multiFrame?: boolean } = {},
+  messages: Array<{
+    model: string;
+    input: number;
+    output: number;
+    cacheRead: number;
+    cacheWrite?: number;
+    id: string;
+    time: number;
+  }>,
+  opts: {
+    multiFrame?: boolean;
+    plain?: boolean;
+    requestModel?: string;
+    omitMessageModel?: boolean;
+  } = {},
 ): string {
   const dir = join(home, 'sessions', workspace, sessionId);
   mkdirSync(dir, { recursive: true });
   const lines: unknown[] = [
     { type: 'session', version: 0, id: sessionId, createdAt: 1787830821841, cwd },
   ];
+  if (opts.requestModel) {
+    lines.push({
+      type: 'request/header',
+      seq: 1,
+      time: messages[0]?.time ?? 1787830821841,
+      data: { header: { config: { model: opts.requestModel } } },
+    });
+  }
   for (const m of messages) {
     // 每个 assistant 消息同时产出 chunk（流式）与 message（最终），chunk 应被忽略。
-    const chunkUsage = { inputTokens: m.input, outputTokens: m.output, cacheReadTokens: m.cacheRead };
+    const chunkUsage = {
+      inputTokens: m.input,
+      outputTokens: m.output,
+      cacheReadTokens: m.cacheRead,
+      cacheWriteTokens: m.cacheWrite ?? 0,
+    };
     lines.push({
       type: 'assistant/chunk',
       seq: 1,
@@ -55,7 +81,11 @@ function writeSession(
           role: 'assistant',
           id: m.id,
           content: [{ type: 'text', text: 'hi' }],
-          source: { kind: 'model', provider: 'api', model: m.model },
+          source: {
+            kind: 'model',
+            provider: 'api',
+            ...(opts.omitMessageModel ? {} : { model: m.model }),
+          },
         },
         usage: chunkUsage,
       },
@@ -68,8 +98,13 @@ function writeSession(
     time: 1787830861600,
     data: { usage: { inputTokens: 1, outputTokens: 1, cacheReadTokens: 1 } },
   });
-  const file = join(dir, 'session.jsonl.zstd');
-  writeFileSync(file, opts.multiFrame ? zstdJsonlMultiFrame(lines) : zstdJsonl(lines));
+  const file = join(dir, opts.plain ? 'session.jsonl' : 'session.jsonl.zstd');
+  const contents = opts.plain
+    ? Buffer.from(lines.map((line) => JSON.stringify(line)).join('\n') + '\n')
+    : opts.multiFrame
+      ? zstdJsonlMultiFrame(lines)
+      : zstdJsonl(lines);
+  writeFileSync(file, contents);
   return file;
 }
 
@@ -94,10 +129,11 @@ test('listDshSessionFiles discovers session files', () => {
   const home = mkdtempSync(join(tmpdir(), 'tud-dsh-list-'));
   try {
     writeSession(home, 'ws-a', 's1', '/tmp/proj/a', []);
-    writeSession(home, 'ws-b', 's2', '/tmp/proj/b', []);
+    writeSession(home, 'ws-b', 's2', '/tmp/proj/b', [], { plain: true });
     const files = listDshSessionFiles(home);
     assert.equal(files.length, 2);
-    assert.ok(files.every((f) => f.endsWith('session.jsonl.zstd')));
+    assert.ok(files.some((f) => f.endsWith('session.jsonl.zstd')));
+    assert.ok(files.some((f) => f.endsWith('session.jsonl')));
   } finally {
     // cleanup
   }
@@ -109,7 +145,15 @@ test('parseDshIncremental parses usage, model, project from zstd sessions', asyn
   process.env.DSH_HOME = home;
   try {
     writeSession(home, 'ws-a', 's1', '/tmp/proj/foo', [
-      { model: 'deepseek-v4-pro', input: 100, output: 50, cacheRead: 200, id: 'm1', time: 1787830861590 },
+      {
+        model: 'deepseek-v4-pro',
+        input: 100,
+        output: 50,
+        cacheRead: 200,
+        cacheWrite: 25,
+        id: 'm1',
+        time: 1787830861590,
+      },
     ]);
     const { result } = await parseDshIncremental(emptyCursors(), SINCE);
 
@@ -123,10 +167,35 @@ test('parseDshIncremental parses usage, model, project from zstd sessions', asyn
     assert.equal(b.input_tokens, 100);
     assert.equal(b.output_tokens, 50);
     assert.equal(b.cached_input_tokens, 200);
-    assert.equal(b.cache_creation_input_tokens, 0);
+    assert.equal(b.cache_creation_input_tokens, 25);
     assert.equal(b.reasoning_output_tokens, 0);
-    assert.equal(b.total_tokens, 350);
+    assert.equal(b.total_tokens, 375);
     assert.equal(b.conversation_count, 1);
+  } finally {
+    if (prev === undefined) delete process.env.DSH_HOME;
+    else process.env.DSH_HOME = prev;
+  }
+});
+
+test('parseDshIncremental reads plain JSONL and falls back to request/header model', async () => {
+  const home = mkdtempSync(join(tmpdir(), 'tud-dsh-plain-'));
+  const prev = process.env.DSH_HOME;
+  process.env.DSH_HOME = home;
+  try {
+    writeSession(home, 'ws-a', 's1', '/tmp/proj/plain', [
+      { model: '', input: 10, output: 5, cacheRead: 2, id: 'm1', time: 1787830861590 },
+    ], {
+      plain: true,
+      requestModel: 'deepseek-v4-pro',
+      omitMessageModel: true,
+    });
+
+    const { result } = await parseDshIncremental(emptyCursors(), SINCE);
+    assert.equal(result.eventsParsed, 1);
+    assert.equal(result.buckets.length, 1);
+    assert.equal(result.buckets[0]!.model, 'deepseek-v4-pro');
+    assert.equal(result.buckets[0]!.project, 'plain');
+    assert.equal(result.buckets[0]!.total_tokens, 17);
   } finally {
     if (prev === undefined) delete process.env.DSH_HOME;
     else process.env.DSH_HOME = prev;
@@ -151,6 +220,41 @@ test('parseDshIncremental is idempotent for unchanged files', async () => {
     const second = await parseDshIncremental(cursors, SINCE);
     assert.equal(second.result.eventsParsed, 0);
     assert.equal(second.result.filesProcessed, 1);
+  } finally {
+    if (prev === undefined) delete process.env.DSH_HOME;
+    else process.env.DSH_HOME = prev;
+  }
+});
+
+test('parseDshIncremental only emits newly appended messages after a file changes', async () => {
+  const home = mkdtempSync(join(tmpdir(), 'tud-dsh-append-'));
+  const prev = process.env.DSH_HOME;
+  process.env.DSH_HOME = home;
+  try {
+    let cursors: CursorsFile = {};
+    writeSession(home, 'ws-a', 's1', '/tmp/proj/foo', [
+      { model: 'deepseek-v4-pro', input: 100, output: 50, cacheRead: 200, id: 'm1', time: 1787830861590 },
+    ]);
+
+    const first = await parseDshIncremental(cursors, SINCE);
+    assert.equal(first.result.eventsParsed, 1);
+    cursors = first.cursors;
+
+    // DSH 会重写/追加同一个多帧文件；重扫时旧消息不能再次累计。
+    writeSession(home, 'ws-a', 's1', '/tmp/proj/foo', [
+      { model: 'deepseek-v4-pro', input: 100, output: 50, cacheRead: 200, id: 'm1', time: 1787830861590 },
+      { model: 'deepseek-v4-pro', input: 7, output: 3, cacheRead: 11, id: 'm2', time: 1787830862590 },
+    ]);
+
+    const second = await parseDshIncremental(cursors, SINCE);
+    assert.equal(second.result.eventsParsed, 1);
+    assert.equal(second.result.buckets.length, 1);
+    const bucket = second.result.buckets[0]!;
+    assert.equal(bucket.input_tokens, 7);
+    assert.equal(bucket.output_tokens, 3);
+    assert.equal(bucket.cached_input_tokens, 11);
+    assert.equal(bucket.total_tokens, 21);
+    assert.equal(bucket.conversation_count, 1);
   } finally {
     if (prev === undefined) delete process.env.DSH_HOME;
     else process.env.DSH_HOME = prev;

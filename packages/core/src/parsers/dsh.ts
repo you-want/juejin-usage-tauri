@@ -1,10 +1,10 @@
 /**
  * DeepSeek Harness (dsh) passive reader — source dsh, collector dsh.
  *
- * 数据源：~/.dsh/sessions/<workspace>/<sessionId>/session.jsonl.zstd。
- * 每个文件是 zstd 压缩的 JSONL，逐行一个事件；token 用量只出现在
- * assistant/message 事件的 data.usage（每个 assistant 消息的最终值），
- * 模型/provider 在 data.message.source，项目根目录在 session 首行的 cwd。
+ * 数据源：~/.dsh/sessions/<workspace>/<sessionId>/session.jsonl(.zstd)。
+ * 每个文件是 JSONL（默认 zstd 压缩），逐行一个事件；token 用量只出现在
+ * assistant/message 事件的 data.usage（每个 assistant 消息的最终值）。模型优先
+ * 取 data.message.source，回退到 request/header；项目根目录在 session 首行的 cwd。
  *
  * 增量策略：zstd 无法按字节偏移续读，因此按「会话文件 inode+size+mtime 变了
  * 才重读」短路；重读时用 sessionId|messageId 去重，避免把已统计的消息重复计数。
@@ -22,6 +22,7 @@ import {
   bucketsFromState,
   type BucketAccumulator,
 } from './shared.js';
+import { diffGeminiTotals, sameGeminiTotals } from './gemini.js';
 
 export const DSH_COLLECTOR = 'dsh';
 
@@ -77,8 +78,10 @@ export function listDshSessionFiles(home = dshHome()): string[] {
       const entries = readdirSync(ws, { withFileTypes: true });
       for (const entry of entries) {
         if (!entry.isDirectory()) continue;
-        const sessionFile = join(ws, entry.name, 'session.jsonl.zstd');
-        if (existsSync(sessionFile)) results.push(sessionFile);
+        const compressedFile = join(ws, entry.name, 'session.jsonl.zstd');
+        const plainFile = join(ws, entry.name, 'session.jsonl');
+        if (existsSync(compressedFile)) results.push(compressedFile);
+        else if (existsSync(plainFile)) results.push(plainFile);
       }
     } catch {
       // 跳过不可读的 workspace 目录
@@ -87,17 +90,10 @@ export function listDshSessionFiles(home = dshHome()): string[] {
   return results;
 }
 
-/** 解析 zstd JSONL 首行的 cwd（仅当 session 尚无游标时调用）。 */
-function readSessionCwd(filePath: string): string | null {
-  let compressed: Buffer;
-  try {
-    compressed = readFileSync(filePath);
-  } catch {
-    return null;
-  }
-  const text = decodeDsh(compressed);
-  if (!text) return null;
-  const firstLine = text.slice(0, text.indexOf('\n'));
+/** 解析 JSONL 首行的 cwd。 */
+function readSessionCwd(text: string): string | null {
+  const newline = text.indexOf('\n');
+  const firstLine = newline >= 0 ? text.slice(0, newline) : text;
   if (!firstLine.includes('"cwd"')) return null;
   try {
     const obj = JSON.parse(firstLine) as { cwd?: unknown };
@@ -227,22 +223,16 @@ export async function parseDshIncremental(
       continue;
     }
 
-    // 文件有变化：全量解压并逐行解析，靠 message 去重只计增量。
-    let project = prev?.project;
-    if (!project) {
-      const cwd = readSessionCwd(filePath);
-      project = cwd ? resolveProjectName(cwd) : 'unknown';
-    }
-
-    let compressed: Buffer;
+    // 文件有变化：全量读取并逐行解析，靠 message 去重只计增量。
+    let contents: Buffer;
     try {
-      compressed = readFileSync(filePath);
+      contents = readFileSync(filePath);
     } catch {
       continue;
     }
     let text: string | null;
     try {
-      text = decodeDsh(compressed);
+      text = filePath.endsWith('.zstd') ? decodeDsh(contents) : contents.toString('utf8');
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       if (/zstdDecompressSync unavailable/i.test(msg)) {
@@ -258,13 +248,29 @@ export async function parseDshIncremental(
       continue;
     }
 
+    let project = prev?.project;
+    if (!project) {
+      const cwd = readSessionCwd(text);
+      project = cwd ? resolveProjectName(cwd) : 'unknown';
+    }
+
+    let requestModel = 'unknown';
     for (const line of text.split('\n')) {
       if (!line.trim()) continue;
-      if (!line.includes('"usage"')) continue;
+      if (!line.includes('"usage"') && !line.includes('"request/header"')) continue;
       let obj: Record<string, unknown>;
       try {
         obj = JSON.parse(line) as Record<string, unknown>;
       } catch {
+        continue;
+      }
+      if (obj.type === 'request/header') {
+        const data = obj.data as Record<string, unknown> | undefined;
+        const header = data?.header as Record<string, unknown> | undefined;
+        const config = header?.config as Record<string, unknown> | undefined;
+        if (typeof config?.model === 'string' && config.model.trim()) {
+          requestModel = config.model.trim();
+        }
         continue;
       }
       if (obj.type !== 'assistant/message') continue;
@@ -276,19 +282,22 @@ export async function parseDshIncremental(
 
       const message = data.message as Record<string, unknown> | undefined;
       const source = (message?.source as Record<string, unknown> | undefined) ?? {};
-      const model = typeof source.model === 'string' && source.model.trim() ? source.model.trim() : 'unknown';
+      const model = typeof source.model === 'string' && source.model.trim()
+        ? source.model.trim()
+        : requestModel;
       const msgId = typeof message?.id === 'string' && message.id ? message.id : null;
 
       const input = toNonNeg(usage.inputTokens);
       const output = toNonNeg(usage.outputTokens);
       const cacheRead = toNonNeg(usage.cacheReadTokens);
+      const cacheWrite = toNonNeg(usage.cacheWriteTokens);
       const totals: DshMessageTotals = {
         input_tokens: input,
         output_tokens: output,
         cached_input_tokens: cacheRead,
-        cache_creation_input_tokens: 0,
+        cache_creation_input_tokens: cacheWrite,
         reasoning_output_tokens: 0,
-        total_tokens: input + output + cacheRead,
+        total_tokens: input + output + cacheRead + cacheWrite,
       };
       if (totals.total_tokens === 0) continue;
 
@@ -300,11 +309,15 @@ export async function parseDshIncremental(
 
       const key = `${filePath}|${msgId ?? line.slice(0, 64)}`;
       const prevTotals = dsh.messages[key]?.lastTotals;
-      dsh.messages[key] = { lastTotals: totals };
+      const tokenDelta = diffGeminiTotals(totals, prevTotals);
+      if (!sameGeminiTotals(totals, prevTotals)) {
+        dsh.messages[key] = { lastTotals: totals };
+      }
+      if (!tokenDelta) continue;
 
-      // DSH usage 每消息即最终值（非累计），直接按该条计入。
+      // 文件变化时会重扫历史消息；只计新消息或同一消息增长的 token 差值。
       const delta: TokenTotals = {
-        ...totals,
+        ...tokenDelta,
         conversation_count: prevTotals ? 0 : 1,
       };
       accumulateBucket(bucketState, 'dsh', model, project, hourStart, delta, DSH_COLLECTOR);
