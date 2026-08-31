@@ -102,6 +102,8 @@ jusage service start
 
 ## 🤝 贡献指南
 
+- 联系Captain:229199157
+
 源码按 Desktop / CLI / Web 三端贡献。分支规范与本地启动见 [Contributing Guide](./CONTRIBUTING.md)。
 
 - [Desktop](./CONTRIBUTING.md#desktop) — Electron 桌面端
