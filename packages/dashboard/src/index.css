@@ -44,6 +44,7 @@
   --source-goose: #f97316;
   --source-zed: #084ccf;
   --source-warp: #01a4ff;
+  --source-dsh: #4d6bfe;
   /* Blue heatmap scale (empty → peak). Empty uses a soft blue wash, not gray. */
   --heatmap-0: #f0f6ff;
   --heatmap-1: #bfdbfe;

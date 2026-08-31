@@ -64,6 +64,7 @@ const PROVIDER_ICON_MAP: Record<string, ProviderIconAsset> = {
   windsurf: { monochrome: true, src: windsurfIcon },
   workbuddy: { src: codeBuddyIcon },
   zcode: { monochrome: true, src: zaiIcon },
+  dsh: { monochrome: true, src: zaiIcon },
 };
 
 const PROVIDER_ALIASES: Record<string, string> = {
@@ -110,6 +111,7 @@ function normalizeProviderKey(provider: string): string {
     return 'roocode';
   }
   if (key.startsWith('zcode') || key === 'zai') return 'zcode';
+  if (key === 'dsh' || key.startsWith('deepseek-harness') || key.startsWith('dsh-')) return 'dsh';
   if (key === 'pi-coding-agent' || key.startsWith('pi-') || key === 'pi') return 'pi';
   if (key.startsWith('droid') || key.startsWith('factory')) return 'droid';
   if (key.startsWith('qoder')) return 'qoder';
