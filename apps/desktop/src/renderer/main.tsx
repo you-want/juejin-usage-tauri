@@ -16,7 +16,9 @@ if (typeof window.tud?.onDataSynced === 'function') {
 }
 
 const isTrayPopover = new URLSearchParams(window.location.search).get('view') === 'tray-popover';
-const isDesktopPet = new URLSearchParams(window.location.search).get('view') === 'desktop-pet';
+const isDesktopPet =
+  /(?:^|\/)pet\.html$/i.test(window.location.pathname)
+  || new URLSearchParams(window.location.search).get('view') === 'desktop-pet';
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

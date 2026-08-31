@@ -72,7 +72,10 @@ export default defineConfig({
     build: {
       outDir: resolve(__dirname, 'out/renderer'),
       rollupOptions: {
-        input: { index: resolve(__dirname, 'src/renderer/index.html') },
+        input: {
+          index: resolve(__dirname, 'src/renderer/index.html'),
+          pet: resolve(__dirname, 'src/renderer/pet.html'),
+        },
       },
     },
     resolve: {

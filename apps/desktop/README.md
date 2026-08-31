@@ -42,7 +42,7 @@ pnpm build:desktop:win
 
 ## 技术栈
 
-- electron 35.7.5（Node 22.14，主进程可用 `node:sqlite`）+ electron-vite ^5（Vite 6）
+- electron 35.4.0（Node 22.15，主进程可用 `node:sqlite`）+ electron-vite ^5（Vite 6）
 - React 19 + TanStack Router（与 jusage-dashboard 一致）
 - Tailwind CSS v4 + HeroUI v3
 - electron-builder（macOS + Windows）
