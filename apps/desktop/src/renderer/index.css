@@ -128,9 +128,6 @@
     animation: none;
   }
 
-  .desktop-pet-popover-trigger::before {
-    animation: none;
-  }
 }
 
 @layer base {
@@ -164,7 +161,9 @@
   }
 
   .desktop-pet-popover-trigger::before {
-    animation: desktop-pet-glow 2.8s ease-in-out infinite;
+    /* Static glow only. An infinite CSS animation (plus filter:blur) keeps a
+       transparent Electron window compositing at display refresh, which shows
+       up as a few percent GPU + renderer CPU even while the pet is idle. */
     background:
       radial-gradient(
         ellipse at 50% 62%,
@@ -199,13 +198,6 @@
     transform: scale(0.94);
     transform-origin: 50% 65%;
     z-index: 0;
-  }
-
-  @keyframes desktop-pet-glow {
-    50% {
-      opacity: 1;
-      transform: scale(1.04);
-    }
   }
 
   /* Electron 35 + Windows DWM composites filter:blur and near-black
