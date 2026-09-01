@@ -4,15 +4,11 @@
 
 需要 Node.js >= 20。克隆后先在仓库根执行 `pnpm install`。
 
-### `pnpm install` 卡在 electron postinstall
+## `pnpm install` 卡在 electron postinstall
 
-本仓库使用 **pnpm 11**。Electron 二进制默认从 GitHub Releases 拉取；国内网络常会超时，表现成一直停在：
+Electron 二进制默认从 GitHub Releases 拉取；国内网络可能会超时
 
-```text
-node_modules/.../electron: Running postinstall script...
-```
-
-`apps/desktop/.npmrc` 里的 `electron_mirror` **不会生效**：pnpm 11 的 `.npmrc` 只处理 registry / auth，依赖的 `postinstall` 也不再注入 `npm_config_electron_mirror`。请在安装前设置环境变量（末尾 `/` 不要省）：
+请在安装前设置环境变量：
 
 ```bash
 # Git Bash / macOS / Linux
@@ -26,12 +22,6 @@ pnpm install
 $env:ELECTRON_MIRROR="https://npmmirror.com/mirrors/electron/"
 $env:ELECTRON_BUILDER_BINARIES_MIRROR="https://npmmirror.com/mirrors/electron-builder-binaries/"
 pnpm install
-```
-
-可写入用户环境变量，新开终端后长期生效。只做 CLI / Web、不启动 Desktop 时可跳过下载：
-
-```bash
-ELECTRON_SKIP_BINARY_DOWNLOAD=1 pnpm install
 ```
 
 从 `main` 拉分支，PR 回 `main`。
@@ -107,15 +97,6 @@ pnpm dev:desktop
 # 构建依赖后启动 Electron
 pnpm start:desktop    
 ```
-
-`pnpm install` 若长时间卡在 `electron: Running postinstall script...`，多半是 GitHub 下载 Electron 二进制超时。pnpm 11 下 `apps/desktop/.npmrc` 的 `electron_mirror` 不会传给 postinstall，需先设环境变量再安装：
-
-```bash
-export ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/
-pnpm install
-```
-
-PowerShell 用 `$env:ELECTRON_MIRROR="https://npmmirror.com/mirrors/electron/"`。只做 CLI / Web 时可 `ELECTRON_SKIP_BINARY_DOWNLOAD=1 pnpm install` 跳过。
 
 ### CLI
 
