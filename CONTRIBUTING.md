@@ -4,6 +4,26 @@
 
 需要 Node.js >= 20。克隆后先在仓库根执行 `pnpm install`。
 
+如 `pnpm install` 卡在 electron postinstall
+
+Electron 二进制默认从 GitHub Releases 拉取；国内网络可能会超时
+
+请在安装前设置环境变量：
+
+```bash
+# Git Bash / macOS / Linux
+export ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/
+export ELECTRON_BUILDER_BINARIES_MIRROR=https://npmmirror.com/mirrors/electron-builder-binaries/
+pnpm install
+```
+
+```powershell
+# PowerShell
+$env:ELECTRON_MIRROR="https://npmmirror.com/mirrors/electron/"
+$env:ELECTRON_BUILDER_BINARIES_MIRROR="https://npmmirror.com/mirrors/electron-builder-binaries/"
+pnpm install
+```
+
 从 `main` 拉分支，PR 回 `main`。
 
 ## 提 Issue
