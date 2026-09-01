@@ -78,6 +78,15 @@ pnpm dev:desktop
 pnpm start:desktop    
 ```
 
+`pnpm install` 若长时间卡在 `electron: Running postinstall script...`，多半是 GitHub 下载 Electron 二进制超时。pnpm 11 下 `apps/desktop/.npmrc` 的 `electron_mirror` 不会传给 postinstall，需先设环境变量再安装：
+
+```bash
+export ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/
+pnpm install
+```
+
+PowerShell 用 `$env:ELECTRON_MIRROR="https://npmmirror.com/mirrors/electron/"`。只做 CLI / Web 时可 `ELECTRON_SKIP_BINARY_DOWNLOAD=1 pnpm install` 跳过。
+
 ### CLI
 
 路径：`packages/cli`（面板来自 `packages/dashboard`）
