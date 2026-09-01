@@ -2,6 +2,7 @@
 
 源码仓库：[juejin-cn/juejin-usage](https://github.com/juejin-cn/juejin-usage)。
 
+## 安装依赖的注意事项
 需要 Node.js >= 20。克隆后先在仓库根执行 `pnpm install`。
 
 如 `pnpm install` 卡在 electron postinstall
