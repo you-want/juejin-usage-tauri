@@ -11,6 +11,7 @@
 - 新增开机静默启动：开机自启时仅显示托盘、不弹主窗口。
 - 托盘驻留时隐藏即销毁主窗口与宠物窗口，按需重建，降低内存占用。
 - 统一 Desktop 与 Web 的设置弹窗样式。
+- 手动同步后弹出成功或失败 Toast。
 - Updated dependencies
   - @juejin-opensource/jusage-core@0.1.7
 

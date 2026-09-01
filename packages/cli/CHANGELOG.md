@@ -8,6 +8,7 @@
 - 新增 Linux systemd 用户服务，便于后台自启；注册失败时回滚残留 unit，并避免将未启用的服务误报为已注册。
 - 修复 Desktop、CLI 与 Web 面板每日趋势费用刻度被裁切，较大金额现在可完整显示。
 - 后台同步更轻：空轮询不再全量扫描，定价改为启动时拉取一次。
+- 手动同步后弹出成功或失败 Toast。
 - Updated dependencies
   - @juejin-opensource/jusage-core@0.1.7
 
