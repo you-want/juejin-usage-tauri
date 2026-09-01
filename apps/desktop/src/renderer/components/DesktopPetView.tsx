@@ -173,7 +173,8 @@ export function DesktopPetView() {
    * a click apart from a drag, and never sends per-move coordinates.
    */
   const onPointerDown = (event: PointerEvent<HTMLButtonElement>) => {
-    if (event.button !== 0) return;
+    // Right-click / macOS ctrl-click open the native menu; do not start a drag.
+    if (event.button !== 0 || event.ctrlKey) return;
     event.preventDefault();
     setMouseIgnored(false);
     event.currentTarget.setPointerCapture(event.pointerId);
@@ -215,9 +216,13 @@ export function DesktopPetView() {
 
   useEffect(() => {
     const cancelDrag = () => finishDrag(undefined, true);
+    // Do not preventDefault: main shows the native menu from webContents `context-menu`.
+    const onContextMenu = () => setIsTokenTooltipOpen(false);
     window.addEventListener('blur', cancelDrag);
+    window.addEventListener('contextmenu', onContextMenu);
     return () => {
       window.removeEventListener('blur', cancelDrag);
+      window.removeEventListener('contextmenu', onContextMenu);
       cancelDrag();
     };
   }, []);
@@ -254,7 +259,7 @@ export function DesktopPetView() {
           } as CSSProperties}
         >
           <button
-            aria-label={`${pet.displayName} 桌面宠物，点击查看总 Token，拖动可移动`}
+            aria-label={`${pet.displayName} 桌面宠物，点击查看总 Token，拖动可移动，右键打开菜单`}
             className="desktop-pet-sprite"
             onMouseMove={updateMousePassThrough}
             onPointerDown={onPointerDown}
