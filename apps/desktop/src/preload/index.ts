@@ -14,6 +14,7 @@ import {
   AUTO_UPDATE_STATE_CHANGED_CHANNEL,
   type AutoUpdateState,
 } from '../shared/auto-update';
+import { isThemeMode, type Theme, type ThemeMode } from '../shared/theme';
 
 const API_REQUEST_CHANNEL = 'tud:api-request';
 const DATA_SYNCED_CHANNEL = 'tud:data-synced';
@@ -84,15 +85,22 @@ const tudApi = {
   resizeTrayPopover: (height: number) =>
     ipcRenderer.send(TRAY_POPOVER_RESIZE_CHANNEL, height),
 
-  getTheme: (): Promise<'light' | 'dark'> =>
+  getTheme: (): Promise<{ mode: ThemeMode; resolved: Theme }> =>
     ipcRenderer.invoke(THEME_GET_CHANNEL),
 
-  setTheme: (theme: 'light' | 'dark') =>
-    ipcRenderer.send(THEME_SET_CHANNEL, theme),
+  setThemeMode: (mode: ThemeMode) =>
+    ipcRenderer.send(THEME_SET_CHANNEL, mode),
 
-  onThemeChanged: (callback: (theme: 'light' | 'dark') => void) => {
-    const listener = (_event: unknown, theme: 'light' | 'dark') => {
-      if (theme === 'light' || theme === 'dark') callback(theme);
+  onThemeChanged: (
+    callback: (state: { mode: ThemeMode; resolved: Theme }) => void,
+  ) => {
+    const listener = (
+      _event: unknown,
+      state: { mode: ThemeMode; resolved: Theme },
+    ) => {
+      if (isThemeMode(state?.mode) && (state.resolved === 'light' || state.resolved === 'dark')) {
+        callback(state);
+      }
     };
     ipcRenderer.on(THEME_CHANGED_CHANNEL, listener);
     return () => ipcRenderer.removeListener(THEME_CHANGED_CHANNEL, listener);

@@ -9,6 +9,7 @@ import { app, ipcMain } from 'electron';
 import { existsSync } from 'node:fs';
 import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { isThemeMode, type ThemeMode } from '../shared/theme';
 
 const AUTOSTART_GET_CHANNEL = 'autostart:get';
 const AUTOSTART_SET_CHANNEL = 'autostart:set';
@@ -40,6 +41,8 @@ interface DesktopPrefs {
   /** 开机自启时是否静默启动（仅托盘，不显示主窗口）。默认开启。 */
   launchHidden: boolean;
   desktopPet?: DesktopPetPref;
+  /** 主题模式（system / light / dark）。缺省跟随系统。 */
+  themeMode?: ThemeMode;
 }
 
 export interface AutostartPref {
@@ -68,6 +71,7 @@ async function readPrefsFile(): Promise<DesktopPrefs | null> {
       launchHidden: typeof parsed.launchHidden === 'boolean'
         ? parsed.launchHidden
         : true,
+      themeMode: isThemeMode(parsed.themeMode) ? parsed.themeMode : 'system',
       desktopPet: desktopPet && typeof desktopPet.enabled === 'boolean'
         ? {
             enabled: desktopPet.enabled,
@@ -97,6 +101,34 @@ async function readPrefsFile(): Promise<DesktopPrefs | null> {
 
 async function writePrefs(prefs: DesktopPrefs): Promise<void> {
   await writeFile(prefsPath(), `${JSON.stringify(prefs, null, 2)}\n`, 'utf8');
+}
+
+/** Serialize prefs read-modify-write so consecutive updates cannot clobber
+ *  each other (theme switches are user-paced, but a quick flip could otherwise
+ *  interleave reads against the same file). */
+let prefsQueue: Promise<unknown> = Promise.resolve();
+
+function withPrefsLock<T>(task: () => Promise<T>): Promise<T> {
+  const run = prefsQueue.then(task, task);
+  prefsQueue = run.then(() => undefined, () => undefined);
+  return run;
+}
+
+/** Persisted theme mode; defaults to following the OS. */
+export async function loadThemeMode(): Promise<ThemeMode> {
+  const prefs = await readPrefsFile();
+  return prefs?.themeMode ?? 'system';
+}
+
+export function saveThemeMode(mode: ThemeMode): Promise<void> {
+  return withPrefsLock(async () => {
+    const prefs = (await readPrefsFile()) ?? {
+      openAtLogin: false,
+      launchHidden: true,
+    };
+    prefs.themeMode = mode;
+    await writePrefs(prefs);
+  });
 }
 
 /** Frozen at init: was *this* process started as a silent login launch? */
