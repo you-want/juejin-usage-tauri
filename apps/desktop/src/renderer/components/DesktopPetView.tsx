@@ -8,8 +8,15 @@ import {
   type PointerEvent,
 } from 'react';
 import { useAnimatedNumber } from '@/hooks/useAnimatedNumber';
-import { fetchSummary } from '@/lib/api';
+import { fetchDaily, fetchSummary } from '@/lib/api';
 import { formatTokens, formatTokensExact, formatUsd } from '@/lib/format';
+import {
+  buildPetSyncFeedback,
+  type PetSyncFeedback,
+  type PetUsageSnapshot,
+} from '@/lib/pet-sync-feedback';
+import { DATA_SYNCED_EVENT } from '@/lib/shell-events';
+import { localDateNow } from '@/lib/stats-timezone';
 import { getDesktopPet, loadPetSpritesheet } from '@/pets';
 import {
   DESKTOP_PET_SOURCE_HEIGHT,
@@ -25,6 +32,7 @@ const DISPLAY_SCALE = 0.5;
 const SPRITESHEET_WIDTH = CELL_WIDTH * 8;
 const SPRITESHEET_HEIGHT = CELL_HEIGHT * 11;
 const DRAG_ANIMATION_SPEED_MULTIPLIER = 0.55;
+const SYNC_FEEDBACK_DURATION_MS = 5_000;
 const ANIMATION_ROWS: Record<Animation, { row: number; frames: number }> = {
   idle: { row: 0, frames: 6 },
   'running-right': { row: 1, frames: 8 },
@@ -57,9 +65,13 @@ export function DesktopPetView() {
   const [isTokenTooltipOpen, setIsTokenTooltipOpen] = useState(false);
   const [summary, setSummary] = useState<{ totalTokens: number; totalCostUsd: number } | null>(null);
   const [summaryError, setSummaryError] = useState(false);
+  const [syncFeedback, setSyncFeedback] = useState<PetSyncFeedback | null>(null);
   const [spritesheetUrl, setSpritesheetUrl] = useState<string | null>(null);
   const alphaCanvas = useRef<HTMLCanvasElement | null>(null);
   const ignored = useRef(false);
+  const usageSnapshot = useRef<PetUsageSnapshot | null>(null);
+  const feedbackTimer = useRef<number | null>(null);
+  const enqueueUsageRefresh = useRef<(announce: boolean) => void>(() => undefined);
   const dragState = useRef<{
     pointerId: number;
     screenX: number;
@@ -119,17 +131,71 @@ export function DesktopPetView() {
   }, [selectedPetId]);
 
   useEffect(() => {
-    if (!isTokenTooltipOpen) return;
     let cancelled = false;
-    setSummaryError(false);
-    void fetchSummary()
-      .then((next) => {
+    let refreshQueue = Promise.resolve();
+
+    const refreshUsage = async (announce: boolean) => {
+      try {
+        const [nextSummary, daily] = await Promise.all([
+          fetchSummary(),
+          fetchDaily(365),
+        ]);
         if (cancelled) return;
-        setSummary({ totalTokens: next.totalTokens, totalCostUsd: next.totalCostUsd });
-      })
-      .catch(() => { if (!cancelled) setSummaryError(true); });
-    return () => { cancelled = true; };
-  }, [isTokenTooltipOpen]);
+
+        const previous = usageSnapshot.current;
+        const current: PetUsageSnapshot = {
+          totalTokens: nextSummary.totalTokens,
+          dailyRows: daily.days ?? [],
+        };
+        usageSnapshot.current = current;
+        setSummary({
+          totalTokens: nextSummary.totalTokens,
+          totalCostUsd: nextSummary.totalCostUsd,
+        });
+        setSummaryError(false);
+
+        if (!announce || !previous) return;
+        const feedback = buildPetSyncFeedback(
+          previous,
+          current,
+          localDateNow(),
+        );
+        // Dragging is an explicit interaction; never cover it with a broadcast.
+        if (!feedback || dragState.current) return;
+
+        if (feedbackTimer.current !== null) {
+          window.clearTimeout(feedbackTimer.current);
+        }
+        setIsTokenTooltipOpen(false);
+        setSyncFeedback(feedback);
+        feedbackTimer.current = window.setTimeout(() => {
+          feedbackTimer.current = null;
+          setSyncFeedback(null);
+        }, SYNC_FEEDBACK_DURATION_MS);
+      } catch {
+        // A failed celebration refresh must not replace the last good totals.
+        if (!cancelled && usageSnapshot.current === null) setSummaryError(true);
+      }
+    };
+
+    const enqueueRefresh = (announce: boolean) => {
+      refreshQueue = refreshQueue.then(() => refreshUsage(announce));
+    };
+
+    enqueueUsageRefresh.current = enqueueRefresh;
+    enqueueRefresh(false);
+    const onDataSynced = () => enqueueRefresh(true);
+    window.addEventListener(DATA_SYNCED_EVENT, onDataSynced);
+    return () => {
+      cancelled = true;
+      enqueueUsageRefresh.current = () => undefined;
+      window.removeEventListener(DATA_SYNCED_EVENT, onDataSynced);
+      if (feedbackTimer.current !== null) {
+        window.clearTimeout(feedbackTimer.current);
+        feedbackTimer.current = null;
+      }
+    };
+  }, []);
 
   const setMouseIgnored = (shouldIgnore: boolean) => {
     if (shouldIgnore === ignored.current) return;
@@ -177,6 +243,11 @@ export function DesktopPetView() {
     if (event.button !== 0 || event.ctrlKey) return;
     event.preventDefault();
     setMouseIgnored(false);
+    if (feedbackTimer.current !== null) {
+      window.clearTimeout(feedbackTimer.current);
+      feedbackTimer.current = null;
+    }
+    setSyncFeedback(null);
     event.currentTarget.setPointerCapture(event.pointerId);
     dragState.current = {
       pointerId: event.pointerId,
@@ -211,13 +282,26 @@ export function DesktopPetView() {
     if (event && event.currentTarget.hasPointerCapture(drag.pointerId)) {
       event.currentTarget.releasePointerCapture(drag.pointerId);
     }
-    if (!cancelled && !drag.moved) setIsTokenTooltipOpen((open) => !open);
+    if (!cancelled && !drag.moved) {
+      if (usageSnapshot.current === null) {
+        setSummaryError(false);
+        enqueueUsageRefresh.current(false);
+      }
+      setIsTokenTooltipOpen((open) => !open);
+    }
   };
 
   useEffect(() => {
     const cancelDrag = () => finishDrag(undefined, true);
     // Do not preventDefault: main shows the native menu from webContents `context-menu`.
-    const onContextMenu = () => setIsTokenTooltipOpen(false);
+    const onContextMenu = () => {
+      setIsTokenTooltipOpen(false);
+      setSyncFeedback(null);
+      if (feedbackTimer.current !== null) {
+        window.clearTimeout(feedbackTimer.current);
+        feedbackTimer.current = null;
+      }
+    };
     window.addEventListener('blur', cancelDrag);
     window.addEventListener('contextmenu', onContextMenu);
     return () => {
@@ -234,6 +318,8 @@ export function DesktopPetView() {
   const layout = getDesktopPetLayout(scale);
   const width = layout.spriteWidth;
   const height = layout.spriteHeight;
+  const isPopoverOpen = isTokenTooltipOpen || syncFeedback !== null;
+
   return (
     <div
       className={
@@ -246,7 +332,21 @@ export function DesktopPetView() {
       }}
     >
       <img alt="" aria-hidden="true" className="hidden" src={spritesheetUrl ?? undefined} onLoad={(event) => loadAlphaMap(event.currentTarget)} />
-      <Popover isOpen={isTokenTooltipOpen} onOpenChange={setIsTokenTooltipOpen}>
+      <Popover
+        isOpen={isPopoverOpen}
+        onOpenChange={(open) => {
+          if (open) {
+            if (!syncFeedback) setIsTokenTooltipOpen(true);
+            return;
+          }
+          setIsTokenTooltipOpen(false);
+          setSyncFeedback(null);
+          if (feedbackTimer.current !== null) {
+            window.clearTimeout(feedbackTimer.current);
+            feedbackTimer.current = null;
+          }
+        }}
+      >
         <Popover.Trigger
           className="desktop-pet-popover-trigger"
           style={{
@@ -290,25 +390,73 @@ export function DesktopPetView() {
           style={{ width: layout.popoverWidth }}
         >
           <Popover.Arrow />
-          <Popover.Dialog className="grid gap-1 px-3 py-2">
-            <PetStatRow
-              dotClassName="bg-accent"
-              exactLabel={summary ? formatTokensExact(summary.totalTokens) : undefined}
-              format={formatTokens}
-              label="Token"
-              state={summaryError ? 'error' : summary === null ? 'loading' : 'ready'}
-              value={summary?.totalTokens ?? 0}
-            />
-            <PetStatRow
-              dotClassName="bg-success"
-              format={formatUsd}
-              label="费用"
-              state={summaryError ? 'error' : summary === null ? 'loading' : 'ready'}
-              value={summary?.totalCostUsd ?? 0}
-            />
+          <Popover.Dialog className="px-3 py-2">
+            {syncFeedback ? (
+              <PetSyncFeedbackContent feedback={syncFeedback} />
+            ) : (
+              <div className="grid gap-1">
+                <PetStatRow
+                  dotClassName="bg-accent"
+                  exactLabel={summary ? formatTokensExact(summary.totalTokens) : undefined}
+                  format={formatTokens}
+                  label="Token"
+                  state={summaryError ? 'error' : summary === null ? 'loading' : 'ready'}
+                  value={summary?.totalTokens ?? 0}
+                />
+                <PetStatRow
+                  dotClassName="bg-success"
+                  format={formatUsd}
+                  label="费用"
+                  state={summaryError ? 'error' : summary === null ? 'loading' : 'ready'}
+                  value={summary?.totalCostUsd ?? 0}
+                />
+              </div>
+            )}
           </Popover.Dialog>
         </Popover.Content>
       </Popover>
+    </div>
+  );
+}
+
+/** Compact celebration card; it shares the existing pet-colored popover. */
+function PetSyncFeedbackContent({ feedback }: { feedback: PetSyncFeedback }) {
+  const milestones = [
+    feedback.isDailyRecord ? '🎉 今日新高' : null,
+    feedback.activeStreakDays >= 2
+      ? `🔥 连续使用 ${feedback.activeStreakDays} 天`
+      : null,
+  ].filter((value): value is string => Boolean(value));
+
+  return (
+    <div
+      aria-live="polite"
+      className="grid min-w-0 gap-1.5 text-left"
+      role="status"
+    >
+      <div className="flex items-center gap-1.5">
+        <span
+          aria-hidden
+          className="size-1.5 shrink-0 rounded-full bg-success shadow-[0_0_8px_color-mix(in_srgb,var(--pet-glow-primary)_70%,transparent)]"
+        />
+        <p className="min-w-0 truncate text-[12px] font-medium leading-tight text-foreground">
+          刚同步{' '}
+          <strong
+            className="font-semibold tabular-nums text-accent"
+            title={formatTokensExact(feedback.addedTokens)}
+          >
+            {formatTokens(feedback.addedTokens)}
+          </strong>{' '}
+          Token
+        </p>
+      </div>
+      {milestones.length > 0 && (
+        <div className="grid gap-0.5 pl-3 text-[10px] font-medium leading-tight text-muted">
+          {milestones.map((milestone) => (
+            <p key={milestone}>{milestone}</p>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

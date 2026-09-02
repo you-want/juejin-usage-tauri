@@ -20,7 +20,8 @@
     "build:win": "electron-vite build && electron-builder --win",
     "release:mac": "electron-vite build && electron-builder --mac --publish always",
     "release:win": "electron-vite build && electron-builder --win --publish always",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "tsc -p tsconfig.test.json && node --test dist-test/pet-sync-feedback.test.js"
   },
   "dependencies": {
     "@fontsource-variable/jetbrains-mono": "5.2.8",
