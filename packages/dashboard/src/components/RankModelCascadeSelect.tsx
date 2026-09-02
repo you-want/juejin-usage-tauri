@@ -28,19 +28,31 @@ export function RankModelCascadeSelect({
     [models, query],
   );
   const selectedGroup = allGroups.find((group) => group.models.includes(value));
+  const allModels = useMemo(
+    () => [...new Set(models.filter(Boolean))].sort((a, b) => a.localeCompare(b)),
+    [models],
+  );
   const [activeVendor, setActiveVendor] = useState<RankModelVendorKey>(
-    selectedGroup?.key ?? allGroups[0]?.key ?? 'anthropic',
+    selectedGroup?.key ?? 'all',
   );
 
-  const visibleVendor = groups.some((group) => group.key === activeVendor)
-    ? activeVendor
-    : groups[0]?.key;
+  const visibleVendor =
+    !query && activeVendor === 'all'
+      ? 'all'
+      : groups.some((group) => group.key === activeVendor)
+        ? activeVendor
+        : groups[0]?.key;
   const activeGroup = groups.find((group) => group.key === visibleVendor);
+  const visibleModels =
+    visibleVendor === 'all'
+      ? allModels
+      : (activeGroup?.models ?? []);
   const label =
     selectedGroup && value ? `${selectedGroup.label} › ${value}` : '全部模型';
 
   useEffect(() => {
-    if (open && selectedGroup) setActiveVendor(selectedGroup.key);
+    if (!open) return;
+    setActiveVendor(selectedGroup?.key ?? 'all');
   }, [open, selectedGroup]);
 
   const handleOpenChange = (nextOpen: boolean) => {
@@ -103,12 +115,18 @@ export function RankModelCascadeSelect({
                       !value && 'bg-accent/10 text-foreground',
                     )}
                     type="button"
-                    onClick={() => selectModel('')}
+                    onClick={() => {
+                      if (value) selectModel('');
+                      else setActiveVendor('all');
+                    }}
                   >
                     <span className="flex size-4 shrink-0 items-center justify-center">
                       {!value ? <Check className="size-3 text-accent" /> : null}
                     </span>
-                    <span className="font-medium">全部模型</span>
+                    <span className="min-w-0 flex-1 font-medium">全部厂商</span>
+                    <span className="shrink-0 tabular-nums text-[10px] text-muted">
+                      {allModels.length}
+                    </span>
                   </button>
                 ) : null}
                 {groups.map((group) => {
@@ -147,11 +165,11 @@ export function RankModelCascadeSelect({
               </div>
 
               <div
-                aria-label="具体模型"
+                aria-label={visibleVendor === 'all' ? '全部模型' : '具体模型'}
                 className="max-h-72 overflow-y-auto p-1.5"
                 role="listbox"
               >
-                {activeGroup?.models.map((model) => {
+                {visibleModels.map((model) => {
                   const selected = model === value;
                   return (
                     <button

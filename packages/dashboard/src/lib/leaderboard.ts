@@ -96,6 +96,12 @@ export function groupRankModelsByVendor(
   query = '',
 ): RankModelVendorGroup[] {
   const buckets = new Map<RankModelVendorKey, RankModelVendorGroup>();
+  buckets.set('other', {
+    key: 'other',
+    label: '其他',
+    icon: 'unknown',
+    models: [],
+  });
 
   for (const model of new Set(models.filter(Boolean))) {
     const provider = getModelProvider(model);
@@ -120,7 +126,12 @@ export function groupRankModelsByVendor(
             )
           : group.models;
 
-      if (filteredModels.length === 0) return [];
+      if (
+        filteredModels.length === 0 &&
+        !(group.key === 'other' && (!normalizedQuery || vendorMatches))
+      ) {
+        return [];
+      }
       return [
         {
           ...group,

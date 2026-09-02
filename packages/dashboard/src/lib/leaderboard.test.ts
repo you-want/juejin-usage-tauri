@@ -130,13 +130,22 @@ describe('groupRankModelsByVendor', () => {
     );
   });
 
-  it('shows only detected providers and sorts non-priority vendors by label', () => {
+  it('sorts non-priority vendors by label and always keeps Other last', () => {
     assert.deepEqual(
       groupRankModelsByVendor(['mistral-large', 'meta-llama/llama-4']).map(
         (group) => group.label,
       ),
-      ['Meta', 'Mistral'],
+      ['Meta', 'Mistral', '其他'],
     );
+  });
+
+  it('keeps Other as an empty fallback vendor when all models are recognized', () => {
+    assert.deepEqual(groupRankModelsByVendor(['gpt-5']).at(-1), {
+      key: 'other',
+      label: '其他',
+      icon: 'unknown',
+      models: [],
+    });
   });
 
   it('deduplicates repeated model names', () => {
