@@ -105,7 +105,7 @@ export function RankModelCascadeSelect({
             <div className="grid min-h-56 grid-cols-[minmax(7.5rem,0.8fr)_minmax(0,1.4fr)] divide-x divide-border">
               <div
                 aria-label="模型厂商"
-                className="max-h-72 overflow-y-auto p-1.5"
+                className="max-h-72 overscroll-contain overflow-y-auto p-1.5"
                 role="listbox"
               >
                 {!query ? (
@@ -166,7 +166,7 @@ export function RankModelCascadeSelect({
 
               <div
                 aria-label={visibleVendor === 'all' ? '全部模型' : '具体模型'}
-                className="max-h-72 overflow-y-auto p-1.5"
+                className="max-h-72 overscroll-contain overflow-y-auto p-1.5"
                 role="listbox"
               >
                 {visibleModels.map((model) => {
