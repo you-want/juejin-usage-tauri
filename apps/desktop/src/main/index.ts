@@ -168,7 +168,7 @@ async function showMainWindowAsync(): Promise<void> {
     // Window was destroyed on close (tray-resident app). Rebuild it. On
     // macOS the dock was hidden at close; await the accessory→regular
     // transform so the freshly built window is not hidden by macOS mid-flight.
-    if (process.platform === 'darwin' && !app.dock.isVisible()) {
+    if (process.platform === 'darwin' && app.dock && !app.dock.isVisible()) {
       try {
         await app.dock.show();
       } catch {
@@ -427,7 +427,7 @@ void acquireDesktopInstanceLock().then((gotLock) => {
     // drops IPC (config-reset / deep-link) aimed at that doomed window.
     if (shouldStartHidden()) {
       if (process.platform === 'darwin') {
-        app.dock.hide();
+        app.dock?.hide();
       }
     } else {
       createWindow();
