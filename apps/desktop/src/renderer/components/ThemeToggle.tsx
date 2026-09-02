@@ -1,56 +1,45 @@
 import { Display, Moon, Sun } from '@gravity-ui/icons';
-import { Tabs } from '@heroui/react';
-import { THEME_MODES, type ThemeMode } from '@/lib/theme';
+import { Button, Tooltip } from '@heroui/react';
+import type { ThemeMode } from '@/lib/theme';
 import { useTheme } from '@/hooks/useTheme';
 
-/** Compact theme-mode tabs sized to align with the filter tabs. */
-export function ThemeToggle() {
-  const { themeMode, setThemeMode } = useTheme();
+/** Icon component per mode; rendered lazily so only the active one mounts. */
+const MODE_ICON: Record<ThemeMode, typeof Display> = {
+  system: Display,
+  light: Sun,
+  dark: Moon,
+};
 
-  const changeTheme = (key: string) => {
-    const nextMode = key as ThemeMode;
-    if (THEME_MODES.includes(nextMode)) {
-      setThemeMode(nextMode);
-    }
-  };
+const MODE_LABEL: Record<ThemeMode, string> = {
+  system: '跟随系统',
+  light: '浅色',
+  dark: '深色',
+};
+
+/**
+ * Single button that cycles the theme mode system → light → dark → system.
+ * The icon and tooltip always show the currently active mode.
+ */
+export function ThemeToggle() {
+  const { themeMode, toggleTheme } = useTheme();
+  const Icon = MODE_ICON[themeMode];
+  const label = MODE_LABEL[themeMode];
 
   return (
-    <Tabs
-      className="w-fit shrink-0 text-center"
-      selectedKey={themeMode}
-      onSelectionChange={(key) => changeTheme(String(key))}
-    >
-      <Tabs.ListContainer>
-        <Tabs.List
-          aria-label="页面主题"
-          className="w-fit"
-        >
-          <Tabs.Tab
-            aria-label="跟随系统"
-            className="h-6 w-6 px-0 text-xs aria-selected:text-accent-foreground"
-            id="system"
-          >
-            <Display className="size-3.5" />
-            <Tabs.Indicator className="bg-accent" />
-          </Tabs.Tab>
-          <Tabs.Tab
-            aria-label="使用亮色模式"
-            className="h-6 w-6 px-0 text-xs aria-selected:text-accent-foreground"
-            id="light"
-          >
-            <Sun className="size-3.5" />
-            <Tabs.Indicator className="bg-accent" />
-          </Tabs.Tab>
-          <Tabs.Tab
-            aria-label="使用暗色模式"
-            className="h-6 w-6 px-0 text-xs aria-selected:text-accent-foreground"
-            id="dark"
-          >
-            <Moon className="size-3.5" />
-            <Tabs.Indicator className="bg-accent" />
-          </Tabs.Tab>
-        </Tabs.List>
-      </Tabs.ListContainer>
-    </Tabs>
+    <Tooltip closeDelay={80} delay={100}>
+      <Button
+        aria-label={`切换主题：当前${label}`}
+        className="size-8 min-h-8 min-w-8 shrink-0 p-0"
+        isIconOnly
+        onPress={toggleTheme}
+        size="sm"
+        variant="tertiary"
+      >
+        <Icon className="size-4" />
+      </Button>
+      <Tooltip.Content placement="bottom">
+        <p>{`主题：${label}`}</p>
+      </Tooltip.Content>
+    </Tooltip>
   );
 }

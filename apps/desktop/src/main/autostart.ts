@@ -156,9 +156,13 @@ function broadcastDashboardRange(range: DashboardRange): void {
 }
 
 /** Persisted theme mode; defaults to following the OS. */
-export async function loadThemeMode(): Promise<ThemeMode> {
-  const prefs = await readPrefsFile();
-  return prefs?.themeMode ?? 'system';
+export function loadThemeMode(): Promise<ThemeMode> {
+  // Read under the same lock as writes so a concurrent writeFile truncation
+  // cannot surface a half-written prefs file.
+  return withPrefsLock(async () => {
+    const prefs = await readPrefsFile();
+    return prefs?.themeMode ?? 'system';
+  });
 }
 
 export function saveThemeMode(mode: ThemeMode): Promise<void> {
