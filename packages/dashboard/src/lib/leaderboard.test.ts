@@ -58,13 +58,18 @@ describe('uniqueRankModelOptions', () => {
 describe('groupRankModelsByVendor', () => {
   const models = [
     'claude-sonnet-4-6',
+    'Claude Haiku 4.5',
+    'fable-5-thinking-max',
     'openai/gpt-5',
     'gemini-2.5-pro',
     'qwen3-coder',
     'kimi-k2.5',
+    'K2.7 Code',
+    'k3-256k',
     'grok-4',
     'deepseek-chat',
     'glm-5',
+    'zai_auto',
     'local/custom-model',
   ];
 
@@ -75,14 +80,17 @@ describe('groupRankModelsByVendor', () => {
         models: groupedModels,
       })),
       [
-        { key: 'anthropic', models: ['claude-sonnet-4-6'] },
+        {
+          key: 'anthropic',
+          models: ['Claude Haiku 4.5', 'claude-sonnet-4-6', 'fable-5-thinking-max'],
+        },
         { key: 'openai', models: ['openai/gpt-5'] },
         { key: 'google', models: ['gemini-2.5-pro'] },
         { key: 'alibaba', models: ['qwen3-coder'] },
-        { key: 'moonshot', models: ['kimi-k2.5'] },
+        { key: 'moonshot', models: ['K2.7 Code', 'k3-256k', 'kimi-k2.5'] },
         { key: 'xai', models: ['grok-4'] },
         { key: 'deepseek', models: ['deepseek-chat'] },
-        { key: 'zhipu', models: ['glm-5'] },
+        { key: 'zhipu', models: ['glm-5', 'zai_auto'] },
         { key: 'other', models: ['local/custom-model'] },
       ],
     );
@@ -91,7 +99,7 @@ describe('groupRankModelsByVendor', () => {
   it('matches a vendor name and keeps all models in that vendor', () => {
     assert.deepEqual(
       groupRankModelsByVendor(models, 'Anthro').map((group) => group.models),
-      [['claude-sonnet-4-6']],
+      [['Claude Haiku 4.5', 'claude-sonnet-4-6', 'fable-5-thinking-max']],
     );
   });
 
