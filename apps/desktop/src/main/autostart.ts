@@ -5,10 +5,18 @@
  * setLoginItemSettings only runs when packaged so `electron-vite dev`
  * does not register the Electron binary itself.
  */
-import { app, ipcMain } from 'electron';
+import { BrowserWindow, app, ipcMain } from 'electron';
 import { existsSync } from 'node:fs';
 import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import {
+  DASHBOARD_RANGE_CHANGED_CHANNEL,
+  DASHBOARD_RANGE_GET_CHANNEL,
+  DASHBOARD_RANGE_SET_CHANNEL,
+  DEFAULT_DASHBOARD_RANGE,
+  isDashboardRange,
+  type DashboardRange,
+} from '../shared/dashboard-range';
 import { isThemeMode, type ThemeMode } from '../shared/theme';
 
 const AUTOSTART_GET_CHANNEL = 'autostart:get';
@@ -43,6 +51,11 @@ interface DesktopPrefs {
   desktopPet?: DesktopPetPref;
   /** 主题模式（system / light / dark）。缺省跟随系统。 */
   themeMode?: ThemeMode;
+  /**
+   * Last dashboard time range. Stored here so the pet window can follow it;
+   * pet.html does not share the dashboard renderer's localStorage origin.
+   */
+  dashboardRange?: DashboardRange;
 }
 
 export interface AutostartPref {
@@ -72,6 +85,9 @@ async function readPrefsFile(): Promise<DesktopPrefs | null> {
         ? parsed.launchHidden
         : true,
       themeMode: isThemeMode(parsed.themeMode) ? parsed.themeMode : 'system',
+      dashboardRange: isDashboardRange(parsed.dashboardRange)
+        ? parsed.dashboardRange
+        : undefined,
       desktopPet: desktopPet && typeof desktopPet.enabled === 'boolean'
         ? {
             enabled: desktopPet.enabled,
@@ -114,6 +130,31 @@ function withPrefsLock<T>(task: () => Promise<T>): Promise<T> {
   return run;
 }
 
+async function patchPrefs(patch: Partial<DesktopPrefs>): Promise<DesktopPrefs> {
+  return withPrefsLock(async () => {
+    const existing = await readPrefsFile();
+    const next: DesktopPrefs = {
+      openAtLogin: patch.openAtLogin ?? existing?.openAtLogin ?? true,
+      launchHidden: patch.launchHidden ?? existing?.launchHidden ?? true,
+      desktopPet: patch.desktopPet !== undefined ? patch.desktopPet : existing?.desktopPet,
+      themeMode: patch.themeMode !== undefined ? patch.themeMode : existing?.themeMode,
+      dashboardRange: patch.dashboardRange !== undefined
+        ? patch.dashboardRange
+        : existing?.dashboardRange,
+    };
+    await writePrefs(next);
+    return next;
+  });
+}
+
+function broadcastDashboardRange(range: DashboardRange): void {
+  for (const window of BrowserWindow.getAllWindows()) {
+    if (!window.isDestroyed()) {
+      window.webContents.send(DASHBOARD_RANGE_CHANGED_CHANNEL, range);
+    }
+  }
+}
+
 /** Persisted theme mode; defaults to following the OS. */
 export async function loadThemeMode(): Promise<ThemeMode> {
   const prefs = await readPrefsFile();
@@ -121,14 +162,7 @@ export async function loadThemeMode(): Promise<ThemeMode> {
 }
 
 export function saveThemeMode(mode: ThemeMode): Promise<void> {
-  return withPrefsLock(async () => {
-    const prefs = (await readPrefsFile()) ?? {
-      openAtLogin: false,
-      launchHidden: true,
-    };
-    prefs.themeMode = mode;
-    await writePrefs(prefs);
-  });
+  return patchPrefs({ themeMode: mode }).then(() => undefined);
 }
 
 /** Frozen at init: was *this* process started as a silent login launch? */
@@ -165,10 +199,9 @@ export async function applyAutostart(
 ): Promise<boolean> {
   const existing = await readPrefsFile();
   const hidden = launchHidden ?? existing?.launchHidden ?? true;
-  await writePrefs({
+  await patchPrefs({
     openAtLogin: enabled,
     launchHidden: hidden,
-    desktopPet: existing?.desktopPet,
   });
   setOsLoginItem(enabled, hidden);
   return enabled;
@@ -184,10 +217,9 @@ export async function loadLaunchHidden(): Promise<boolean> {
 export async function setLaunchHidden(hidden: boolean): Promise<boolean> {
   const existing = await readPrefsFile();
   const openAtLogin = existing?.openAtLogin ?? true;
-  await writePrefs({
+  await patchPrefs({
     openAtLogin,
     launchHidden: hidden,
-    desktopPet: existing?.desktopPet,
   });
   setOsLoginItem(openAtLogin, hidden);
   return hidden;
@@ -206,13 +238,21 @@ export async function loadDesktopPetPref(): Promise<DesktopPetPref> {
 }
 
 export async function saveDesktopPetPref(pref: DesktopPetPref): Promise<DesktopPetPref> {
-  const existing = await readPrefsFile();
-  await writePrefs({
-    openAtLogin: existing?.openAtLogin ?? true,
-    launchHidden: existing?.launchHidden ?? true,
-    desktopPet: pref,
-  });
+  await patchPrefs({ desktopPet: pref });
   return pref;
+}
+
+export async function loadDashboardRange(): Promise<DashboardRange> {
+  const existing = await readPrefsFile();
+  return existing?.dashboardRange ?? DEFAULT_DASHBOARD_RANGE;
+}
+
+export async function saveDashboardRange(range: DashboardRange): Promise<DashboardRange> {
+  const current = await loadDashboardRange();
+  if (current === range) return range;
+  await patchPrefs({ dashboardRange: range });
+  broadcastDashboardRange(range);
+  return range;
 }
 
 function isDesktopPetScale(value: unknown): value is number {
@@ -283,6 +323,15 @@ export function registerAutostartIpc(): void {
     }
     return setLaunchHidden(hidden);
   });
+
+  ipcMain.removeHandler(DASHBOARD_RANGE_GET_CHANNEL);
+  ipcMain.handle(DASHBOARD_RANGE_GET_CHANNEL, () => loadDashboardRange());
+
+  ipcMain.removeHandler(DASHBOARD_RANGE_SET_CHANNEL);
+  ipcMain.handle(DASHBOARD_RANGE_SET_CHANNEL, async (_event, range: unknown) => {
+    if (!isDashboardRange(range)) throw new Error('unknown dashboard range');
+    return saveDashboardRange(range);
+  });
 }
 
 export function unregisterAutostartIpc(): void {
@@ -290,4 +339,6 @@ export function unregisterAutostartIpc(): void {
   ipcMain.removeHandler(AUTOSTART_SET_CHANNEL);
   ipcMain.removeHandler(AUTOSTART_GET_HIDDEN_CHANNEL);
   ipcMain.removeHandler(AUTOSTART_SET_HIDDEN_CHANNEL);
+  ipcMain.removeHandler(DASHBOARD_RANGE_GET_CHANNEL);
+  ipcMain.removeHandler(DASHBOARD_RANGE_SET_CHANNEL);
 }

@@ -14,6 +14,13 @@ import {
   AUTO_UPDATE_STATE_CHANGED_CHANNEL,
   type AutoUpdateState,
 } from '../shared/auto-update';
+import {
+  DASHBOARD_RANGE_CHANGED_CHANNEL,
+  DASHBOARD_RANGE_GET_CHANNEL,
+  DASHBOARD_RANGE_SET_CHANNEL,
+  isDashboardRange,
+  type DashboardRange,
+} from '../shared/dashboard-range';
 import { isThemeMode, type Theme, type ThemeMode } from '../shared/theme';
 
 const API_REQUEST_CHANNEL = 'tud:api-request';
@@ -84,6 +91,20 @@ const tudApi = {
    */
   resizeTrayPopover: (height: number) =>
     ipcRenderer.send(TRAY_POPOVER_RESIZE_CHANNEL, height),
+
+  getDashboardRange: (): Promise<DashboardRange> =>
+    ipcRenderer.invoke(DASHBOARD_RANGE_GET_CHANNEL),
+
+  setDashboardRange: (range: DashboardRange): Promise<DashboardRange> =>
+    ipcRenderer.invoke(DASHBOARD_RANGE_SET_CHANNEL, range),
+
+  onDashboardRange: (callback: (range: DashboardRange) => void) => {
+    const listener = (_event: unknown, range: unknown) => {
+      if (isDashboardRange(range)) callback(range);
+    };
+    ipcRenderer.on(DASHBOARD_RANGE_CHANGED_CHANNEL, listener);
+    return () => ipcRenderer.removeListener(DASHBOARD_RANGE_CHANGED_CHANNEL, listener);
+  },
 
   getTheme: (): Promise<{ mode: ThemeMode; resolved: Theme }> =>
     ipcRenderer.invoke(THEME_GET_CHANNEL),
