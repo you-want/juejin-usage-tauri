@@ -89,7 +89,15 @@ function canonicalSource(source: string): string {
   if (key.startsWith('openclaw') || key.startsWith('open-claw')) return 'openclaw';
   if (key.startsWith('hermes')) return 'hermes';
   if (key.startsWith('zcode') || key === 'zai') return 'zcode';
-  if (key === 'dsh' || key.startsWith('deepseek-harness') || key.startsWith('dsh-')) return 'dsh';
+  if (
+    key === 'dsh' ||
+    key === 'deepseek' ||
+    key === 'harness' ||
+    key.startsWith('deepseek-harness') ||
+    key.startsWith('dsh-')
+  ) {
+    return 'dsh';
+  }
   if (key === 'pi-coding-agent' || key.startsWith('pi')) return 'pi';
   if (key.startsWith('kimi')) return 'kimi';
   if (key === 'roo-code' || key.startsWith('roocode') || key.startsWith('roo')) return 'roocode';
