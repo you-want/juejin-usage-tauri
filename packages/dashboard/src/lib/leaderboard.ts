@@ -1,4 +1,5 @@
 import type { LeaderboardMetric, LeaderboardRange } from '@/lib/api';
+import { getModelProvider } from './model-provider.ts';
 
 export type RankRange = LeaderboardRange;
 
@@ -14,6 +15,81 @@ export function isRankRange(value: unknown): value is RankRange {
 export interface RankModelOption {
   tool: string;
   model: string;
+}
+
+export const RANK_MODEL_VENDORS = [
+  { key: 'anthropic', label: 'Anthropic', icon: 'claude' },
+  { key: 'openai', label: 'OpenAI', icon: 'openai' },
+  { key: 'google', label: 'Google', icon: 'google' },
+  { key: 'alibaba', label: '阿里', icon: 'alibaba' },
+  { key: 'moonshot', label: 'Moonshot', icon: 'moonshot' },
+  { key: 'xai', label: 'xAI', icon: 'grok' },
+  { key: 'deepseek', label: 'DeepSeek', icon: 'deepseek' },
+  { key: 'zhipu', label: 'Zhipu', icon: 'zhipu' },
+  { key: 'other', label: '其他', icon: 'unknown' },
+] as const;
+
+export type RankModelVendorKey = (typeof RANK_MODEL_VENDORS)[number]['key'];
+
+export interface RankModelVendorGroup {
+  key: RankModelVendorKey;
+  label: string;
+  icon: string;
+  models: string[];
+}
+
+const RANK_VENDOR_KEYS: Record<string, RankModelVendorKey> = {
+  anthropic: 'anthropic',
+  claude: 'anthropic',
+  codex: 'openai',
+  openai: 'openai',
+  gemini: 'google',
+  google: 'google',
+  alibaba: 'alibaba',
+  qwen: 'alibaba',
+  kimi: 'moonshot',
+  moonshot: 'moonshot',
+  grok: 'xai',
+  xai: 'xai',
+  deepseek: 'deepseek',
+  zai: 'zhipu',
+  zhipu: 'zhipu',
+};
+
+/** 将排行榜模型归入产品约定的固定厂商，并按厂商与模型名支持模糊搜索。 */
+export function groupRankModelsByVendor(
+  models: readonly string[],
+  query = '',
+): RankModelVendorGroup[] {
+  const buckets = new Map<RankModelVendorKey, string[]>();
+  for (const vendor of RANK_MODEL_VENDORS) buckets.set(vendor.key, []);
+
+  for (const model of new Set(models.filter(Boolean))) {
+    const provider = getModelProvider(model);
+    const vendorKey = RANK_VENDOR_KEYS[provider.key] ?? 'other';
+    buckets.get(vendorKey)?.push(model);
+  }
+
+  const normalizedQuery = query.trim().toLocaleLowerCase();
+  return RANK_MODEL_VENDORS.flatMap((vendor) => {
+    const modelsForVendor = buckets.get(vendor.key) ?? [];
+    const vendorMatches = vendor.label
+      .toLocaleLowerCase()
+      .includes(normalizedQuery);
+    const filteredModels =
+      normalizedQuery && !vendorMatches
+        ? modelsForVendor.filter((model) =>
+            `${vendor.label} ${model}`
+              .toLocaleLowerCase()
+              .includes(normalizedQuery),
+          )
+        : modelsForVendor;
+
+    if (filteredModels.length === 0) return [];
+    return [
+      { ...vendor, models: filteredModels.sort((a, b) => a.localeCompare(b)) },
+    ];
+  });
 }
 
 /**
