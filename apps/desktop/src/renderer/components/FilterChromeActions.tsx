@@ -6,6 +6,7 @@ import {
   NodesRight,
 } from '@gravity-ui/icons';
 import { Button, Tooltip } from '@heroui/react';
+import type { AutoUpdateState } from '../../shared/auto-update';
 import { JuejinLoginConsentModal } from '@/components/JuejinLoginConsentModal';
 import { useAppToastQueue } from '@/components/AppToastContext';
 import { ThemeToggle } from '@/components/ThemeToggle';
@@ -20,7 +21,7 @@ import {
 } from '@/lib/shell-events';
 import { cn } from '@/lib/utils';
 
-const linkJuejinBtn =
+const primaryChromeBtn =
   'inline-flex h-7 shrink-0 items-center gap-1 rounded-full bg-[#1e80ff] px-2.5 text-[12px] font-medium text-white outline-none transition-colors hover:bg-[#1171ee] focus-visible:ring-2 focus-visible:ring-[#1e80ff]/40 disabled:pointer-events-none disabled:opacity-40 dark:bg-[#4b9cff] dark:hover:bg-[#3a8ff0]';
 const RANK_PAGE_URL = 'https://juejin.cn/aiusage/rank';
 const GITHUB_REPO_URL = 'https://github.com/juejin-cn/juejin-usage';
@@ -58,6 +59,8 @@ export function FilterChromeActions() {
   const [busy, setBusy] = useState(false);
   const [linked, setLinked] = useState<boolean | null>(null);
   const [consentOpen, setConsentOpen] = useState(false);
+  const [updateState, setUpdateState] = useState<AutoUpdateState | null>(null);
+  const [installPending, setInstallPending] = useState(false);
   const refreshLabel = cliBackend ? '同步数据' : '刷新数据';
 
   const refreshLinkState = useCallback(() => {
@@ -94,6 +97,23 @@ export function FilterChromeActions() {
     };
   }, [refreshLinkState]);
 
+  useEffect(() => {
+    let cancelled = false;
+    const unsubscribe = window.tud.onAutoUpdateStateChanged((next) => {
+      if (!cancelled) setUpdateState(next);
+    });
+    void window.tud
+      .getAutoUpdateState()
+      .then((next) => {
+        if (!cancelled) setUpdateState(next);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
+  }, []);
+
   const refreshData = async () => {
     setBusy(true);
     try {
@@ -124,11 +144,42 @@ export function FilterChromeActions() {
     }
   };
 
+  const installDownloadedUpdate = async () => {
+    setInstallPending(true);
+    try {
+      setUpdateState(await window.tud.installDownloadedUpdate());
+    } catch (reason) {
+      toastQueue.add({
+        description:
+          reason instanceof Error ? reason.message : '请稍后再试',
+        title: '重启并安装更新失败',
+        variant: 'danger',
+      });
+    } finally {
+      setInstallPending(false);
+    }
+  };
+
   return (
     <div className="flex items-center gap-1">
+      {updateState?.status === 'downloaded' ? (
+        <button
+          className={primaryChromeBtn}
+          disabled={installPending}
+          onClick={() => {
+            void installDownloadedUpdate();
+          }}
+          type="button"
+        >
+          <ArrowsRotateRight
+            className={cn('size-3.5', installPending && 'animate-spin')}
+          />
+          重启并更新
+        </button>
+      ) : null}
       {linked === false ? (
         <button
-          className={linkJuejinBtn}
+          className={primaryChromeBtn}
           onClick={() => setConsentOpen(true)}
           type="button"
         >
