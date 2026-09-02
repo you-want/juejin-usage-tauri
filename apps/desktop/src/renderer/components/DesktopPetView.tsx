@@ -8,9 +8,15 @@ import {
   type PointerEvent,
 } from 'react';
 import { useAnimatedNumber } from '@/hooks/useAnimatedNumber';
-import { fetchSummary } from '@/lib/api';
+import { fetchDaily } from '@/lib/api';
 import { formatTokens, formatTokensExact, formatUsd } from '@/lib/format';
 import { getDesktopPet, loadPetSpritesheet } from '@/pets';
+import {
+  DASHBOARD_RANGE_DAYS,
+  DASHBOARD_RANGE_LABELS,
+  DEFAULT_DASHBOARD_RANGE,
+  type DashboardRange,
+} from '../../shared/dashboard-range';
 import {
   DESKTOP_PET_SOURCE_HEIGHT,
   DESKTOP_PET_SOURCE_WIDTH,
@@ -30,6 +36,20 @@ const ANIMATION_ROWS: Record<Animation, { row: number; frames: number }> = {
   'running-right': { row: 1, frames: 8 },
   'running-left': { row: 2, frames: 8 },
 };
+
+async function fetchRangeTotals(range: DashboardRange): Promise<{
+  totalTokens: number;
+  totalCostUsd: number;
+}> {
+  const daily = await fetchDaily(DASHBOARD_RANGE_DAYS[range]);
+  let totalTokens = 0;
+  let totalCostUsd = 0;
+  for (const row of daily.days ?? []) {
+    totalTokens += row.tokens;
+    totalCostUsd += row.costUsd;
+  }
+  return { totalTokens, totalCostUsd };
+}
 
 /**
  * Click's generated running-left row contains a corrupt frame with neighboring
@@ -55,6 +75,7 @@ export function DesktopPetView() {
   const [scale, setScale] = useState(DISPLAY_SCALE);
   const [frameIntervalMs, setFrameIntervalMs] = useState(180);
   const [isTokenTooltipOpen, setIsTokenTooltipOpen] = useState(false);
+  const [range, setRange] = useState<DashboardRange>(DEFAULT_DASHBOARD_RANGE);
   const [summary, setSummary] = useState<{ totalTokens: number; totalCostUsd: number } | null>(null);
   const [summaryError, setSummaryError] = useState(false);
   const [spritesheetUrl, setSpritesheetUrl] = useState<string | null>(null);
@@ -84,6 +105,11 @@ export function DesktopPetView() {
   }, [effectiveFrameIntervalMs]);
 
   useEffect(() => window.tud.onDesktopPetAnimation(setAnimation), []);
+
+  useEffect(() => {
+    void window.tud.getDashboardRange().then(setRange);
+    return window.tud.onDashboardRange(setRange);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -121,15 +147,23 @@ export function DesktopPetView() {
   useEffect(() => {
     if (!isTokenTooltipOpen) return;
     let cancelled = false;
+    setSummary(null);
     setSummaryError(false);
-    void fetchSummary()
-      .then((next) => {
-        if (cancelled) return;
-        setSummary({ totalTokens: next.totalTokens, totalCostUsd: next.totalCostUsd });
-      })
-      .catch(() => { if (!cancelled) setSummaryError(true); });
-    return () => { cancelled = true; };
-  }, [isTokenTooltipOpen]);
+    const load = () => {
+      void fetchRangeTotals(range)
+        .then((next) => {
+          if (cancelled) return;
+          setSummary(next);
+        })
+        .catch(() => { if (!cancelled) setSummaryError(true); });
+    };
+    load();
+    const unsubscribe = window.tud.onDataSynced(load);
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
+  }, [isTokenTooltipOpen, range]);
 
   const setMouseIgnored = (shouldIgnore: boolean) => {
     if (shouldIgnore === ignored.current) return;
@@ -291,6 +325,9 @@ export function DesktopPetView() {
         >
           <Popover.Arrow />
           <Popover.Dialog className="grid gap-1 px-3 py-2">
+            <div className="text-center text-[10px] leading-tight text-muted">
+              {DASHBOARD_RANGE_LABELS[range]}
+            </div>
             <PetStatRow
               dotClassName="bg-accent"
               exactLabel={summary ? formatTokensExact(summary.totalTokens) : undefined}
