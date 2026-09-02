@@ -22,7 +22,7 @@ const PRIORITY_RANK_MODEL_VENDORS = [
   { key: 'openai', label: 'OpenAI', icon: 'openai' },
   { key: 'google', label: 'Google', icon: 'google' },
   { key: 'alibaba', label: '阿里', icon: 'alibaba' },
-  { key: 'moonshot', label: 'Moonshot / Kimi', icon: 'kimi' },
+  { key: 'moonshot', label: 'Moonshot', icon: 'moonshot' },
   { key: 'doubao', label: 'Doubao', icon: 'doubao' },
   { key: 'minimax', label: 'MiniMax', icon: 'minimax' },
   { key: 'xai', label: 'xAI', icon: 'grok' },

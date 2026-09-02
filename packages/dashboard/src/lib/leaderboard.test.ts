@@ -123,8 +123,8 @@ describe('groupRankModelsByVendor', () => {
       groupRankModelsByVendor(['kimi-k2.5', 'moonshot/k3'])[0],
       {
         key: 'moonshot',
-        label: 'Moonshot / Kimi',
-        icon: 'kimi',
+        label: 'Moonshot',
+        icon: 'moonshot',
         models: ['kimi-k2.5', 'moonshot/k3'],
       },
     );
