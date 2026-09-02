@@ -66,10 +66,14 @@ describe('groupRankModelsByVendor', () => {
     'kimi-k2.5',
     'K2.7 Code',
     'k3-256k',
+    'doubao-seed-2.1-turbo',
+    'MiniMax-M3',
     'grok-4',
     'deepseek-chat',
     'glm-5',
     'zai_auto',
+    'mistral-large',
+    'meta-llama/llama-4',
     'local/custom-model',
   ];
 
@@ -88,9 +92,13 @@ describe('groupRankModelsByVendor', () => {
         { key: 'google', models: ['gemini-2.5-pro'] },
         { key: 'alibaba', models: ['qwen3-coder'] },
         { key: 'moonshot', models: ['K2.7 Code', 'k3-256k', 'kimi-k2.5'] },
+        { key: 'doubao', models: ['doubao-seed-2.1-turbo'] },
+        { key: 'minimax', models: ['MiniMax-M3'] },
         { key: 'xai', models: ['grok-4'] },
         { key: 'deepseek', models: ['deepseek-chat'] },
         { key: 'zhipu', models: ['glm-5', 'zai_auto'] },
+        { key: 'meta', models: ['meta-llama/llama-4'] },
+        { key: 'mistral', models: ['mistral-large'] },
         { key: 'other', models: ['local/custom-model'] },
       ],
     );
@@ -107,6 +115,27 @@ describe('groupRankModelsByVendor', () => {
     assert.deepEqual(
       groupRankModelsByVendor(models, 'GPT').map((group) => group.models),
       [['openai/gpt-5']],
+    );
+  });
+
+  it('merges provider aliases and exposes the icon metadata used by ModelProviderIcon', () => {
+    assert.deepEqual(
+      groupRankModelsByVendor(['kimi-k2.5', 'moonshot/k3'])[0],
+      {
+        key: 'moonshot',
+        label: 'Moonshot / Kimi',
+        icon: 'kimi',
+        models: ['kimi-k2.5', 'moonshot/k3'],
+      },
+    );
+  });
+
+  it('shows only detected providers and sorts non-priority vendors by label', () => {
+    assert.deepEqual(
+      groupRankModelsByVendor(['mistral-large', 'meta-llama/llama-4']).map(
+        (group) => group.label,
+      ),
+      ['Meta', 'Mistral'],
     );
   });
 

@@ -231,6 +231,8 @@ const MOCK_MODELS: readonly { tool: string; model: string }[] = [
   { tool: 'codex', model: 'gpt-5.3-codex' },
   { tool: 'codex', model: 'gpt-5.2-codex' },
   { tool: 'codex', model: 'K2.7 Code' },
+  { tool: 'codex', model: 'doubao-seed-2.1-turbo' },
+  { tool: 'codex', model: 'mistral-large' },
   { tool: 'qoder', model: 'qwen3-coder' },
   { tool: 'qoder', model: 'deepseek-v3' },
   { tool: 'opencode', model: 'gpt-5' },

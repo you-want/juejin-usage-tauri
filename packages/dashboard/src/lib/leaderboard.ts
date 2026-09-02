@@ -1,5 +1,5 @@
 import type { LeaderboardMetric, LeaderboardRange } from '@/lib/api';
-import { getModelProvider } from './model-provider.ts';
+import { getModelProvider, type ModelProvider } from './model-provider.ts';
 
 export type RankRange = LeaderboardRange;
 
@@ -17,19 +17,20 @@ export interface RankModelOption {
   model: string;
 }
 
-export const RANK_MODEL_VENDORS = [
+const PRIORITY_RANK_MODEL_VENDORS = [
   { key: 'anthropic', label: 'Anthropic', icon: 'claude' },
   { key: 'openai', label: 'OpenAI', icon: 'openai' },
   { key: 'google', label: 'Google', icon: 'google' },
   { key: 'alibaba', label: '阿里', icon: 'alibaba' },
-  { key: 'moonshot', label: 'Moonshot', icon: 'moonshot' },
+  { key: 'moonshot', label: 'Moonshot / Kimi', icon: 'kimi' },
+  { key: 'doubao', label: 'Doubao', icon: 'doubao' },
+  { key: 'minimax', label: 'MiniMax', icon: 'minimax' },
   { key: 'xai', label: 'xAI', icon: 'grok' },
   { key: 'deepseek', label: 'DeepSeek', icon: 'deepseek' },
   { key: 'zhipu', label: 'Zhipu', icon: 'zhipu' },
-  { key: 'other', label: '其他', icon: 'unknown' },
 ] as const;
 
-export type RankModelVendorKey = (typeof RANK_MODEL_VENDORS)[number]['key'];
+export type RankModelVendorKey = string;
 
 export interface RankModelVendorGroup {
   key: RankModelVendorKey;
@@ -56,40 +57,78 @@ const RANK_VENDOR_KEYS: Record<string, RankModelVendorKey> = {
   zhipu: 'zhipu',
 };
 
-/** 将排行榜模型归入产品约定的固定厂商，并按厂商与模型名支持模糊搜索。 */
+const PRIORITY_VENDOR_INDEX = new Map<string, number>(
+  PRIORITY_RANK_MODEL_VENDORS.map((vendor, index) => [vendor.key, index]),
+);
+
+function rankVendorForProvider(
+  provider: ModelProvider,
+): Omit<RankModelVendorGroup, 'models'> {
+  const key = RANK_VENDOR_KEYS[provider.key] ?? provider.key;
+  const priorityVendor = PRIORITY_RANK_MODEL_VENDORS.find(
+    (vendor) => vendor.key === key,
+  );
+  if (priorityVendor) return priorityVendor;
+  if (key === 'unknown') return { key: 'other', label: '其他', icon: 'unknown' };
+  return { key, label: provider.label, icon: provider.icon };
+}
+
+function compareRankVendors(
+  a: RankModelVendorGroup,
+  b: RankModelVendorGroup,
+): number {
+  if (a.key === 'other') return 1;
+  if (b.key === 'other') return -1;
+  const aPriority = PRIORITY_VENDOR_INDEX.get(a.key);
+  const bPriority = PRIORITY_VENDOR_INDEX.get(b.key);
+  if (aPriority !== undefined || bPriority !== undefined) {
+    return (
+      (aPriority ?? Number.MAX_SAFE_INTEGER) -
+      (bPriority ?? Number.MAX_SAFE_INTEGER)
+    );
+  }
+  return a.label.localeCompare(b.label);
+}
+
+/** 按识别出的模型厂商动态分组，合并同厂商模型族，并支持厂商与模型名模糊搜索。 */
 export function groupRankModelsByVendor(
   models: readonly string[],
   query = '',
 ): RankModelVendorGroup[] {
-  const buckets = new Map<RankModelVendorKey, string[]>();
-  for (const vendor of RANK_MODEL_VENDORS) buckets.set(vendor.key, []);
+  const buckets = new Map<RankModelVendorKey, RankModelVendorGroup>();
 
   for (const model of new Set(models.filter(Boolean))) {
     const provider = getModelProvider(model);
-    const vendorKey = RANK_VENDOR_KEYS[provider.key] ?? 'other';
-    buckets.get(vendorKey)?.push(model);
+    const vendor = rankVendorForProvider(provider);
+    const group = buckets.get(vendor.key) ?? { ...vendor, models: [] };
+    group.models.push(model);
+    buckets.set(vendor.key, group);
   }
 
   const normalizedQuery = query.trim().toLocaleLowerCase();
-  return RANK_MODEL_VENDORS.flatMap((vendor) => {
-    const modelsForVendor = buckets.get(vendor.key) ?? [];
-    const vendorMatches = vendor.label
-      .toLocaleLowerCase()
-      .includes(normalizedQuery);
-    const filteredModels =
-      normalizedQuery && !vendorMatches
-        ? modelsForVendor.filter((model) =>
-            `${vendor.label} ${model}`
-              .toLocaleLowerCase()
-              .includes(normalizedQuery),
-          )
-        : modelsForVendor;
+  return [...buckets.values()]
+    .flatMap((group) => {
+      const vendorMatches = group.label
+        .toLocaleLowerCase()
+        .includes(normalizedQuery);
+      const filteredModels =
+        normalizedQuery && !vendorMatches
+          ? group.models.filter((model) =>
+              `${group.label} ${model}`
+                .toLocaleLowerCase()
+                .includes(normalizedQuery),
+            )
+          : group.models;
 
-    if (filteredModels.length === 0) return [];
-    return [
-      { ...vendor, models: filteredModels.sort((a, b) => a.localeCompare(b)) },
-    ];
-  });
+      if (filteredModels.length === 0) return [];
+      return [
+        {
+          ...group,
+          models: filteredModels.sort((a, b) => a.localeCompare(b)),
+        },
+      ];
+    })
+    .sort(compareRankVendors);
 }
 
 /**

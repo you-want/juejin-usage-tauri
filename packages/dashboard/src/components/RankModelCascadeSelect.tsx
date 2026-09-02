@@ -1,8 +1,8 @@
-/** 排行榜模型级联筛选器：在前端按固定厂商归类，并将最终模型名交给现有筛选接口。 */
+/** 排行榜模型级联筛选器：按识别出的厂商动态归类，并将最终模型名交给现有筛选接口。 */
 import { useEffect, useMemo, useState } from 'react';
 import { Check, ChevronDown, ChevronRight } from '@gravity-ui/icons';
 import { Button, Label, Popover, SearchField } from '@heroui/react';
-import { ProviderIcon } from '@/components/ProviderIcon';
+import { ModelProviderIcon } from '@/components/ModelProviderIcon';
 import {
   groupRankModelsByVendor,
   type RankModelVendorKey,
@@ -128,10 +128,13 @@ export function RankModelCascadeSelect({
                       onMouseEnter={() => setActiveVendor(group.key)}
                     >
                       <span className="flex size-5 shrink-0 items-center justify-center rounded-md bg-white">
-                        <ProviderIcon onLightBackground provider={group.icon} size={13} />
+                        <ModelProviderIcon provider={group} size={13} />
                       </span>
                       <span className="min-w-0 flex-1 truncate font-medium">
                         {group.label}
+                      </span>
+                      <span className="shrink-0 tabular-nums text-[10px] text-muted">
+                        {group.models.length}
                       </span>
                       {containsSelected ? (
                         <Check className="size-3 shrink-0 text-accent" />
