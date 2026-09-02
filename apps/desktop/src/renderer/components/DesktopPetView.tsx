@@ -1,4 +1,3 @@
-import { Popover } from '@heroui/react';
 import {
   useEffect,
   useRef,
@@ -8,65 +7,67 @@ import {
   type PointerEvent,
 } from 'react';
 import { useAnimatedNumber } from '@/hooks/useAnimatedNumber';
-import { fetchDaily, fetchSummary } from '@/lib/api';
+import { fetchDaily } from '@/lib/api';
 import { formatTokens, formatTokensExact, formatUsd } from '@/lib/format';
 import {
   buildPetSyncFeedback,
   type PetSyncFeedback,
   type PetUsageSnapshot,
 } from '@/lib/pet-sync-feedback';
-import { DATA_SYNCED_EVENT } from '@/lib/shell-events';
 import { localDateNow } from '@/lib/stats-timezone';
 import { getDesktopPet, loadPetSpritesheet } from '@/pets';
+import {
+  DASHBOARD_RANGE_DAYS,
+  DASHBOARD_RANGE_LABELS,
+  DEFAULT_DASHBOARD_RANGE,
+  type DashboardRange,
+} from '../../shared/dashboard-range';
 import {
   DESKTOP_PET_SOURCE_HEIGHT,
   DESKTOP_PET_SOURCE_WIDTH,
   getDesktopPetLayout,
 } from '../../shared/desktop-pet-layout';
+import {
+  PET_SPRITESHEET_HEIGHT,
+  PET_SPRITESHEET_WIDTH,
+  paintPetSpriteFrame,
+  petSpriteCell,
+  type PetAnimation,
+} from '../../shared/desktop-pet-sprite';
 
-type Animation = 'idle' | 'running-left' | 'running-right';
-
-const CELL_WIDTH = DESKTOP_PET_SOURCE_WIDTH;
-const CELL_HEIGHT = DESKTOP_PET_SOURCE_HEIGHT;
 const DISPLAY_SCALE = 0.5;
-const SPRITESHEET_WIDTH = CELL_WIDTH * 8;
-const SPRITESHEET_HEIGHT = CELL_HEIGHT * 11;
 const DRAG_ANIMATION_SPEED_MULTIPLIER = 0.55;
 const SYNC_FEEDBACK_DURATION_MS = 5_000;
-const ANIMATION_ROWS: Record<Animation, { row: number; frames: number }> = {
-  idle: { row: 0, frames: 6 },
-  'running-right': { row: 1, frames: 8 },
-  'running-left': { row: 2, frames: 8 },
-};
+const BUBBLE_GAP_PX = 8;
 
-/**
- * Click's generated running-left row contains a corrupt frame with neighboring
- * poses baked into the same cell. Its right-running row is mirror-safe, so use
- * that complete row as the left-running source instead of displaying the
- * damaged pixels.
- */
-function getRenderedAnimation(
-  selectedPetId: string,
-  animation: Animation,
-): { source: Animation; mirrorX: boolean } {
-  if (selectedPetId === 'click' && animation === 'running-left') {
-    return { source: 'running-right', mirrorX: true };
+async function fetchRangeTotals(range: DashboardRange): Promise<{
+  totalTokens: number;
+  totalCostUsd: number;
+}> {
+  const daily = await fetchDaily(DASHBOARD_RANGE_DAYS[range]);
+  let totalTokens = 0;
+  let totalCostUsd = 0;
+  for (const row of daily.days ?? []) {
+    totalTokens += row.tokens;
+    totalCostUsd += row.costUsd;
   }
-  return { source: animation, mirrorX: false };
+  return { totalTokens, totalCostUsd };
 }
 
 /** Transparent pet view with manual drag support so click can open its token bubble. */
 export function DesktopPetView() {
-  const [animation, setAnimation] = useState<Animation>('idle');
-  const [frame, setFrame] = useState(0);
+  const [animation, setAnimation] = useState<PetAnimation>('idle');
   const [selectedPetId, setSelectedPetId] = useState('hawking');
   const [scale, setScale] = useState(DISPLAY_SCALE);
   const [frameIntervalMs, setFrameIntervalMs] = useState(180);
   const [isTokenTooltipOpen, setIsTokenTooltipOpen] = useState(false);
+  const [range, setRange] = useState<DashboardRange>(DEFAULT_DASHBOARD_RANGE);
   const [summary, setSummary] = useState<{ totalTokens: number; totalCostUsd: number } | null>(null);
   const [summaryError, setSummaryError] = useState(false);
   const [syncFeedback, setSyncFeedback] = useState<PetSyncFeedback | null>(null);
   const [spritesheetUrl, setSpritesheetUrl] = useState<string | null>(null);
+  const spriteRef = useRef<HTMLButtonElement>(null);
+  const frameRef = useRef(0);
   const alphaCanvas = useRef<HTMLCanvasElement | null>(null);
   const ignored = useRef(false);
   const usageSnapshot = useRef<PetUsageSnapshot | null>(null);
@@ -81,21 +82,41 @@ export function DesktopPetView() {
   const effectiveFrameIntervalMs = animation === 'idle'
     ? frameIntervalMs
     : Math.max(60, Math.round(frameIntervalMs * DRAG_ANIMATION_SPEED_MULTIPLIER));
+  const layout = getDesktopPetLayout(scale);
+  const { spriteWidth, spriteHeight } = layout;
 
   /**
-   * Frame clock. This deliberately uses a timer rather than a permanent rAF
-   * loop: the pet only needs one paint per sprite frame (about 5–17 fps), while
-   * rAF keeps a transparent Electron window rendering at the display refresh
-   * rate even when the sprite does not change.
+   * Frame clock writes `backgroundPosition` on the sprite node. A React
+   * setState loop would re-render the tree (and composite the transparent
+   * window) on every idle cell, about 5–17 times a second.
    */
   useEffect(() => {
+    const el = spriteRef.current;
+    if (!el || !spritesheetUrl) return;
+    const paint = () => {
+      paintPetSpriteFrame(
+        el,
+        selectedPetId,
+        animation,
+        frameRef.current,
+        spriteWidth,
+        spriteHeight,
+      );
+    };
+    paint();
     const timer = window.setInterval(() => {
-      setFrame((current) => current + 1);
+      frameRef.current += 1;
+      paint();
     }, effectiveFrameIntervalMs);
     return () => window.clearInterval(timer);
-  }, [effectiveFrameIntervalMs]);
+  }, [animation, selectedPetId, spritesheetUrl, spriteWidth, spriteHeight, effectiveFrameIntervalMs]);
 
   useEffect(() => window.tud.onDesktopPetAnimation(setAnimation), []);
+
+  useEffect(() => {
+    void window.tud.getDashboardRange().then(setRange);
+    return window.tud.onDashboardRange(setRange);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -137,14 +158,17 @@ export function DesktopPetView() {
     const refreshUsage = async (announce: boolean) => {
       try {
         const [nextSummary, daily] = await Promise.all([
-          fetchSummary(),
+          fetchRangeTotals(range),
           fetchDaily(365),
         ]);
         if (cancelled) return;
 
         const previous = usageSnapshot.current;
         const current: PetUsageSnapshot = {
-          totalTokens: nextSummary.totalTokens,
+          totalTokens: (daily.days ?? []).reduce(
+            (total, row) => total + row.tokens,
+            0,
+          ),
           dailyRows: daily.days ?? [],
         };
         usageSnapshot.current = current;
@@ -184,18 +208,17 @@ export function DesktopPetView() {
 
     enqueueUsageRefresh.current = enqueueRefresh;
     enqueueRefresh(false);
-    const onDataSynced = () => enqueueRefresh(true);
-    window.addEventListener(DATA_SYNCED_EVENT, onDataSynced);
+    const unsubscribe = window.tud.onDataSynced(() => enqueueRefresh(true));
     return () => {
       cancelled = true;
       enqueueUsageRefresh.current = () => undefined;
-      window.removeEventListener(DATA_SYNCED_EVENT, onDataSynced);
+      unsubscribe();
       if (feedbackTimer.current !== null) {
         window.clearTimeout(feedbackTimer.current);
         feedbackTimer.current = null;
       }
     };
-  }, []);
+  }, [range]);
 
   const setMouseIgnored = (shouldIgnore: boolean) => {
     if (shouldIgnore === ignored.current) return;
@@ -205,8 +228,8 @@ export function DesktopPetView() {
 
   const loadAlphaMap = (image: HTMLImageElement) => {
     const canvas = document.createElement('canvas');
-    canvas.width = SPRITESHEET_WIDTH;
-    canvas.height = SPRITESHEET_HEIGHT;
+    canvas.width = PET_SPRITESHEET_WIDTH;
+    canvas.height = PET_SPRITESHEET_HEIGHT;
     const context = canvas.getContext('2d', { willReadFrequently: true });
     if (!context) return;
     context.drawImage(image, 0, 0);
@@ -220,16 +243,18 @@ export function DesktopPetView() {
     }
     const canvas = alphaCanvas.current;
     if (!canvas) return;
-    const renderedAnimation = getRenderedAnimation(selectedPetId, animation);
-    const { row, frames } = ANIMATION_ROWS[renderedAnimation.source];
+    const cell = petSpriteCell(selectedPetId, animation, frameRef.current);
     const pointerX = Math.max(
       0,
-      Math.min(CELL_WIDTH - 1, Math.floor(event.nativeEvent.offsetX / scale)),
+      Math.min(DESKTOP_PET_SOURCE_WIDTH - 1, Math.floor(event.nativeEvent.offsetX / scale)),
     );
-    const x = renderedAnimation.mirrorX ? CELL_WIDTH - 1 - pointerX : pointerX;
-    const y = Math.max(0, Math.min(CELL_HEIGHT - 1, Math.floor(event.nativeEvent.offsetY / scale)));
+    const x = cell.mirrorX ? DESKTOP_PET_SOURCE_WIDTH - 1 - pointerX : pointerX;
+    const y = Math.max(
+      0,
+      Math.min(DESKTOP_PET_SOURCE_HEIGHT - 1, Math.floor(event.nativeEvent.offsetY / scale)),
+    );
     const alpha = canvas.getContext('2d', { willReadFrequently: true })
-      ?.getImageData((frame % frames) * CELL_WIDTH + x, row * CELL_HEIGHT + y, 1, 1).data[3] ?? 0;
+      ?.getImageData(cell.sourceX + x, cell.sourceY + y, 1, 1).data[3] ?? 0;
     setMouseIgnored(alpha < 16);
   };
 
@@ -311,14 +336,8 @@ export function DesktopPetView() {
     };
   }, []);
 
-  const renderedAnimation = getRenderedAnimation(selectedPetId, animation);
-  const { row, frames } = ANIMATION_ROWS[renderedAnimation.source];
-  const currentFrame = frame % frames;
   const pet = getDesktopPet(selectedPetId);
-  const layout = getDesktopPetLayout(scale);
-  const width = layout.spriteWidth;
-  const height = layout.spriteHeight;
-  const isPopoverOpen = isTokenTooltipOpen || syncFeedback !== null;
+  const isBubbleOpen = isTokenTooltipOpen || syncFeedback !== null;
 
   return (
     <div
@@ -331,95 +350,83 @@ export function DesktopPetView() {
         if (!dragState.current && event.target === event.currentTarget) setMouseIgnored(true);
       }}
     >
-      <img alt="" aria-hidden="true" className="hidden" src={spritesheetUrl ?? undefined} onLoad={(event) => loadAlphaMap(event.currentTarget)} />
-      <Popover
-        isOpen={isPopoverOpen}
-        onOpenChange={(open) => {
-          if (open) {
-            if (!syncFeedback) setIsTokenTooltipOpen(true);
-            return;
-          }
-          setIsTokenTooltipOpen(false);
-          setSyncFeedback(null);
-          if (feedbackTimer.current !== null) {
-            window.clearTimeout(feedbackTimer.current);
-            feedbackTimer.current = null;
-          }
-        }}
+      <img
+        alt=""
+        aria-hidden="true"
+        className="desktop-pet-preload"
+        src={spritesheetUrl ?? undefined}
+        onLoad={(event) => loadAlphaMap(event.currentTarget)}
+      />
+      {isBubbleOpen ? (
+        <div
+          className="desktop-pet-bubble"
+          onMouseEnter={() => setMouseIgnored(false)}
+          style={{ width: layout.popoverWidth, bottom: spriteHeight + BUBBLE_GAP_PX }}
+        >
+          {syncFeedback ? (
+            <PetSyncFeedbackContent feedback={syncFeedback} />
+          ) : (
+            <>
+              <div className="desktop-pet-bubble-range">{DASHBOARD_RANGE_LABELS[range]}</div>
+              <PetStatRow
+                dotClassName="desktop-pet-stat-dot--token"
+                exactLabel={summary ? formatTokensExact(summary.totalTokens) : undefined}
+                format={formatTokens}
+                label="Token"
+                state={summaryError ? 'error' : summary === null ? 'loading' : 'ready'}
+                value={summary?.totalTokens ?? 0}
+              />
+              <PetStatRow
+                dotClassName="desktop-pet-stat-dot--cost"
+                format={formatUsd}
+                label="费用"
+                state={summaryError ? 'error' : summary === null ? 'loading' : 'ready'}
+                value={summary?.totalCostUsd ?? 0}
+              />
+            </>
+          )}
+          <span aria-hidden className="desktop-pet-bubble-arrow" />
+        </div>
+      ) : null}
+      <div
+        className="desktop-pet-stage"
+        style={{
+          width: spriteWidth,
+          height: spriteHeight,
+          left: layout.spriteLeft,
+          top: layout.spriteTop,
+          '--pet-glow-primary': pet.glow.primary,
+          '--pet-glow-accent': pet.glow.accent,
+        } as CSSProperties}
       >
-        <Popover.Trigger
-          className="desktop-pet-popover-trigger"
+        <button
+          ref={spriteRef}
+          aria-label={`${pet.displayName} 桌面宠物，点击查看总 Token，拖动可移动，右键打开菜单`}
+          className="desktop-pet-sprite"
+          onMouseMove={updateMousePassThrough}
+          onPointerDown={onPointerDown}
+          onPointerMove={onPointerMove}
+          onPointerUp={(event) => finishDrag(event)}
+          onPointerCancel={(event) => finishDrag(event, true)}
+          onLostPointerCapture={(event) => finishDrag(event, true)}
+          onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+          }}
           style={{
-            width,
-            height,
-            left: layout.spriteLeft,
-            top: layout.popoverTop,
-            '--pet-glow-primary': pet.glow.primary,
-            '--pet-glow-accent': pet.glow.accent,
-          } as CSSProperties}
-        >
-          <button
-            aria-label={`${pet.displayName} 桌面宠物，点击查看总 Token，拖动可移动，右键打开菜单`}
-            className="desktop-pet-sprite"
-            onMouseMove={updateMousePassThrough}
-            onPointerDown={onPointerDown}
-            onPointerMove={onPointerMove}
-            onPointerUp={(event) => finishDrag(event)}
-            onPointerCancel={(event) => finishDrag(event, true)}
-            onLostPointerCapture={(event) => finishDrag(event, true)}
-            onClick={(event) => {
-              event.preventDefault();
-              event.stopPropagation();
-            }}
-            style={{
-              width,
-              height,
-              backgroundImage: spritesheetUrl ? `url(${spritesheetUrl})` : undefined,
-              backgroundPosition: `${-currentFrame * width}px ${-row * height}px`,
-              backgroundSize: `${SPRITESHEET_WIDTH * scale}px ${SPRITESHEET_HEIGHT * scale}px`,
-              transform: renderedAnimation.mirrorX ? 'scaleX(-1)' : undefined,
-            }}
-            type="button"
-          />
-        </Popover.Trigger>
-        <Popover.Content
-          className="overflow-hidden rounded-xl bg-surface shadow-lg"
-          offset={8}
-          placement="top"
-          shouldFlip={false}
-          style={{ width: layout.popoverWidth }}
-        >
-          <Popover.Arrow />
-          <Popover.Dialog className="px-3 py-2">
-            {syncFeedback ? (
-              <PetSyncFeedbackContent feedback={syncFeedback} />
-            ) : (
-              <div className="grid gap-1">
-                <PetStatRow
-                  dotClassName="bg-accent"
-                  exactLabel={summary ? formatTokensExact(summary.totalTokens) : undefined}
-                  format={formatTokens}
-                  label="Token"
-                  state={summaryError ? 'error' : summary === null ? 'loading' : 'ready'}
-                  value={summary?.totalTokens ?? 0}
-                />
-                <PetStatRow
-                  dotClassName="bg-success"
-                  format={formatUsd}
-                  label="费用"
-                  state={summaryError ? 'error' : summary === null ? 'loading' : 'ready'}
-                  value={summary?.totalCostUsd ?? 0}
-                />
-              </div>
-            )}
-          </Popover.Dialog>
-        </Popover.Content>
-      </Popover>
+            width: spriteWidth,
+            height: spriteHeight,
+            backgroundImage: spritesheetUrl ? `url(${spritesheetUrl})` : undefined,
+            backgroundSize: `${PET_SPRITESHEET_WIDTH * scale}px ${PET_SPRITESHEET_HEIGHT * scale}px`,
+          }}
+          type="button"
+        />
+      </div>
     </div>
   );
 }
 
-/** Compact celebration card; it shares the existing pet-colored popover. */
+/** Compact celebration content shown inside the pet's lightweight bubble. */
 function PetSyncFeedbackContent({ feedback }: { feedback: PetSyncFeedback }) {
   const milestones = [
     feedback.isDailyRecord ? '🎉 今日新高' : null,
@@ -431,29 +438,29 @@ function PetSyncFeedbackContent({ feedback }: { feedback: PetSyncFeedback }) {
   return (
     <div
       aria-live="polite"
-      className="grid min-w-0 gap-1.5 text-left"
+      className="desktop-pet-feedback"
       role="status"
     >
-      <div className="flex items-center gap-1.5">
+      <div className="desktop-pet-feedback-headline">
         <span
           aria-hidden
-          className="size-1.5 shrink-0 rounded-full bg-success shadow-[0_0_8px_color-mix(in_srgb,var(--pet-glow-primary)_70%,transparent)]"
+          className="desktop-pet-feedback-dot"
         />
-        <p className="min-w-0 truncate text-[12px] font-medium leading-tight text-foreground">
+        <span className="desktop-pet-feedback-text">
           刚同步{' '}
           <strong
-            className="font-semibold tabular-nums text-accent"
+            className="desktop-pet-feedback-amount"
             title={formatTokensExact(feedback.addedTokens)}
           >
             {formatTokens(feedback.addedTokens)}
           </strong>{' '}
           Token
-        </p>
+        </span>
       </div>
       {milestones.length > 0 && (
-        <div className="grid gap-0.5 pl-3 text-[10px] font-medium leading-tight text-muted">
+        <div className="desktop-pet-feedback-milestones">
           {milestones.map((milestone) => (
-            <p key={milestone}>{milestone}</p>
+            <span key={milestone}>{milestone}</span>
           ))}
         </div>
       )}
@@ -461,7 +468,7 @@ function PetSyncFeedbackContent({ feedback }: { feedback: PetSyncFeedback }) {
   );
 }
 
-/** One bullet + label + rolling value row inside the pet Popover. */
+/** One bullet + label + rolling value row inside the pet bubble. */
 function PetStatRow({
   dotClassName,
   exactLabel,
@@ -481,14 +488,14 @@ function PetStatRow({
   const animatedValue = useAnimatedNumber(state === 'ready' ? value : 0);
 
   return (
-    <div className="flex items-center justify-between gap-2">
-      <span className="flex min-w-0 items-center gap-1.5">
-        <span aria-hidden className={`size-1.5 shrink-0 rounded-full ${dotClassName}`} />
-        <span className="shrink-0 text-[11px] leading-tight text-muted">{label}</span>
+    <div className="desktop-pet-stat">
+      <span className="desktop-pet-stat-label">
+        <span aria-hidden className={`desktop-pet-stat-dot ${dotClassName}`} />
+        <span>{label}</span>
       </span>
       <span
         aria-label={exactLabel ? `${label} ${exactLabel}` : undefined}
-        className="truncate text-[13px] font-semibold leading-tight tabular-nums"
+        className="desktop-pet-stat-value"
         title={exactLabel}
       >
         {state === 'error' ? '--' : state === 'loading' ? '…' : format(animatedValue)}
