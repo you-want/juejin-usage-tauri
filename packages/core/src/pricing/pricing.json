@@ -2112,14 +2112,6 @@
       "ref": "anthropic/claude-opus-4-6"
     },
     {
-      "match": "claude-fable-5-1",
-      "ref": "anthropic/claude-fable-5-1"
-    },
-    {
-      "match": "claude-fable-5",
-      "ref": "anthropic/claude-fable-5"
-    },
-    {
       "match": "claude",
       "ref": "anthropic/claude-sonnet-4-5"
     },
