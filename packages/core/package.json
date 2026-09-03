@@ -38,6 +38,10 @@
     "./timezone": {
       "types": "./dist/timezone.d.ts",
       "import": "./dist/timezone.js"
+    },
+    "./project-label": {
+      "types": "./dist/project-label.d.ts",
+      "import": "./dist/project-label.js"
     }
   },
   "files": [
