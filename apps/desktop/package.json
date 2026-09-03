@@ -15,13 +15,13 @@
     "dev:mock": "cross-env VITE_ENABLE_MOCK_DATA=true electron-vite dev",
     "build": "electron-vite build",
     "start": "electron-vite preview",
-    "test": "node --experimental-strip-types --test src/shared/auto-update.test.mts",
     "build:mac": "electron-vite build && electron-builder --mac",
     "build:mac:arm": "electron-vite build && electron-builder --mac --arm64",
     "build:win": "electron-vite build && electron-builder --win",
     "release:mac": "electron-vite build && electron-builder --mac --publish always",
     "release:win": "electron-vite build && electron-builder --win --publish always",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "tsc -p tsconfig.test.json && node --test dist-test/shared/auto-update.test.js"
   },
   "dependencies": {
     "@fontsource-variable/jetbrains-mono": "5.2.8",
