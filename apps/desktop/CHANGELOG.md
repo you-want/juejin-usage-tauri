@@ -1,5 +1,19 @@
 # @juejin-opensource/jusage-desktop
 
+## 0.1.8
+
+### Patch Changes
+
+- 新增 DeepSeek Harness（dsh）用量采集：读取本地 `~/.dsh` 会话，按消息增量统计 token、模型与项目。
+- 桌面宠物支持右键菜单：显示主窗口、同步数据、打开设置、退出宠物。
+- 桌面宠物点击后的 Token / 费用与主面板当前时间范围一致，并标明是今天还是近 7 / 30 / 90 天。
+- 降低桌面宠物空闲时的内存占用：宠物窗口不再加载主面板，空闲动画不再整页重绘。
+- 修复自动更新：下载时在面板显示进度；安装后未能自动重启时恢复本地服务，并提供「重启并更新」按钮手动重试。
+- 定价表补充 Claude Fable 5.1 与 Gemini 3.8 Flash，费用统计按最新价格计算。
+- 修复项目分布把工作目录编码路径（如 `%2FUsers%2F...`）直接当标题展示的问题。
+- Updated dependencies
+  - @juejin-opensource/jusage-core@0.1.8
+
 ## 0.1.7
 
 ### Patch Changes

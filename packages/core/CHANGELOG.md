@@ -1,5 +1,13 @@
 # @juejin-opensource/jusage-core
 
+## 0.1.8
+
+### Patch Changes
+
+- 新增 DeepSeek Harness（dsh）用量采集：读取本地 `~/.dsh` 会话，按消息增量统计 token、模型与项目。
+- 定价表补充 Claude Fable 5.1 与 Gemini 3.8 Flash，费用统计按最新价格计算。
+- 修复项目分布把工作目录编码路径（如 `%2FUsers%2F...`）直接当标题展示的问题。
+
 ## 0.1.7
 
 ### Patch Changes

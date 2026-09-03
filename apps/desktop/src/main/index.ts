@@ -18,7 +18,14 @@ import {
   type DesktopWindowTheme,
   unregisterOpenExternalIpc,
 } from './DesktopWindow';
-import { createTrayPopover, disposeTrayPopover, hideTrayPopover, setPopoverTheme } from './TrayPopover';
+import {
+  createTrayPopover,
+  disposeTrayPopover,
+  hideTrayPopover,
+  markTrayPopoverQuitting,
+  resetTrayPopoverQuitting,
+  setPopoverTheme,
+} from './TrayPopover';
 import { registerLocalApiIpc } from './local-api-ipc';
 import {
   localApiRequest,
@@ -439,16 +446,21 @@ void acquireDesktopInstanceLock().then((gotLock) => {
     disposeLocalApiIpc = registerLocalApiIpc();
     await initializeAutoUpdate({
       beforeInstall: async () => {
+        // Release close interceptors before stopping runtime so a hung stop
+        // cannot leave tray/main-window preventDefault blocking quit.
+        hideTrayPopover();
+        markTrayPopoverQuitting();
+        markAppQuitting();
         setLocalRuntimeQuitting(true);
         await stopLocalRuntime();
-        // electron-updater closes windows before Electron emits `before-quit`.
-        // Set this first so our close-to-tray handler does not block relaunch.
-        markAppQuitting();
       },
       onInstallFailed: async () => {
         resetAppQuitting();
+        resetTrayPopoverQuitting();
         resumeLocalRuntimeWatchdog();
         await startLocalRuntime();
+        // quitAndInstall may have already destroyed the main window.
+        showMainWindow();
       },
     });
 
@@ -483,8 +495,8 @@ void acquireDesktopInstanceLock().then((gotLock) => {
     // to destroy it on ready-to-show still pays for a full dashboard load and
     // drops IPC (config-reset / deep-link) aimed at that doomed window.
     if (shouldStartHidden()) {
-      if (process.platform === 'darwin' && app.dock) {
-        app.dock.hide();
+      if (process.platform === 'darwin') {
+        app.dock?.hide();
       }
     } else {
       createWindow();

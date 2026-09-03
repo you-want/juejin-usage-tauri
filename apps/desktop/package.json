@@ -1,6 +1,6 @@
 {
   "name": "@juejin-opensource/jusage-desktop",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "private": true,
   "license": "MIT",
   "description": "Juejin AI Usage 统计客户端：Token 用量明细追踪，本地记录、云端同步，还有线上排行榜。",
@@ -20,7 +20,8 @@
     "build:win": "electron-vite build && electron-builder --win",
     "release:mac": "electron-vite build && electron-builder --mac --publish always",
     "release:win": "electron-vite build && electron-builder --win --publish always",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "tsc -p tsconfig.test.json && node --test dist-test/shared/auto-update.test.js"
   },
   "dependencies": {
     "@fontsource-variable/jetbrains-mono": "5.2.8",

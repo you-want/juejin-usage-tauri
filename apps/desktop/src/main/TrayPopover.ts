@@ -262,6 +262,16 @@ export function setPopoverTheme(theme: DesktopWindowTheme): void {
   }
 }
 
+/** Allow electron-updater to close the popover instead of hide-on-close. */
+export function markTrayPopoverQuitting(): void {
+  isQuitting = true;
+}
+
+/** Restore hide-on-close if an attempted update install fails. */
+export function resetTrayPopoverQuitting(): void {
+  isQuitting = false;
+}
+
 export function createTrayPopover(options: TrayPopoverOptions): void {
   if (tray) return;
   popoverTheme = options.theme;

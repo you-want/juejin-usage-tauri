@@ -1,8 +1,8 @@
-version: 0.1.7
+version: 0.1.8
 files:
-  - url: https://gitee.com/juejin-cn/juejin-usage/releases/download/v0.1.7/Juejin%20Usage%20Setup%200.1.7.exe
-    sha512: yLyD7Po4YNokOkn4FyR+Ghq3SzRNl7YF8duy11uJsjNjxCIgI9nBI+rqGYSmqI0S0LFH5BKkeSIjxiM1PPuL1g==
-    size: 80053456
-path: Juejin Usage Setup 0.1.7.exe
-sha512: yLyD7Po4YNokOkn4FyR+Ghq3SzRNl7YF8duy11uJsjNjxCIgI9nBI+rqGYSmqI0S0LFH5BKkeSIjxiM1PPuL1g==
-releaseDate: '2026-09-01T02:12:29.677Z'
+  - url: https://gitee.com/juejin-cn/juejin-usage/releases/download/v0.1.8/Juejin%20Usage%20Setup%200.1.8.exe
+    sha512: DEPrButzvggDi+qIXStMqhNmhFrNsjlisu2DoMNDkGJIGSI+UnRjjSRpDld0zcgvZczCbmldU609nSRRCt28kQ==
+    size: 80071924
+path: Juejin Usage Setup 0.1.8.exe
+sha512: DEPrButzvggDi+qIXStMqhNmhFrNsjlisu2DoMNDkGJIGSI+UnRjjSRpDld0zcgvZczCbmldU609nSRRCt28kQ==
+releaseDate: '2026-09-03T11:32:54.245Z'

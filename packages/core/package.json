@@ -1,6 +1,6 @@
 {
   "name": "@juejin-opensource/jusage-core",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "description": "AI Agent Token 用量采集与本地 API 核心库（parsers / sync / hooks / pricing / upload）",
   "type": "module",
   "license": "MIT",
@@ -38,6 +38,10 @@
     "./timezone": {
       "types": "./dist/timezone.d.ts",
       "import": "./dist/timezone.js"
+    },
+    "./project-label": {
+      "types": "./dist/project-label.d.ts",
+      "import": "./dist/project-label.js"
     }
   },
   "files": [

@@ -18,7 +18,10 @@ import {
   Toast,
   ToastQueue,
 } from '@heroui/react';
-import type { AutoUpdateState } from '../../shared/auto-update';
+import {
+  shouldOfferUpdateRestart,
+  type AutoUpdateState,
+} from '../../shared/auto-update';
 import {
   fetchConfig,
   getApiBearer,
@@ -900,6 +903,7 @@ function AppSettingsPanel() {
 function AutoUpdateSettings() {
   const [state, setState] = useState<AutoUpdateState | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [installPending, setInstallPending] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -912,7 +916,9 @@ function AutoUpdateSettings() {
     void window.tud
       .getAutoUpdateState()
       .then((next) => {
-        if (!cancelled) setState(next);
+        if (!cancelled) {
+          setState(next);
+        }
       })
       .catch((reason) => {
         if (!cancelled) {
@@ -935,6 +941,20 @@ function AutoUpdateSettings() {
       setActionError(
         reason instanceof Error ? reason.message : '检查更新失败',
       );
+    }
+  };
+
+  const install = async () => {
+    setActionError(null);
+    setInstallPending(true);
+    try {
+      await window.tud.installDownloadedUpdate();
+    } catch (reason) {
+      setActionError(
+        reason instanceof Error ? reason.message : '重启并安装更新失败',
+      );
+    } finally {
+      setInstallPending(false);
     }
   };
 
@@ -971,6 +991,16 @@ function AutoUpdateSettings() {
           </Alert>
         )}
 
+        {status === 'downloaded' && state?.message && (
+          <Alert status="warning">
+            <Alert.Indicator />
+            <Alert.Content>
+              <Alert.Title>自动重启未完成</Alert.Title>
+              <Alert.Description>{state.message}</Alert.Description>
+            </Alert.Content>
+          </Alert>
+        )}
+
         {(status === 'available' || status === 'downloading') && (
           <ProgressBar
             aria-label="更新下载进度"
@@ -988,7 +1018,19 @@ function AutoUpdateSettings() {
 
         <div className="flex items-center justify-between gap-4">
           <p className="text-xs text-muted">{message}</p>
-          {status !== 'installing' && (
+          {shouldOfferUpdateRestart(status) ? (
+            <Button
+              isDisabled={status === 'installing'}
+              isPending={installPending || status === 'installing'}
+              onPress={() => {
+                void install();
+              }}
+              size="sm"
+              variant="primary"
+            >
+              重启并更新
+            </Button>
+          ) : (
             <Button
               isDisabled={status === 'unsupported' || busy}
               isPending={status === 'checking'}
@@ -1018,6 +1060,10 @@ function updateStatusMessage(state: AutoUpdateState | null): string {
       return `发现 v${state.version ?? ''}，准备下载…`;
     case 'downloading':
       return `正在下载 v${state.version ?? ''}`;
+    case 'downloaded':
+      return state.message
+        ? `v${state.version ?? ''} 已下载，可手动重启安装`
+        : `v${state.version ?? ''} 已下载，等待重启安装`;
     case 'installing':
       return `v${state.version ?? ''} 已下载，正在重启并安装…`;
     case 'not-available':
