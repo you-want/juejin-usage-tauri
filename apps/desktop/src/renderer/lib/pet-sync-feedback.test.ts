@@ -68,6 +68,16 @@ test('equaling the previous daily high is not a new record', () => {
   assert.equal(feedback?.isDailyRecord, false);
 });
 
+test('does not celebrate a daily record without prior active history', () => {
+  const feedback = buildPetSyncFeedback(
+    snapshot(100, [['2026-09-02', 100]]),
+    snapshot(200, [['2026-09-02', 200]]),
+    '2026-09-02',
+  );
+
+  assert.equal(feedback?.isDailyRecord, false);
+});
+
 test('counts consecutive active days ending today', () => {
   assert.equal(countActiveStreak([
     { date: '2026-08-29', tokens: 50 },

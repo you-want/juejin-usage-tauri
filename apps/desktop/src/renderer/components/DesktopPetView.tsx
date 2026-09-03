@@ -14,7 +14,7 @@ import {
   type PetSyncFeedback,
   type PetUsageSnapshot,
 } from '@/lib/pet-sync-feedback';
-import { localDateNow } from '@/lib/stats-timezone';
+import { localDateDaysAgo, localDateNow } from '@/lib/stats-timezone';
 import { getDesktopPet, loadPetSpritesheet } from '@/pets';
 import {
   DASHBOARD_RANGE_DAYS,
@@ -40,14 +40,19 @@ const DRAG_ANIMATION_SPEED_MULTIPLIER = 0.55;
 const SYNC_FEEDBACK_DURATION_MS = 5_000;
 const BUBBLE_GAP_PX = 8;
 
-async function fetchRangeTotals(range: DashboardRange): Promise<{
+function calculateRangeTotals(
+  rows: Array<{ date: string; tokens: number; costUsd: number }>,
+  range: DashboardRange,
+  today: string,
+): {
   totalTokens: number;
   totalCostUsd: number;
-}> {
-  const daily = await fetchDaily(DASHBOARD_RANGE_DAYS[range]);
+} {
+  const startDate = localDateDaysAgo(DASHBOARD_RANGE_DAYS[range]);
   let totalTokens = 0;
   let totalCostUsd = 0;
-  for (const row of daily.days ?? []) {
+  for (const row of rows) {
+    if (row.date < startDate || row.date > today) continue;
     totalTokens += row.tokens;
     totalCostUsd += row.costUsd;
   }
@@ -84,6 +89,7 @@ export function DesktopPetView() {
     : Math.max(60, Math.round(frameIntervalMs * DRAG_ANIMATION_SPEED_MULTIPLIER));
   const layout = getDesktopPetLayout(scale);
   const { spriteWidth, spriteHeight } = layout;
+
 
   /**
    * Frame clock writes `backgroundPosition` on the sprite node. A React
@@ -157,19 +163,19 @@ export function DesktopPetView() {
 
     const refreshUsage = async (announce: boolean) => {
       try {
-        const [nextSummary, daily] = await Promise.all([
-          fetchRangeTotals(range),
-          fetchDaily(365),
-        ]);
+        const daily = await fetchDaily(365);
         if (cancelled) return;
 
+        const dailyRows = daily.days ?? [];
+        const today = localDateNow();
+        const nextSummary = calculateRangeTotals(dailyRows, range, today);
         const previous = usageSnapshot.current;
         const current: PetUsageSnapshot = {
-          totalTokens: (daily.days ?? []).reduce(
+          totalTokens: dailyRows.reduce(
             (total, row) => total + row.tokens,
             0,
           ),
-          dailyRows: daily.days ?? [],
+          dailyRows,
         };
         usageSnapshot.current = current;
         setSummary({
@@ -182,7 +188,7 @@ export function DesktopPetView() {
         const feedback = buildPetSyncFeedback(
           previous,
           current,
-          localDateNow(),
+          today,
         );
         // Dragging is an explicit interaction; never cover it with a broadcast.
         if (!feedback || dragState.current) return;
@@ -447,7 +453,7 @@ function PetSyncFeedbackContent({ feedback }: { feedback: PetSyncFeedback }) {
           className="desktop-pet-feedback-dot"
         />
         <span className="desktop-pet-feedback-text">
-          刚同步{' '}
+          +
           <strong
             className="desktop-pet-feedback-amount"
             title={formatTokensExact(feedback.addedTokens)}

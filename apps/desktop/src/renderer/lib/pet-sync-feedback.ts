@@ -72,6 +72,10 @@ export function buildPetSyncFeedback(
 
   const previousTodayTokens = tokensForDate(previous.dailyRows, today);
   const currentTodayTokens = tokensForDate(current.dailyRows, today);
+  // 只有存在可比较的历史用量时，才庆祝“今日新高”。
+  const hasHistory = current.dailyRows.some(
+    (row) => row.date !== today && row.tokens > 0,
+  );
   const previousDailyHigh = current.dailyRows.reduce(
     (highest, row) => row.date === today ? highest : Math.max(highest, row.tokens),
     0,
@@ -80,7 +84,8 @@ export function buildPetSyncFeedback(
   return {
     addedTokens,
     isDailyRecord:
-      currentTodayTokens > previousDailyHigh
+      hasHistory
+      && currentTodayTokens > previousDailyHigh
       && previousTodayTokens <= previousDailyHigh,
     activeStreakDays: countActiveStreak(current.dailyRows, today),
   };
