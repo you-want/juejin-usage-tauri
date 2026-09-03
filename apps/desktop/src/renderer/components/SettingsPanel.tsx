@@ -18,7 +18,10 @@ import {
   Toast,
   ToastQueue,
 } from '@heroui/react';
-import type { AutoUpdateState } from '../../shared/auto-update';
+import {
+  shouldOfferUpdateRestart,
+  type AutoUpdateState,
+} from '../../shared/auto-update';
 import {
   fetchConfig,
   getApiBearer,
@@ -945,7 +948,7 @@ function AutoUpdateSettings() {
     setActionError(null);
     setInstallPending(true);
     try {
-      setState(await window.tud.installDownloadedUpdate());
+      await window.tud.installDownloadedUpdate();
     } catch (reason) {
       setActionError(
         reason instanceof Error ? reason.message : '重启并安装更新失败',
@@ -1015,9 +1018,10 @@ function AutoUpdateSettings() {
 
         <div className="flex items-center justify-between gap-4">
           <p className="text-xs text-muted">{message}</p>
-          {status === 'downloaded' ? (
+          {shouldOfferUpdateRestart(status) ? (
             <Button
-              isPending={installPending}
+              isDisabled={status === 'installing'}
+              isPending={installPending || status === 'installing'}
               onPress={() => {
                 void install();
               }}
@@ -1026,7 +1030,7 @@ function AutoUpdateSettings() {
             >
               重启并更新
             </Button>
-          ) : status !== 'installing' ? (
+          ) : (
             <Button
               isDisabled={status === 'unsupported' || busy}
               isPending={status === 'checking'}
@@ -1038,7 +1042,7 @@ function AutoUpdateSettings() {
             >
               检查更新
             </Button>
-          ) : null}
+          )}
         </div>
       </Card.Content>
     </Card>

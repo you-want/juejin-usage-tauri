@@ -160,8 +160,9 @@ async function recoverInstallAttempt(message: string): Promise<void> {
 }
 
 async function installDownloadedUpdate(): Promise<AutoUpdateState> {
-  const version = downloadedVersion;
+  const version = downloadedVersion ?? state.version;
   if (!version || installing) return state;
+  downloadedVersion = version;
   installing = true;
   setState({
     status: 'installing',
@@ -171,15 +172,18 @@ async function installDownloadedUpdate(): Promise<AutoUpdateState> {
     checkedAt: state.checkedAt,
   });
   try {
-    await writeUpdateMarker(version);
-    await beforeInstall?.();
-    // quitAndInstall 没有成功回执；进程仍存活时恢复 runtime 并开放手动重试。
+    // Arm the watchdog before beforeInstall: stopLocalRuntime can hang, and
+    // quitAndInstall has no success ack. If the process is still here later,
+    // recover runtime and let the user retry.
     installExitTimer = setTimeout(() => {
       void recoverInstallAttempt(
         '自动重启未完成，请点击“重启并更新”再次尝试。',
       );
     }, INSTALL_EXIT_TIMEOUT_MS);
     installExitTimer.unref();
+    await writeUpdateMarker(version);
+    await beforeInstall?.();
+    if (!installing) return state;
     autoUpdater.quitAndInstall(false, true);
   } catch (error) {
     const message = installErrorMessage(error);
