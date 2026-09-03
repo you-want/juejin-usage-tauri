@@ -16,7 +16,13 @@ import {
   type DesktopWindowTheme,
   unregisterOpenExternalIpc,
 } from './DesktopWindow';
-import { createTrayPopover, disposeTrayPopover, hideTrayPopover } from './TrayPopover';
+import {
+  createTrayPopover,
+  disposeTrayPopover,
+  hideTrayPopover,
+  markTrayPopoverQuitting,
+  resetTrayPopoverQuitting,
+} from './TrayPopover';
 import { registerLocalApiIpc } from './local-api-ipc';
 import {
   localApiRequest,
@@ -168,7 +174,7 @@ async function showMainWindowAsync(): Promise<void> {
     // Window was destroyed on close (tray-resident app). Rebuild it. On
     // macOS the dock was hidden at close; await the accessory→regular
     // transform so the freshly built window is not hidden by macOS mid-flight.
-    if (process.platform === 'darwin' && !app.dock.isVisible()) {
+    if (process.platform === 'darwin' && app.dock && !app.dock.isVisible()) {
       try {
         await app.dock.show();
       } catch {
@@ -382,16 +388,21 @@ void acquireDesktopInstanceLock().then((gotLock) => {
     disposeLocalApiIpc = registerLocalApiIpc();
     await initializeAutoUpdate({
       beforeInstall: async () => {
+        // Release close interceptors before stopping runtime so a hung stop
+        // cannot leave tray/main-window preventDefault blocking quit.
+        hideTrayPopover();
+        markTrayPopoverQuitting();
+        markAppQuitting();
         setLocalRuntimeQuitting(true);
         await stopLocalRuntime();
-        // electron-updater closes windows before Electron emits `before-quit`.
-        // Set this first so our close-to-tray handler does not block relaunch.
-        markAppQuitting();
       },
       onInstallFailed: async () => {
         resetAppQuitting();
+        resetTrayPopoverQuitting();
         resumeLocalRuntimeWatchdog();
         await startLocalRuntime();
+        // quitAndInstall may have already destroyed the main window.
+        showMainWindow();
       },
     });
 
@@ -427,7 +438,7 @@ void acquireDesktopInstanceLock().then((gotLock) => {
     // drops IPC (config-reset / deep-link) aimed at that doomed window.
     if (shouldStartHidden()) {
       if (process.platform === 'darwin') {
-        app.dock.hide();
+        app.dock?.hide();
       }
     } else {
       createWindow();

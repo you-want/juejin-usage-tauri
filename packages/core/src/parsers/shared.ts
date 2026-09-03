@@ -3,6 +3,7 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
 import type { QueueBucket, TokenTotals } from '../types.js';
+import { normalizeProjectName } from '../project-label.js';
 import { alignUnknownIntoDominant } from '../queue/align-unknown.js';
 
 export type BucketAccumulator = Map<
@@ -121,14 +122,15 @@ export function accumulateBucket(
   collector?: string,
 ): void {
   const coll = collector?.trim() || '';
-  const key = bucketStateKey(source, model, project, hourStart, coll);
+  const projectName = normalizeProjectName(project);
+  const key = bucketStateKey(source, model, projectName, hourStart, coll);
   const existing = state.get(key);
   if (existing) {
     const merged = sumTokenTotals(existing, delta);
     state.set(key, {
       ...merged,
       model,
-      project,
+      project: projectName,
       hour_start: hourStart,
       ...(coll ? { collector: coll } : {}),
     });
@@ -136,7 +138,7 @@ export function accumulateBucket(
     state.set(key, {
       ...delta,
       model,
-      project,
+      project: projectName,
       hour_start: hourStart,
       ...(coll ? { collector: coll } : {}),
     });
