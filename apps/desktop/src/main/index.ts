@@ -1,7 +1,9 @@
-import { app, BrowserWindow, clipboard, ipcMain, nativeImage } from 'electron';
+import { app, BrowserWindow, clipboard, ipcMain, nativeImage, nativeTheme } from 'electron';
 import {
   initAutostartOnLaunch,
+  loadThemeMode,
   registerAutostartIpc,
+  saveThemeMode,
   shouldStartHidden,
   unregisterAutostartIpc,
 } from './autostart';
@@ -22,6 +24,7 @@ import {
   hideTrayPopover,
   markTrayPopoverQuitting,
   resetTrayPopoverQuitting,
+  setPopoverTheme,
 } from './TrayPopover';
 import { registerLocalApiIpc } from './local-api-ipc';
 import {
@@ -46,6 +49,7 @@ import {
   type OpenSettingsPayload,
 } from './deep-link';
 import { disposeAutoUpdate, initializeAutoUpdate } from './auto-update';
+import { isThemeMode, resolveTheme, type ThemeMode } from '../shared/theme';
 import {
   DEFAULT_DATA_DIR,
   evictRuntimeKind,
@@ -73,6 +77,7 @@ const SHARE_CARD_COPY_IMAGE_CHANNEL = 'share-card:copy-image';
 
 const windows = new Set<DesktopWindow>();
 let disposeLocalApiIpc: (() => void) | null = null;
+let currentThemeMode: ThemeMode = 'system';
 let currentTheme: Theme = 'light';
 let pendingDeepLinkUrl: string | null = null;
 let runtimeReady = false;
@@ -109,26 +114,62 @@ function broadcastConfigResetNotice(): void {
   }
 }
 
-function isTheme(value: unknown): value is Theme {
-  return value === 'light' || value === 'dark';
+function onNativeThemeUpdated(): void {
+  // `system` mode re-resolves on OS appearance changes; fixed modes keep the
+  // resolved theme stable (shouldUseDarkColors follows themeSource).
+  const next = resolveTheme(currentThemeMode, nativeTheme.shouldUseDarkColors);
+  if (next === currentTheme) return;
+  applyResolvedTheme(next);
+  broadcastThemeState();
+}
+
+/** Apply the rendered theme to window chrome; no-op when unchanged. */
+function applyResolvedTheme(next: Theme): void {
+  if (next === currentTheme) return;
+  currentTheme = next;
+  for (const desktopWindow of windows) {
+    if (desktopWindow.window.isDestroyed()) continue;
+    desktopWindow.setThemeBackground(currentTheme);
+  }
+  setPopoverTheme(currentTheme);
+}
+
+/** Push the full theme state to every window: mode drives the selector
+ *  highlight, resolved drives the rendered theme. */
+function broadcastThemeState(): void {
+  const payload = { mode: currentThemeMode, resolved: currentTheme };
+  for (const window of BrowserWindow.getAllWindows()) {
+    window.webContents.send(THEME_CHANGED_CHANNEL, payload);
+  }
 }
 
 function registerThemeIpc(): void {
   ipcMain.removeHandler(THEME_GET_CHANNEL);
-  ipcMain.handle(THEME_GET_CHANNEL, () => currentTheme);
+  ipcMain.handle(THEME_GET_CHANNEL, () => ({
+    mode: currentThemeMode,
+    resolved: currentTheme,
+  }));
 
   ipcMain.removeAllListeners(THEME_SET_CHANNEL);
-  ipcMain.on(THEME_SET_CHANNEL, (_event, nextTheme: unknown) => {
-    if (!isTheme(nextTheme) || nextTheme === currentTheme) return;
-    currentTheme = nextTheme;
-    for (const desktopWindow of windows) {
-      if (desktopWindow.window.isDestroyed()) continue;
-      desktopWindow.setThemeBackground(currentTheme);
-    }
-    for (const window of BrowserWindow.getAllWindows()) {
-      window.webContents.send(THEME_CHANGED_CHANNEL, currentTheme);
-    }
+  ipcMain.on(THEME_SET_CHANNEL, (_event, nextMode: unknown) => {
+    if (!isThemeMode(nextMode) || nextMode === currentThemeMode) return;
+    currentThemeMode = nextMode;
+    nativeTheme.themeSource = nextMode;
+    // Persist the user's choice; failure must not block the in-memory switch.
+    saveThemeMode(nextMode).catch((err) => {
+      console.error(
+        '[tud-desktop] failed to persist theme mode:',
+        err instanceof Error ? err.message : err,
+      );
+    });
+    // Always broadcast the full state: the selector highlight must follow the
+    // new mode even when the resolved theme does not change.
+    applyResolvedTheme(resolveTheme(nextMode, nativeTheme.shouldUseDarkColors));
+    broadcastThemeState();
   });
+
+  nativeTheme.removeListener('updated', onNativeThemeUpdated);
+  nativeTheme.on('updated', onNativeThemeUpdated);
 }
 
 function registerShareCardIpc(): void {
@@ -368,6 +409,23 @@ void acquireDesktopInstanceLock().then((gotLock) => {
 
   app.whenReady().then(async () => {
     applyDevDockIcon();
+
+    // Restore the persisted theme mode before any window / IPC is registered
+    // so the first window and theme:get already resolve correctly.
+    try {
+      currentThemeMode = await loadThemeMode();
+    } catch (err) {
+      console.error(
+        '[tud-desktop] failed to load theme mode:',
+        err instanceof Error ? err.message : err,
+      );
+    }
+    nativeTheme.themeSource = currentThemeMode;
+    currentTheme = resolveTheme(
+      currentThemeMode,
+      nativeTheme.shouldUseDarkColors,
+    );
+
     ipcMain.removeAllListeners('app:quit');
     ipcMain.on('app:quit', () => app.quit());
 
@@ -449,6 +507,7 @@ void acquireDesktopInstanceLock().then((gotLock) => {
       showMainWindow,
       openSettings: () => openSettings(),
       triggerSync,
+      theme: currentTheme,
     });
 
     if (pendingDeepLinkUrl) {
@@ -489,6 +548,7 @@ void acquireDesktopInstanceLock().then((gotLock) => {
     ipcMain.removeHandler(THEME_GET_CHANNEL);
     ipcMain.removeHandler(SHARE_CARD_COPY_IMAGE_CHANNEL);
     ipcMain.removeAllListeners(THEME_SET_CHANNEL);
+    nativeTheme.removeListener('updated', onNativeThemeUpdated);
     unregisterOpenExternalIpc();
     unregisterAutostartIpc();
     unregisterDesktopPetIpc();

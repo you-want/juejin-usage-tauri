@@ -9,7 +9,7 @@ import {
 } from 'electron';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
-import { defaultPreloadPath, resolveAppIconPath } from './DesktopWindow';
+import { defaultPreloadPath, resolveAppIconPath, WINDOW_BACKGROUND_COLORS, type DesktopWindowTheme } from './DesktopWindow';
 import { pokeSyncOnForeground } from './local-runtime';
 
 /**
@@ -45,11 +45,14 @@ export interface TrayPopoverOptions {
   openSettings: () => void;
   /** Same as in-app「同步数据」→ POST tud-trigger-sync. */
   triggerSync: () => void;
+  /** Initial popover window background, kept in sync with the app theme. */
+  theme: DesktopWindowTheme;
 }
 
 let tray: Tray | null = null;
 let popover: BrowserWindow | null = null;
 let isQuitting = false;
+let popoverTheme: DesktopWindowTheme = 'light';
 /** Latest content height reported by the renderer, used when re-anchoring. */
 let popoverHeight = POPOVER_INITIAL_HEIGHT;
 
@@ -111,6 +114,7 @@ function ensurePopover(): BrowserWindow {
     show: false,
     frame: false,
     fullscreenable: false,
+    backgroundColor: WINDOW_BACKGROUND_COLORS[popoverTheme],
     // Keep native resizing enabled for programmatic auto-height updates. The
     // active height is locked with equal min/max bounds after every update.
     resizable: true,
@@ -250,6 +254,14 @@ export function hideTrayPopover(): void {
   popover.hide();
 }
 
+/** Keep the popover's native background in sync with the app theme. */
+export function setPopoverTheme(theme: DesktopWindowTheme): void {
+  popoverTheme = theme;
+  if (popover && !popover.isDestroyed()) {
+    popover.setBackgroundColor(WINDOW_BACKGROUND_COLORS[theme]);
+  }
+}
+
 /** Allow electron-updater to close the popover instead of hide-on-close. */
 export function markTrayPopoverQuitting(): void {
   isQuitting = true;
@@ -262,6 +274,7 @@ export function resetTrayPopoverQuitting(): void {
 
 export function createTrayPopover(options: TrayPopoverOptions): void {
   if (tray) return;
+  popoverTheme = options.theme;
 
   tray = new Tray(loadTrayIcon());
   tray.setToolTip('Juejin Usage');
