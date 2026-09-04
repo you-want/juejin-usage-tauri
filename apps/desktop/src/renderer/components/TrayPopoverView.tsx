@@ -78,7 +78,9 @@ export function TrayPopoverView() {
       setLastSyncAt(status.lastSyncAt);
       setNow(Date.now());
     } catch {
-      setLastSyncAt(null);
+      // Keep the last known timestamp. A transient IPC/API failure must not
+      // make a previously synced tray look as though it has never synced.
+      setNow(Date.now());
     }
   }, []);
 
@@ -95,17 +97,30 @@ export function TrayPopoverView() {
         void reloadSyncStatus();
       }, 250);
     };
+    // The native popover stays mounted while hidden, so mount-only status
+    // loading leaves this footer stale after an empty background sync.
+    const onFocus = () => {
+      void reloadSyncStatus();
+    };
     window.addEventListener(DATA_SYNCED_EVENT, onSynced);
+    window.addEventListener('focus', onFocus);
     return () => {
       window.clearTimeout(timer);
       window.removeEventListener(DATA_SYNCED_EVENT, onSynced);
+      window.removeEventListener('focus', onFocus);
     };
   }, [reload, reloadSyncStatus]);
 
   useEffect(() => {
-    const timer = window.setInterval(() => setNow(Date.now()), 30_000);
+    const tick = () => {
+      setNow(Date.now());
+      if (document.visibilityState !== 'hidden') {
+        void reloadSyncStatus();
+      }
+    };
+    const timer = window.setInterval(tick, 5 * 60_000);
     return () => window.clearInterval(timer);
-  }, []);
+  }, [reloadSyncStatus]);
 
   const availableTools = useMemo(
     () => toolModelUsage.filter((row) => row.tokens > 0),
