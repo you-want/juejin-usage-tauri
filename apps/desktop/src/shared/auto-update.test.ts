@@ -6,7 +6,7 @@ import {
   isUpdateDownloadInProgress,
   shouldOfferUpdateRestart,
   updateDownloadPercent,
-} from './auto-update.ts';
+} from './auto-update.js';
 
 test('createDownloadedUpdateState keeps the downloaded package retryable', () => {
   assert.deepEqual(

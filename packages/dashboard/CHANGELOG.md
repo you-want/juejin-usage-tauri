@@ -1,5 +1,16 @@
 # @juejin-opensource/jusage-dashboard
 
+## 0.1.8
+
+### Patch Changes
+
+- 排行榜模型筛选按识别出的厂商动态分组，展示厂商图标和模型数量，并支持同时搜索厂商和模型名称。
+- 线上用量页和下载页增加问题反馈入口，悬停或点击可查看微信二维码。
+- 用量页与下载页展示 DeepSeek Harness 来源及官方图标。
+- 修复项目分布把工作目录编码路径（如 `%2FUsers%2F...`）直接当标题展示的问题。
+- Updated dependencies
+  - @juejin-opensource/jusage-core@0.1.8
+
 ## 0.1.7
 
 ### Patch Changes

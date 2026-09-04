@@ -8,12 +8,14 @@
     "moduleResolution": "NodeNext",
     "noEmit": false,
     "outDir": "dist-test",
-    "rootDir": "src/renderer/lib",
+    "rootDir": "src",
     "sourceMap": false,
     "types": ["node"]
   },
   "include": [
     "src/renderer/lib/pet-sync-feedback.ts",
-    "src/renderer/lib/pet-sync-feedback.test.ts"
+    "src/renderer/lib/pet-sync-feedback.test.ts",
+    "src/shared/auto-update.ts",
+    "src/shared/auto-update.test.ts"
   ]
 }
