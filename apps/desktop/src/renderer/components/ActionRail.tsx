@@ -1,6 +1,6 @@
 import {
   Loader2Icon,
-  MonitorIcon,
+  SunMoonIcon,
   MoonIcon,
   RefreshCwIcon,
   SettingsIcon,
@@ -17,8 +17,8 @@ const glassShell =
 const fabBtn =
   'flex size-10 items-center justify-center rounded-[10px] text-muted opacity-45 transition-all duration-150 hover:bg-white/60 hover:text-foreground hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus/40 disabled:pointer-events-none disabled:opacity-30 dark:hover:bg-white/10';
 
-const THEME_MODE_META: Record<ThemeMode, { icon: typeof MonitorIcon; label: string }> = {
-  system: { icon: MonitorIcon, label: '跟随系统' },
+const THEME_MODE_META: Record<ThemeMode, { icon: typeof SunMoonIcon; label: string }> = {
+  system: { icon: SunMoonIcon, label: '跟随系统' },
   light: { icon: SunIcon, label: '浅色' },
   dark: { icon: MoonIcon, label: '深色' },
 };
@@ -66,7 +66,7 @@ export function ActionRail({
         title={`主题：${modeLabel}`}
         className={fabBtn}
       >
-        <ThemeModeIcon className="size-4" />
+        <ThemeModeIcon className={themeMode === 'system' ? 'size-4 scale-[1.2]' : 'size-4'} />
       </button>
 
       <button

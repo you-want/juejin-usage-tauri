@@ -1,5 +1,5 @@
 import type { Key } from "@heroui/react";
-import { Display, Moon, Sun } from "@gravity-ui/icons";
+import { MoonIcon, SunIcon, SunMoonIcon } from "lucide-react";
 import { ToggleButton, ToggleButtonGroup } from "@heroui/react";
 import { THEME_MODES, type ThemeMode } from "@/lib/theme";
 import { useTheme } from "@/hooks/useTheme";
@@ -37,7 +37,7 @@ export function DashboardHeader() {
             isIconOnly
             variant="ghost"
           >
-            <Display />
+            <SunMoonIcon className="size-4 scale-[1.2]" />
           </ToggleButton>
           <ToggleButton
             aria-label="使用亮色模式"
@@ -46,7 +46,7 @@ export function DashboardHeader() {
             isIconOnly
             variant="ghost"
           >
-            <Sun />
+            <SunIcon className="size-4" />
           </ToggleButton>
           <ToggleButton
             aria-label="使用暗色模式"
@@ -55,7 +55,7 @@ export function DashboardHeader() {
             isIconOnly
             variant="ghost"
           >
-            <Moon />
+            <MoonIcon className="size-4" />
           </ToggleButton>
         </ToggleButtonGroup>
       </div>

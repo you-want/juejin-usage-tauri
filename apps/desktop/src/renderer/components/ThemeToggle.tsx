@@ -1,13 +1,13 @@
-import { Display, Moon, Sun } from '@gravity-ui/icons';
+import { MoonIcon, SunIcon, SunMoonIcon } from 'lucide-react';
 import { Button, Tooltip } from '@heroui/react';
 import type { ThemeMode } from '@/lib/theme';
 import { useTheme } from '@/hooks/useTheme';
 
 /** Icon component per mode; rendered lazily so only the active one mounts. */
-const MODE_ICON: Record<ThemeMode, typeof Display> = {
-  system: Display,
-  light: Sun,
-  dark: Moon,
+const MODE_ICON: Record<ThemeMode, typeof SunMoonIcon> = {
+  system: SunMoonIcon,
+  light: SunIcon,
+  dark: MoonIcon,
 };
 
 const MODE_LABEL: Record<ThemeMode, string> = {
@@ -35,7 +35,7 @@ export function ThemeToggle() {
         size="sm"
         variant="tertiary"
       >
-        <Icon className="size-4" />
+        <Icon className={themeMode === 'system' ? 'size-4 scale-[1.2]' : 'size-4'} />
       </Button>
       <Tooltip.Content placement="bottom">
         <p>{`主题：${label}`}</p>
