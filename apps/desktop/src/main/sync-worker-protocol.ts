@@ -3,6 +3,8 @@ import type { SyncResult } from '@juejin-opensource/jusage-core';
 export type SyncWorkerRequest =
   | { type: 'init'; dataDir: string }
   | { type: 'runSync'; id: number; reason: string; source?: string }
+  /** Main cleared cursors.json on disk; the worker must drop its cached copy. */
+  | { type: 'invalidateCursors' }
   | { type: 'stop' };
 
 export type SyncWorkerResponse =
