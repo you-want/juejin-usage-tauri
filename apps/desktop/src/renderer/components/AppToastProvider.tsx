@@ -10,7 +10,8 @@ export function AppToastProvider({
 }) {
   return (
     <Toast.Provider
-      className="sm:min-w-0"
+      // Keep the toast and its outer close button below the 32px window drag region.
+      className="top-12 sm:min-w-0"
       placement="top end"
       queue={queue}
       width={0}
