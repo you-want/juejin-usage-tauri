@@ -141,8 +141,44 @@ export function RankPage() {
       />
 
       <div className="space-y-6">
+        {error != null && data == null && (
+          <div className="flex w-full flex-col gap-4 sm:flex-row sm:items-center">
+            <div className="min-w-0 flex-1">
+              <StatusBanner
+                description={error}
+                title="排行榜加载失败"
+                tone="error"
+              />
+            </div>
+            <Button
+              className="shrink-0 self-start sm:self-center"
+              onPress={() => reload()}
+              variant="secondary"
+            >
+              重试
+            </Button>
+          </div>
+        )}
+        {error != null && data != null && (
+          <div className="flex w-full flex-col gap-4 sm:flex-row sm:items-center">
+            <div className="min-w-0 flex-1">
+              <StatusBanner
+                description={`${error}。下面显示的是上次成功加载的数据，可能不是最新的。`}
+                title="排行榜刷新失败"
+                tone="warn"
+              />
+            </div>
+            <Button
+              className="shrink-0 self-start sm:self-center"
+              onPress={() => reload()}
+              variant="secondary"
+            >
+              重试
+            </Button>
+          </div>
+        )}
         {showAnonymousAuthWarn && (
-          <div className="flex max-w-2xl flex-col gap-3 sm:flex-row sm:items-center">
+          <div className="flex w-full flex-col gap-3 sm:flex-row sm:items-center">
             <div className="min-w-0 flex-1">
               <StatusBanner
                 description="无法标注你的排名。请前往设置绑定鉴权 Token，或登录后再查看个人名次。"
@@ -161,18 +197,20 @@ export function RankPage() {
             </Button>
           </div>
         )}
-        <RankUserTable
-          global={data?.global ?? null}
-          hideFromLeaderboard={hideFromLeaderboard}
-          hideToggleDisabled={hideToggleSaving}
-          loading={loading}
-          metric={metric}
-          onHideFromLeaderboardChange={onHideFromLeaderboardChange}
-          onMetricChange={setMetric}
-          profiles={profiles}
-          refreshing={refreshing}
-          showHideToggle={showHideToggle}
-        />
+        {!(error != null && data == null) && (
+          <RankUserTable
+            global={data?.global ?? null}
+            hideFromLeaderboard={hideFromLeaderboard}
+            hideToggleDisabled={hideToggleSaving}
+            loading={loading}
+            metric={metric}
+            onHideFromLeaderboardChange={onHideFromLeaderboardChange}
+            onMetricChange={setMetric}
+            profiles={profiles}
+            refreshing={refreshing}
+            showHideToggle={showHideToggle}
+          />
+        )}
       </div>
     </div>
   );
