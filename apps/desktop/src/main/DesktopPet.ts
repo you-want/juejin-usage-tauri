@@ -1,5 +1,6 @@
 import { app, BrowserWindow, ipcMain, Menu, screen, shell } from 'electron';
 import { fileURLToPath } from 'node:url';
+import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import {
   DEFAULT_DESKTOP_PET_FRAME_INTERVAL_MS,
@@ -134,9 +135,17 @@ function sendPreferences(pref: DesktopPetPref): void {
   }
 }
 
-async function normalizeSelectedPet(pref: DesktopPetPref): Promise<DesktopPetPref> {
-  if (await isKnownDesktopPet(pref.selectedPetId)) return pref;
-  return saveDesktopPetPref({ ...pref, selectedPetId: 'hawking' });
+async function normalizeSelectedPet(
+  pref: DesktopPetPref,
+  knownPetIds?: ReadonlySet<string>,
+): Promise<DesktopPetPref> {
+  const known = knownPetIds
+    ? knownPetIds.has(pref.selectedPetId)
+    : await isKnownDesktopPet(pref.selectedPetId);
+  if (known) return pref;
+  const saved = await saveDesktopPetPref({ ...pref, selectedPetId: 'hawking' });
+  sendPreferences(saved);
+  return saved;
 }
 
 async function catalogResponse() {
@@ -577,15 +586,18 @@ export function registerDesktopPetIpc(actions: DesktopPetHostActions): void {
   ipcMain.removeHandler(PET_REFRESH_CATALOG_CHANNEL);
   ipcMain.handle(PET_REFRESH_CATALOG_CHANNEL, async () => {
     const catalog = await catalogResponse();
-    const pref = await normalizeSelectedPet(await loadDesktopPetPref());
-    sendPreferences(pref);
+    const pref = await normalizeSelectedPet(
+      await loadDesktopPetPref(),
+      new Set(catalog.pets.map((pet) => pet.id)),
+    );
     return { ...catalog, selectedPetId: pref.selectedPetId };
   });
 
   ipcMain.removeHandler(PET_OPEN_DIRECTORY_CHANNEL);
   ipcMain.handle(PET_OPEN_DIRECTORY_CHANNEL, async () => {
-    await scanDesktopPets();
-    return shell.openPath(desktopPetDirectory());
+    const directory = desktopPetDirectory();
+    await mkdir(directory, { recursive: true });
+    return shell.openPath(directory);
   });
 
   ipcMain.removeHandler(PET_SPRITESHEET_URL_CHANNEL);

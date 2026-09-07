@@ -55,9 +55,12 @@ const TAB_ITEMS: { id: DesktopSettingsTabId; label: string }[] = [
 
 export function SettingsPanel({
   activeTab,
+  isOpen = true,
   onTabChange,
 }: {
   activeTab?: DesktopSettingsTabId;
+  /** Refresh locally installed pets whenever the settings modal opens. */
+  isOpen?: boolean;
   onTabChange?: (tab: DesktopSettingsTabId) => void;
 } = {}) {
   const cliMode = isCliBackend();
@@ -68,6 +71,39 @@ export function SettingsPanel({
     useState<DesktopSettingsTabId>('pet');
   const tab = activeTab ?? uncontrolledTab;
   const setTab = onTabChange ?? setUncontrolledTab;
+  const [petCatalog, setPetCatalog] = useState<DesktopPetDefinition[]>(DESKTOP_PETS);
+  const [catalogSelectedPetId, setCatalogSelectedPetId] = useState<string>();
+  const [refreshingPets, setRefreshingPets] = useState(false);
+  const [petCatalogError, setPetCatalogError] = useState<string | null>(null);
+  const petCatalogRequest = useRef(0);
+
+  const refreshPetCatalog = useCallback(async () => {
+    const request = ++petCatalogRequest.current;
+    setRefreshingPets(true);
+    setPetCatalogError(null);
+    try {
+      const catalog = await window.tud.refreshDesktopPetCatalog();
+      if (request !== petCatalogRequest.current) return;
+      setPetCatalog(catalog.pets);
+      setCatalogSelectedPetId(catalog.selectedPetId);
+    } catch (reason) {
+      if (request === petCatalogRequest.current) {
+        setPetCatalogError(
+          reason instanceof Error ? reason.message : '刷新本地宠物失败',
+        );
+      }
+      throw reason;
+    } finally {
+      if (request === petCatalogRequest.current) setRefreshingPets(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    void refreshPetCatalog().catch(() => {
+      // The pet panel presents the failure when the user opens that tab.
+    });
+  }, [isOpen, refreshPetCatalog]);
 
   useEffect(() => {
     const onOpen = (event: Event) => {
@@ -116,7 +152,14 @@ export function SettingsPanel({
         </Tabs.ListContainer>
 
         <Tabs.Panel className="h-[50vh] min-w-0 overflow-hidden p-4 text-left" id="pet">
-          {tab === 'pet' && <DesktopPetSettings />}
+          {tab === 'pet' && (
+            <DesktopPetSettings
+              catalogSelectedPetId={catalogSelectedPetId}
+              catalogError={petCatalogError}
+              pets={petCatalog}
+              refreshingPets={refreshingPets}
+            />
+          )}
         </Tabs.Panel>
         <Tabs.Panel
           className="h-[50vh] overflow-hidden p-4 text-left font-normal"
@@ -167,7 +210,17 @@ export function SettingsPanel({
   );
 }
 
-function DesktopPetSettings() {
+function DesktopPetSettings({
+  catalogSelectedPetId,
+  catalogError,
+  pets,
+  refreshingPets,
+}: {
+  catalogSelectedPetId?: string;
+  catalogError: string | null;
+  pets: DesktopPetDefinition[];
+  refreshingPets: boolean;
+}) {
   const [enabled, setEnabled] = useState(false);
   const [selectedPetId, setSelectedPetId] = useState('hawking');
   const [scale, setScale] = useState(50);
@@ -183,8 +236,12 @@ function DesktopPetSettings() {
   }>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [pets, setPets] = useState<DesktopPetDefinition[]>(DESKTOP_PETS);
-  const [refreshingPets, setRefreshingPets] = useState(false);
+  const latestCatalogSelectedPetId = useRef(catalogSelectedPetId);
+
+  useEffect(() => {
+    latestCatalogSelectedPetId.current = catalogSelectedPetId;
+    if (catalogSelectedPetId) setSelectedPetId(catalogSelectedPetId);
+  }, [catalogSelectedPetId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -211,7 +268,12 @@ function DesktopPetSettings() {
     void window.tud
       .getDesktopPet()
       .then((pref) => {
-        if (!cancelled) applyPref(pref);
+        if (!cancelled) {
+          applyPref({
+            ...pref,
+            selectedPetId: latestCatalogSelectedPetId.current ?? pref.selectedPetId,
+          });
+        }
       })
       .catch((reason) => {
         if (!cancelled) {
@@ -231,16 +293,6 @@ function DesktopPetSettings() {
       cancelled = true;
       unsubscribe();
     };
-  }, []);
-
-  const applyCatalog = (catalog: { pets: DesktopPetDefinition[] }) => {
-    setPets(catalog.pets);
-  };
-
-  useEffect(() => {
-    void window.tud.getDesktopPetCatalog().then(applyCatalog).catch((reason) => {
-      setError(reason instanceof Error ? reason.message : '加载本地宠物列表失败');
-    });
   }, []);
 
   const onChange = async (next: boolean) => {
@@ -319,21 +371,7 @@ function DesktopPetSettings() {
     [],
   );
 
-  const petControlsDisabled = loading || !enabled;
-
-  const refreshPetCatalog = async () => {
-    setRefreshingPets(true);
-    setError(null);
-    try {
-      const catalog = await window.tud.refreshDesktopPetCatalog();
-      applyCatalog(catalog);
-      setSelectedPetId(catalog.selectedPetId);
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : '刷新本地宠物失败');
-    } finally {
-      setRefreshingPets(false);
-    }
-  };
+  const petControlsDisabled = loading || !enabled || refreshingPets;
 
   const openPetDirectory = async () => {
     setError(null);
@@ -347,7 +385,9 @@ function DesktopPetSettings() {
 
   return (
     <div className="flex h-full flex-col gap-4 overflow-hidden">
-      {error && <StatusBanner tone="error" title={error} />}
+      {(error ?? catalogError) && (
+        <StatusBanner tone="error" title={error ?? catalogError ?? ''} />
+      )}
       <div className="min-h-0 min-w-0 flex-1 overflow-y-auto">
         <p className="mb-3 text-sm text-muted">
           显示悬浮宠物。拖动可移动位置，右键可打开菜单。
@@ -401,11 +441,12 @@ function DesktopPetSettings() {
             </Select.Popover>
           </Select>
           <div className="flex justify-end gap-2 -mt-2">
-            <Button size="sm" variant="secondary" onPress={() => { void openPetDirectory(); }}>
-              上传宠物
-            </Button>
-            <Button isPending={refreshingPets} size="sm" variant="secondary" onPress={() => { void refreshPetCatalog(); }}>
-              刷新
+            <Button
+              size="sm"
+              variant="secondary"
+              onPress={() => { void openPetDirectory(); }}
+            >
+              打开宠物目录
             </Button>
           </div>
           <Slider
