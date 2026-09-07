@@ -6,10 +6,11 @@ import type {
   LeaderboardRow,
   ToolLeaderboard,
 } from '@juejin-opensource/jusage-core';
+import { LEADERBOARD_DEFAULT_LIMIT } from '@juejin-opensource/jusage-core/leaderboard';
 import mockHotList from '../../mock-users.json' with { type: 'json' };
 
-/** Mock list size; aligned with core LEADERBOARD_DEFAULT_LIMIT (50). */
-const MOCK_LEADERBOARD_LIMIT = 50;
+/** Mock list size; aligned with core LEADERBOARD_DEFAULT_LIMIT. */
+const MOCK_LEADERBOARD_LIMIT = LEADERBOARD_DEFAULT_LIMIT;
 
 type MockUser = Omit<LeaderboardRow, 'rank' | 'isCurrentUser'> & {
   avatarUrl?: string;
