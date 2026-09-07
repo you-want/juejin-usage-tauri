@@ -10,8 +10,9 @@ Date: 2026-09-07. Scope: PR #84 / issue #83 review changes.
   close behavior, and the downloaded update's manual restart action.
 - One manual restart request retries the downloaded package; there is no
   download confirmation, update dialog, or version-skipping workflow.
-- The toolbar shows progress or restart/retry, while Settings retains its
-  header action and aligned version rows.
+- The toolbar shows progress or restart/retry. Settings keeps Check for Updates
+  in its header and displays the matching progress/restart button beside it,
+  with aligned version rows and no separate download progress bar or paragraph.
 
 ## Fixes covered
 
@@ -40,7 +41,7 @@ pnpm --filter @juejin-opensource/jusage-desktop build
 git diff --check
 ```
 
-All pass. The 24 tests include 12 shared UI-state tests and 12 tests of the actual
+All pass. The 25 tests include 13 shared UI-state tests and 12 tests of the actual
 main updater module with mocked Electron/updater boundaries. They cover startup
 configuration, automatic install, duplicate requests/events, refusal to install
 an undownloaded release, preparation/native errors, timeout, late completion,
@@ -48,6 +49,9 @@ recovery serialization/failure, download rejection, disposal, and the
 BaseUpdater latch. Timers are advanced deterministically in timeout tests.
 
 ## Signed package validation
+
+The native installation results below were recorded on revision `4410631`,
+before the subsequent Settings-only presentation adjustment.
 
 Environment: macOS arm64, Electron 35.4.0, electron-updater 6.8.9, Apple
 Development-signed packages and a localhost generic feed. The low package is
@@ -74,6 +78,26 @@ toolbar/Settings controls were operated through the native UI, not by invoking
 IPC from a test script. Source inspection and the registered-channel test also
 confirm removal of the version-skip and manual-download state/IPC/preferences
 chains; the lab does not create skip preferences.
+
+## Settings presentation follow-up
+
+Rebuilt and signed the isolated 0.1.8 package with the subsequent Settings UI
+changes on 2026-09-07. Automated checks above were rerun. Native UI interaction
+confirmed that a no-update response leaves only Check for Updates and the current
+version. After the local feed offered 0.1.9, one click on Check for Updates showed
+the adjacent download button and latest-version row without opening an update
+dialog. The button reached 40%, matching the outer toolbar; visual inspection
+confirmed the standalone progress bar and download paragraph were absent and
+both version rows remained aligned. The real signed ZIP transfer was throttled
+by the lab server to preserve this screenshot state.
+
+After the subsequent restart-action wording and warning-card changes, another
+signed 0.1.8 build reached the downloaded/retry state through the lab's one-time
+preparation timeout. Native UI inspection confirmed both actions read
+"更新并重启", the Settings action remained enabled, and the restart-warning card
+was absent while both version rows remained visible. Tests, typecheck, and build
+passed again. The final install click was left to the user. These presentation
+follow-ups did not rerun native installation; updater control flow was unchanged.
 
 ## Limits
 

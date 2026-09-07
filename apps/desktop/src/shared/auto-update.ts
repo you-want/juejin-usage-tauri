@@ -54,7 +54,7 @@ export function getUpdateToolbarAction(state: AutoUpdateState | null): {
         request: null,
       };
     case 'downloaded':
-      return { label: '重启并更新', request: 'install' };
+      return { label: '更新并重启', request: 'install' };
     case 'installing':
       return { label: '正在重启…', request: null };
     case 'error':
@@ -70,7 +70,7 @@ export function getLatestUpdateVersion(state: AutoUpdateState | null): string | 
   return state.version || null;
 }
 
-/** 版本号由设置页单独对齐展示，这里仅返回状态提示。 */
+/** 版本号单独对齐展示，下载和重启进度只在操作按钮中呈现。 */
 export function updateStatusMessage(state: AutoUpdateState | null): string {
   if (!state) return '正在读取更新状态…';
   switch (state.status) {
@@ -79,13 +79,8 @@ export function updateStatusMessage(state: AutoUpdateState | null): string {
     case 'checking':
       return '正在检查新版本…';
     case 'downloading':
-      return `正在下载 v${state.version ?? ''}，完成后将自动重启安装`;
     case 'downloaded':
-      return state.message
-        ? `v${state.version ?? ''} 已下载，可手动重启安装`
-        : `v${state.version ?? ''} 已下载，准备重启安装`;
     case 'installing':
-      return `v${state.version ?? ''} 已下载，正在重启并安装…`;
     case 'not-available':
       return '';
     case 'error':

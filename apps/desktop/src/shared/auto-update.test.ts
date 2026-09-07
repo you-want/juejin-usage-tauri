@@ -92,12 +92,18 @@ test('settings do not invent a latest version when it is missing', () => {
   }), null);
 });
 
-test('settings retain active update progress and error messages', () => {
-  assert.equal(updateStatusMessage({
-    status: 'downloading',
-    currentVersion: '0.1.8',
-    version: '0.1.9',
-  }), '正在下载 v0.1.9，完成后将自动重启安装');
+test('settings leave download and restart progress to the shared action button', () => {
+  for (const status of ['downloading', 'downloaded', 'installing'] as const) {
+    const state = { status, currentVersion: '0.1.8', version: '0.1.9' };
+    assert.equal(updateStatusMessage(state), '');
+    assert.notEqual(getUpdateToolbarAction(state), null);
+  }
+  assert.equal(updateStatusMessage(createDownloadedUpdateState(
+    '0.1.8', '0.1.9', undefined, 'Restart timed out',
+  )), '');
+});
+
+test('settings retain error messages', () => {
   assert.equal(updateStatusMessage({
     status: 'error',
     currentVersion: '0.1.8',
@@ -118,7 +124,7 @@ test('toolbar progress and installation states cannot start another action', () 
 
 test('toolbar retains restart and check retries without opening a dialog', () => {
   assert.deepEqual(getUpdateToolbarAction(createDownloadedUpdateState('0.1.8', '0.1.9', undefined, 'Restart timed out')), {
-    label: '重启并更新', request: 'install',
+    label: '更新并重启', request: 'install',
   });
   assert.deepEqual(getUpdateToolbarAction({ status: 'error', currentVersion: '0.1.8' }), {
     label: '重试更新', request: 'check',

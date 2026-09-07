@@ -10,7 +10,6 @@ import {
   ListBox,
   Modal,
   NumberField,
-  ProgressBar,
   Select,
   Slider,
   Tabs,
@@ -20,7 +19,7 @@ import {
 } from '@heroui/react';
 import {
   getLatestUpdateVersion,
-  shouldOfferUpdateRestart,
+  getUpdateToolbarAction,
   updateStatusMessage,
   type AutoUpdateState,
 } from '../../shared/auto-update';
@@ -955,7 +954,7 @@ function AutoUpdateSettings() {
       await window.tud.installDownloadedUpdate();
     } catch (reason) {
       setActionError(
-        reason instanceof Error ? reason.message : '重启并安装更新失败',
+        reason instanceof Error ? reason.message : '更新并重启失败',
       );
     } finally {
       setInstallPending(false);
@@ -966,36 +965,23 @@ function AutoUpdateSettings() {
   const busy =
     status === 'checking' ||
     status === 'downloading' ||
+    status === 'downloaded' ||
     status === 'installing';
   const message = updateStatusMessage(state);
   const latestVersion = getLatestUpdateVersion(state);
   const error = actionError ?? (status === 'error' ? state?.message : null);
-  const canRestart = shouldOfferUpdateRestart(status);
-  const showCheckAction =
-    status !== 'downloading' && !canRestart;
+  // Check failures can be retried with the persistent check button.
+  const updateAction = status === 'error' ? null : getUpdateToolbarAction(state);
 
   return (
     <Card className="rounded-xl shadow-none" variant="tertiary">
       <Card.Header>
         <div className="flex w-full items-center justify-between gap-4">
           <Card.Title>应用更新</Card.Title>
-          {canRestart ? (
+          <div className="flex shrink-0 items-center gap-2">
             <Button
               className="shrink-0"
-              isDisabled={status === 'installing' || installPending}
-              isPending={installPending || status === 'installing'}
-              onPress={() => {
-                void install();
-              }}
-              size="sm"
-              variant="primary"
-            >
-              重启并更新
-            </Button>
-          ) : showCheckAction ? (
-            <Button
-              className="shrink-0"
-              isDisabled={status === 'unsupported' || busy}
+              isDisabled={!state || status === 'unsupported' || busy || installPending}
               isPending={status === 'checking'}
               onPress={() => {
                 void check();
@@ -1005,7 +991,21 @@ function AutoUpdateSettings() {
             >
               检查更新
             </Button>
-          ) : null}
+            {updateAction && (
+              <Button
+                aria-busy={installPending || updateAction.request === null}
+                className="shrink-0"
+                isDisabled={installPending || updateAction.request === null}
+                onPress={() => {
+                  if (updateAction.request === 'install') void install();
+                }}
+                size="sm"
+                variant="primary"
+              >
+                {updateAction.label}
+              </Button>
+            )}
+          </div>
         </div>
       </Card.Header>
       <Card.Content className="flex flex-col gap-3">
@@ -1025,31 +1025,6 @@ function AutoUpdateSettings() {
               <Alert.Description>{error}</Alert.Description>
             </Alert.Content>
           </Alert>
-        )}
-
-        {status === 'downloaded' && state?.message && (
-          <Alert status="warning">
-            <Alert.Indicator />
-            <Alert.Content>
-              <Alert.Title>自动重启未完成</Alert.Title>
-              <Alert.Description>{state.message}</Alert.Description>
-            </Alert.Content>
-          </Alert>
-        )}
-
-        {status === 'downloading' && (
-          <ProgressBar
-            aria-label="更新下载进度"
-            isIndeterminate={state?.percent == null}
-            size="sm"
-            value={state?.percent ?? 0}
-          >
-            <Label>下载 v{state?.version}</Label>
-            <ProgressBar.Output />
-            <ProgressBar.Track>
-              <ProgressBar.Fill />
-            </ProgressBar.Track>
-          </ProgressBar>
         )}
 
         {message && <p className="text-xs text-muted">{message}</p>}

@@ -201,7 +201,7 @@ async function runInstallAttempt(attempt: InstallAttempt, version: string): Prom
     installExitTimer = setTimeout(() => {
       void recoverInstallAttempt(
         attempt,
-        '自动重启未完成，请点击“重启并更新”再次尝试。',
+        '自动重启未完成，请点击“更新并重启”再次尝试。',
       );
     }, INSTALL_EXIT_TIMEOUT_MS);
     installExitTimer.unref();
