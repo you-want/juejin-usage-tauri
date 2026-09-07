@@ -104,8 +104,12 @@ export function TrayTrendChart({
             <ComposedChart
               accessibilityLayer
               data={rows}
-              // Hidden Y axis has no gutter; a negative left margin clips "0h".
-              margin={{ top: 8, right: 12, bottom: 0, left: 12 }}
+              // Hidden Y axis has no gutter; daily range labels need extra side room.
+              margin={
+                isHourly
+                  ? { top: 8, right: 12, bottom: 0, left: 12 }
+                  : { top: 8, right: 22, bottom: 0, left: 22 }
+              }
             >
               {metric === 'cost' ? (
                 <defs>
@@ -127,9 +131,9 @@ export function TrayTrendChart({
                 axisLine={false}
                 dataKey="label"
                 interval={xAxisInterval}
+                tick={{ fontSize: isHourly ? 13 : 11 }}
                 tickLine={false}
                 tickMargin={8}
-                tick={{ fontSize: 13 }}
               />
               <YAxis allowDataOverflow hide />
               <ChartTooltip
@@ -246,12 +250,9 @@ function buildTrendPoints({
     const value = metric === 'tokens'
       ? totalTokens
       : bucket.reduce((total, row) => total + row.costUsd, 0);
-    const firstLabel = formatDate(first.date);
-    const lastLabel = formatDate(last.date);
-    const label = first.date === last.date ? firstLabel : `${firstLabel}–${lastLabel}`;
     points.push({
-      label,
-      tooltipLabel: label,
+      label: formatBucketLabel(first.date, last.date),
+      tooltipLabel: formatBucketTooltip(first.date, last.date),
       value,
       ...tokenBreakdown({ totalTokens, inputTokens, cachedInputTokens, outputTokens }),
     });
@@ -400,4 +401,21 @@ function TokenTooltipRow({
 function formatDate(date: string): string {
   const [, month = '', day = ''] = date.slice(0, 10).split('-');
   return `${Number(month)}/${Number(day)}`;
+}
+
+/** Compact axis label: `8/10–11` when the bucket stays in the same month. */
+function formatBucketLabel(firstDate: string, lastDate: string): string {
+  const firstLabel = formatDate(firstDate);
+  const lastLabel = formatDate(lastDate);
+  if (firstDate === lastDate) return firstLabel;
+  const [firstMonth] = firstLabel.split('/');
+  const [lastMonth, lastDay = ''] = lastLabel.split('/');
+  if (firstMonth === lastMonth) return `${firstLabel}–${lastDay}`;
+  return `${firstLabel}–${lastLabel}`;
+}
+
+function formatBucketTooltip(firstDate: string, lastDate: string): string {
+  const firstLabel = formatDate(firstDate);
+  const lastLabel = formatDate(lastDate);
+  return firstDate === lastDate ? firstLabel : `${firstLabel}–${lastLabel}`;
 }
