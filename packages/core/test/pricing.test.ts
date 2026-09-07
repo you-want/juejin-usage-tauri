@@ -189,6 +189,29 @@ test('cursor gpt-5.6 sol/terra tiers resolve to their own model', () => {
   assert.equal(terra.output, 12);
 });
 
+test('gpt-6-astra carries official cache read/write rates for every name variant', () => {
+  for (const m of ['gpt-6-astra', 'openai/gpt-6-astra', 'gpt-6-astra-xhigh', 'gpt-6-astra-max']) {
+    const p = getModelPricing(m, { source: 'codex' });
+    assert.equal(p.input, 10, m);
+    assert.equal(p.output, 50, m);
+    assert.equal(p.cache_read, 1, m);
+    assert.equal(p.cache_write, 12.5, m);
+  }
+});
+
+test('gpt-6-astra codex row bills cached input at the cache-read rate, not zero', () => {
+  const row = makeRow({
+    source: 'codex',
+    model: 'gpt-6-astra',
+    input_tokens: 100_000,
+    cached_input_tokens: 1_000_000,
+    output_tokens: 10_000,
+    total_tokens: 1_110_000,
+  });
+  // 0.1M × $10 + 1M × $1 + 0.01M × $50
+  assert.equal(roundCostUsd(computeRowCost(row)), 2.5);
+});
+
 test('cursor gpt-5.4-mini tier resolves to mini, not gpt-5.4', () => {
   const p = getModelPricing('gpt-5.4-mini-medium', { source: 'cursor' });
   assert.equal(p.input, 0.75);
