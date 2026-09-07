@@ -104,7 +104,8 @@ export function TrayTrendChart({
             <ComposedChart
               accessibilityLayer
               data={rows}
-              margin={{ top: 8, right: 4, bottom: 0, left: -8 }}
+              // Hidden Y axis has no gutter; a negative left margin clips "0h".
+              margin={{ top: 8, right: 12, bottom: 0, left: 12 }}
             >
               {metric === 'cost' ? (
                 <defs>
