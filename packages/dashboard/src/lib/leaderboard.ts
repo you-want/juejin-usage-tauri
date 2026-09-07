@@ -1,4 +1,8 @@
-import type { LeaderboardMetric, LeaderboardRange } from '@/lib/api';
+import type {
+  LeaderboardMetric,
+  LeaderboardRange,
+  LeaderboardRow,
+} from '@/lib/api';
 import { getModelProvider, type ModelProvider } from './model-provider.ts';
 
 export type RankRange = LeaderboardRange;
@@ -171,7 +175,17 @@ export function formatRankPosition(rank: number | null | undefined): string {
   if (rank === null || rank === undefined || !Number.isFinite(rank) || rank < 1) {
     return '—';
   }
-  return rank > 99 ? '> 99' : String(Math.floor(rank));
+  return String(Math.floor(rank));
+}
+
+/** Put the current user at the top of the list while keeping their Top N row. */
+export function pinCurrentUserRows(
+  rows: readonly LeaderboardRow[],
+  currentUser: LeaderboardRow | null,
+): Array<{ pinned: boolean; row: LeaderboardRow }> {
+  const listed = rows.map((row) => ({ pinned: false, row }));
+  if (!currentUser) return listed;
+  return [{ pinned: true, row: currentUser }, ...listed];
 }
 
 export function leaderboardMetricLabel(metric: LeaderboardMetric): string {

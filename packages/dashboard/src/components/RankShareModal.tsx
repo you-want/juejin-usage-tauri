@@ -255,7 +255,7 @@ function ShareLeaderboard({
       {!currentUser && (
         <div className="mt-4 flex items-center justify-between rounded-xl border border-dashed border-[#b9d8ff] bg-white/[0.32] px-3 py-2.5 text-[11px] dark:border-white/15 dark:bg-white/[0.05]">
           <span className="font-semibold text-[#5c7d9c] dark:text-[#a8c1da]">我的排名</span>
-          <span className="font-bold text-[#334e69] dark:text-[#f1f8ff]">99+名</span>
+          <span className="font-bold text-[#334e69] dark:text-[#f1f8ff]">登录后查看</span>
         </div>
       )}
     </div>

@@ -1,10 +1,13 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import {
+  formatRankPosition,
   groupRankModelsByVendor,
   uniqueRankModelOptions,
   isRankRange,
+  pinCurrentUserRows,
 } from './leaderboard.ts';
+import type { LeaderboardRow } from './api.ts';
 
 describe('isRankRange', () => {
   it('accepts the four leaderboard ranges', () => {
@@ -152,6 +155,64 @@ describe('groupRankModelsByVendor', () => {
     assert.deepEqual(
       groupRankModelsByVendor(['gpt-5', 'gpt-5'])[0]?.models,
       ['gpt-5'],
+    );
+  });
+});
+
+describe('formatRankPosition', () => {
+  it('returns an em dash for missing ranks', () => {
+    assert.equal(formatRankPosition(null), '—');
+    assert.equal(formatRankPosition(undefined), '—');
+    assert.equal(formatRankPosition(0), '—');
+    assert.equal(formatRankPosition(-1), '—');
+  });
+
+  it('shows the actual rank including values above 99', () => {
+    assert.equal(formatRankPosition(1), '1');
+    assert.equal(formatRankPosition(99), '99');
+    assert.equal(formatRankPosition(100), '100');
+    assert.equal(formatRankPosition(237), '237');
+  });
+});
+
+function sampleRow(
+  userHash: string,
+  rank: number,
+  isCurrentUser = false,
+): LeaderboardRow {
+  return {
+    rank,
+    displayName: `用户 ${userHash}`,
+    userHash,
+    tokens: 1_000 - rank,
+    costUsd: 1,
+    isCurrentUser,
+  };
+}
+
+describe('pinCurrentUserRows', () => {
+  it('returns rows unchanged without a current user', () => {
+    const top = sampleRow('aaa', 1);
+    assert.deepEqual(pinCurrentUserRows([top], null), [
+      { pinned: false, row: top },
+    ]);
+  });
+
+  it('pins the current user above the existing rows', () => {
+    const top = sampleRow('aaa', 1);
+    const me = sampleRow('me', 2, true);
+    const result = pinCurrentUserRows([top, me], me);
+
+    assert.deepEqual(
+      result.map((item) => ({
+        pinned: item.pinned,
+        userHash: item.row.userHash,
+      })),
+      [
+        { pinned: true, userHash: 'me' },
+        { pinned: false, userHash: 'aaa' },
+        { pinned: false, userHash: 'me' },
+      ],
     );
   });
 });
