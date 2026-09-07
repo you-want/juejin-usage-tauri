@@ -43,9 +43,6 @@ export function AutoUpdateAction({ className }: { className: string }) {
     setActionError(null);
     try {
       switch (action.request) {
-        case 'download':
-          setState(await window.tud.downloadAndInstallUpdate());
-          break;
         case 'install':
           await window.tud.installDownloadedUpdate();
           break;

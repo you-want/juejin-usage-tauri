@@ -2,10 +2,8 @@ export type AutoUpdateStatus =
   | 'unsupported'
   | 'idle'
   | 'checking'
-  | 'available'
   | 'downloading'
   | 'downloaded'
-  | 'skipped'
   | 'installing'
   | 'not-available'
   | 'error';
@@ -25,8 +23,6 @@ export type AutoUpdateState = {
 
 export const AUTO_UPDATE_GET_STATE_CHANNEL = 'auto-update:get-state';
 export const AUTO_UPDATE_CHECK_CHANNEL = 'auto-update:check';
-export const AUTO_UPDATE_START_CHANNEL = 'auto-update:start';
-export const AUTO_UPDATE_SKIP_CHANNEL = 'auto-update:skip';
 export const AUTO_UPDATE_INSTALL_CHANNEL = 'auto-update:install';
 export const AUTO_UPDATE_ACK_COMPLETED_CHANNEL = 'auto-update:ack-completed';
 export const AUTO_UPDATE_STATE_CHANGED_CHANNEL = 'auto-update:state-changed';
@@ -36,13 +32,9 @@ export function shouldOfferUpdateRestart(status: AutoUpdateStatus): boolean {
   return status === 'downloaded' || status === 'installing';
 }
 
-/** 只有真正开始下载后才展示进度；available 状态要留给用户选择。 */
+/** 发现新版本后立即进入自动下载状态。 */
 export function isUpdateDownloadInProgress(status: AutoUpdateStatus): boolean {
   return status === 'downloading';
-}
-
-export function shouldOfferUpdateDownload(status: AutoUpdateStatus): boolean {
-  return status === 'available';
 }
 
 export function updateDownloadPercent(percent: number | undefined): number {
@@ -51,11 +43,9 @@ export function updateDownloadPercent(percent: number | undefined): number {
 
 export function getUpdateToolbarAction(state: AutoUpdateState | null): {
   label: string;
-  request: 'download' | 'install' | 'check' | null;
+  request: 'install' | 'check' | null;
 } | null {
   switch (state?.status) {
-    case 'available':
-      return { label: '下载并更新', request: 'download' };
     case 'downloading':
       return {
         label: state.percent == null
@@ -76,7 +66,7 @@ export function getUpdateToolbarAction(state: AutoUpdateState | null): {
 
 /** 有可用更新时返回独立版本行的值，无新版本时隐藏该行。 */
 export function getLatestUpdateVersion(state: AutoUpdateState | null): string | null {
-  if (state?.status !== 'available' && state?.status !== 'skipped') return null;
+  if (!state || !['downloading', 'downloaded', 'installing'].includes(state.status)) return null;
   return state.version || null;
 }
 
@@ -88,21 +78,18 @@ export function updateStatusMessage(state: AutoUpdateState | null): string {
       return state.message ?? '开发环境不支持自动更新';
     case 'checking':
       return '正在检查新版本…';
-    case 'available':
-    case 'skipped':
-      return '';
     case 'downloading':
       return `正在下载 v${state.version ?? ''}，完成后将自动重启安装`;
     case 'downloaded':
       return state.message
         ? `v${state.version ?? ''} 已下载，可手动重启安装`
-        : `v${state.version ?? ''} 已下载，安装前不会中断服务`;
+        : `v${state.version ?? ''} 已下载，准备重启安装`;
     case 'installing':
       return `v${state.version ?? ''} 已下载，正在重启并安装…`;
     case 'not-available':
       return '';
     case 'error':
-      return '未能完成更新检查，可稍后重试';
+      return '未能完成更新，可稍后重试';
     default:
       return '应用启动后会自动检查更新';
   }
@@ -123,24 +110,4 @@ export function createDownloadedUpdateState(
     checkedAt,
     ...(message ? { message } : {}),
   };
-}
-
-export function createSkippedUpdateState(
-  currentVersion: string,
-  version: string,
-  checkedAt?: string,
-): AutoUpdateState {
-  return {
-    status: 'skipped',
-    currentVersion,
-    version,
-    checkedAt,
-  };
-}
-
-export function isSkippedUpdateVersion(
-  version: string,
-  skippedVersion: string | undefined,
-): boolean {
-  return Boolean(skippedVersion) && version === skippedVersion;
 }

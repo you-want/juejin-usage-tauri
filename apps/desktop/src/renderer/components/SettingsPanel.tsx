@@ -20,7 +20,6 @@ import {
 } from '@heroui/react';
 import {
   getLatestUpdateVersion,
-  shouldOfferUpdateDownload,
   shouldOfferUpdateRestart,
   updateStatusMessage,
   type AutoUpdateState,
@@ -906,12 +905,13 @@ function AppSettingsPanel() {
 function AutoUpdateSettings() {
   const [state, setState] = useState<AutoUpdateState | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
-  const [downloadPending, setDownloadPending] = useState(false);
   const [installPending, setInstallPending] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
+    let receivedEvent = false;
     const unsubscribe = window.tud.onAutoUpdateStateChanged((next) => {
+      receivedEvent = true;
       if (!cancelled) {
         setState(next);
         if (next.status !== 'error') setActionError(null);
@@ -920,7 +920,7 @@ function AutoUpdateSettings() {
     void window.tud
       .getAutoUpdateState()
       .then((next) => {
-        if (!cancelled) {
+        if (!cancelled && !receivedEvent) {
           setState(next);
         }
       })
@@ -962,56 +962,27 @@ function AutoUpdateSettings() {
     }
   };
 
-  const download = async () => {
-    setActionError(null);
-    setDownloadPending(true);
-    try {
-      setState(await window.tud.downloadAndInstallUpdate());
-    } catch (reason) {
-      setActionError(
-        reason instanceof Error ? reason.message : '下载更新失败',
-      );
-    } finally {
-      setDownloadPending(false);
-    }
-  };
-
   const status = state?.status ?? 'idle';
   const busy =
     status === 'checking' ||
     status === 'downloading' ||
     status === 'installing';
-  const actionPending = downloadPending || installPending;
   const message = updateStatusMessage(state);
   const latestVersion = getLatestUpdateVersion(state);
   const error = actionError ?? (status === 'error' ? state?.message : null);
-  const canDownload = shouldOfferUpdateDownload(status);
   const canRestart = shouldOfferUpdateRestart(status);
   const showCheckAction =
-    status !== 'downloading' && !canDownload && !canRestart;
+    status !== 'downloading' && !canRestart;
 
   return (
     <Card className="rounded-xl shadow-none" variant="tertiary">
       <Card.Header>
         <div className="flex w-full items-center justify-between gap-4">
           <Card.Title>应用更新</Card.Title>
-          {canDownload ? (
+          {canRestart ? (
             <Button
               className="shrink-0"
-              isDisabled={actionPending}
-              isPending={downloadPending}
-              onPress={() => {
-                void download();
-              }}
-              size="sm"
-              variant="primary"
-            >
-              下载并更新
-            </Button>
-          ) : canRestart ? (
-            <Button
-              className="shrink-0"
-              isDisabled={status === 'installing' || actionPending}
+              isDisabled={status === 'installing' || installPending}
               isPending={installPending || status === 'installing'}
               onPress={() => {
                 void install();
