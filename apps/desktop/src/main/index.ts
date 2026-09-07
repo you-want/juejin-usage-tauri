@@ -444,26 +444,6 @@ void acquireDesktopInstanceLock().then((gotLock) => {
       triggerSync,
     });
     disposeLocalApiIpc = registerLocalApiIpc();
-    await initializeAutoUpdate({
-      beforeInstall: async () => {
-        // Release close interceptors before stopping runtime so a hung stop
-        // cannot leave tray/main-window preventDefault blocking quit.
-        hideTrayPopover();
-        markTrayPopoverQuitting();
-        markAppQuitting();
-        setLocalRuntimeQuitting(true);
-        await stopLocalRuntime();
-      },
-      onInstallFailed: async () => {
-        resetAppQuitting();
-        resetTrayPopoverQuitting();
-        resumeLocalRuntimeWatchdog();
-        await startLocalRuntime();
-        // quitAndInstall may have already destroyed the main window.
-        showMainWindow();
-      },
-    });
-
     try {
       await initAutostartOnLaunch();
     } catch (err) {
@@ -510,6 +490,27 @@ void acquireDesktopInstanceLock().then((gotLock) => {
       theme: currentTheme,
     });
 
+    // Cached updates can finish immediately. Start updating only after runtime
+    // and windows are ready, so startup cannot restart services during install.
+    await initializeAutoUpdate({
+      beforeInstall: async () => {
+        hideTrayPopover();
+        markTrayPopoverQuitting();
+        markAppQuitting();
+        setLocalRuntimeQuitting(true);
+        await stopLocalRuntime();
+      },
+      onInstallFailed: async () => {
+        resetAppQuitting();
+        resetTrayPopoverQuitting();
+        resumeLocalRuntimeWatchdog();
+        // Keep the recovery UI accessible even when runtime startup fails.
+        showMainWindow();
+        await startLocalRuntime();
+        await syncDesktopPet();
+      },
+    });
+
     if (pendingDeepLinkUrl) {
       const url = pendingDeepLinkUrl;
       pendingDeepLinkUrl = null;
@@ -545,6 +546,12 @@ void acquireDesktopInstanceLock().then((gotLock) => {
   app.on('before-quit', () => {
     markAppQuitting();
     setLocalRuntimeQuitting(true);
+    void stopLocalRuntime();
+  });
+
+  // before-quit/window close can be cancelled. Keep IPC and the update
+  // watchdog alive until windows have closed and the app is actually exiting.
+  app.on('will-quit', () => {
     ipcMain.removeHandler(THEME_GET_CHANNEL);
     ipcMain.removeHandler(SHARE_CARD_COPY_IMAGE_CHANNEL);
     ipcMain.removeAllListeners(THEME_SET_CHANNEL);
@@ -557,6 +564,5 @@ void acquireDesktopInstanceLock().then((gotLock) => {
     disposeLocalApiIpc?.();
     disposeLocalApiIpc = null;
     disposeAutoUpdate();
-    void stopLocalRuntime();
   });
 });
