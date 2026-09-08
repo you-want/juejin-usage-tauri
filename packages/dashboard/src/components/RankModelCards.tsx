@@ -10,7 +10,7 @@ import type {
   LeaderboardUserProfile,
 } from '@/lib/api';
 import { formatTokens, formatUsd } from '@/lib/format';
-import { pinCurrentUserRows } from '@/lib/leaderboard';
+import { pinCurrentUserRows, resolveLeaderboardCurrentUser } from '@/lib/leaderboard';
 import { cn } from '@/lib/utils';
 
 type DetailedLeaderboardRow = LeaderboardRow & {
@@ -117,7 +117,9 @@ function UserList({
   profiles: Record<string, LeaderboardUserProfile>;
 }) {
   const rows = board?.rows ?? [];
-  const currentUser = hideFromLeaderboard ? null : (board?.currentUser ?? null);
+  const currentUser = hideFromLeaderboard
+    ? null
+    : resolveLeaderboardCurrentUser(board);
   const displayRows = pinCurrentUserRows(rows, currentUser);
 
   if (rows.length === 0 && !currentUser) {
