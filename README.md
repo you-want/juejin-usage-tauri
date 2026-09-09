@@ -139,7 +139,7 @@ pnpm install
 感谢各位掘友们的贡献支持！🎉 提交 PR 即可上榜
 
 <a href="https://github.com/juejin-cn/juejin-usage/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=juejin-cn/juejin-usage" alt="Contributors">
+  <img src="https://contrib.rocks/image?repo=juejin-cn/juejin-usage&max=500&columns=20" alt="Juejin Usage contributors" />
 </a>
 
 ## 📚 参考项目
