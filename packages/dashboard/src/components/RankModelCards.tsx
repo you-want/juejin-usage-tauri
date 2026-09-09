@@ -164,10 +164,10 @@ function UserList({
           return (
             <li
               className={cn(
-                'min-w-0 transition-colors hover:bg-black/[0.02] dark:hover:bg-white/[0.04]',
+                'min-w-0 transition-colors',
                 pinned
-                  ? 'sticky top-0 z-10 border-b border-[#1e80ff]/15 bg-[#eef6ff]/95 shadow-[0_8px_16px_rgb(15_60_120_/0.06)] dark:border-[#4b9cff]/20 dark:bg-[#16324f]/95 dark:shadow-[0_8px_16px_rgb(0_0_0_/0.25)]'
-                  : '[content-visibility:auto] [contain-intrinsic-size:auto_56px]',
+                  ? 'sticky top-0 z-10 border-b border-[#1e80ff]/15 bg-[#eef6ff] shadow-[0_8px_16px_rgb(15_60_120_/0.06)] hover:bg-[#e4f1ff] dark:border-[#4b9cff]/20 dark:bg-[#16324f] dark:shadow-[0_8px_16px_rgb(0_0_0_/0.25)] dark:hover:bg-[#1a3d5c]'
+                  : 'hover:bg-black/[0.02] dark:hover:bg-white/[0.04] [content-visibility:auto] [contain-intrinsic-size:auto_56px]',
               )}
               key={pinned ? `pinned-${row.userHash}` : row.userHash}
             >
