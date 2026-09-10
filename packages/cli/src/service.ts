@@ -148,7 +148,7 @@ async function cmdServiceStartBody(
     return;
   }
 
-  const autostartRegistered = await registerAutostart(cliBinPath, dir);
+  await registerAutostart(cliBinPath, dir);
   const port = config.serverPort || DEFAULT_PORT;
   const host = config.serverHost || DEFAULT_HOST;
   const ready = await waitForServiceReady(dir, port, host);
