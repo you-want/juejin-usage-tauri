@@ -56,6 +56,10 @@ const TAB_ITEMS: { id: DesktopSettingsTabId; label: string }[] = [
   { id: 'about', label: '关于' },
 ];
 
+/** Gitee README section: 桌面宠物（自定义宠物包用法）. */
+const CUSTOM_PET_DOCS_URL =
+  'https://gitee.com/juejin-cn/juejin-usage/blob/main/README.md#%E6%A1%8C%E9%9D%A2%E5%AE%A0%E7%89%A9%E5%8F%AF%E9%80%89';
+
 export function SettingsPanel({
   activeTab,
   isOpen = true,
@@ -401,6 +405,16 @@ function DesktopPetSettings({
     }
   };
 
+  const openPetDocs = async () => {
+    setError(null);
+    try {
+      const result = await window.tud.openExternal(CUSTOM_PET_DOCS_URL);
+      if (!result.ok) setError(result.message ?? '打开使用文档失败');
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : '打开使用文档失败');
+    }
+  };
+
   return (
     <div className="flex h-full flex-col gap-4 overflow-hidden">
       {(error ?? catalogError) && (
@@ -498,6 +512,13 @@ function DesktopPetSettings({
               onPress={() => { void openPetDirectory(); }}
             >
               打开宠物目录
+            </Button>
+            <Button
+              size="sm"
+              variant="secondary"
+              onPress={() => { void openPetDocs(); }}
+            >
+              自定义指南
             </Button>
           </div>
           <Slider
