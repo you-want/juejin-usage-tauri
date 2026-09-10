@@ -7,6 +7,7 @@ import {
   createSyncRunner,
   kickBackfillDrain,
   loadConfig,
+  resetCursorsCache,
   stopBackfillDrain,
   syncLogPath,
   type SyncResult,
@@ -64,6 +65,14 @@ async function handle(msg: SyncWorkerRequest): Promise<void> {
     });
     process.stdout.write(`[tud-sync-worker] ready pid=${process.pid}\n`);
     post({ type: 'ready', pid: process.pid });
+    return;
+  }
+
+  if (msg.type === 'invalidateCursors') {
+    // Main owns cursors.json (range expansion clears it) but parsers run here.
+    // Without this the worker keeps serving its cached offsets, reports "no new
+    // events" and the widened window never backfills.
+    if (dataDir) resetCursorsCache(dataDir);
     return;
   }
 

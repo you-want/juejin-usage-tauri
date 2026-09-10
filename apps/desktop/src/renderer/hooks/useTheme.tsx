@@ -5,15 +5,23 @@ import {
   useEffect,
   useMemo,
   useRef,
+  useState,
   type ReactNode,
 } from 'react';
 import { flushSync } from 'react-dom';
 import { useTheme as useHeroUITheme } from '@heroui/react';
-import type { Theme } from '@/lib/theme';
+import {
+  isThemeMode,
+  type Theme,
+  type ThemeMode,
+} from '@/lib/theme';
 
 interface ThemeContextValue {
+  /** Resolved theme actually rendered (follows the OS when mode is `system`). */
   theme: Theme;
-  setTheme: (theme: Theme) => void;
+  /** User's persisted preference. */
+  themeMode: ThemeMode;
+  setThemeMode: (mode: ThemeMode) => void;
   toggleTheme: () => void;
 }
 
@@ -25,12 +33,24 @@ function shouldAnimateThemeChange(): boolean {
     && !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 }
 
+/**
+ * Single-button cycle order. Kept explicit (not derived from THEME_MODES) so
+ * reordering the shared mode list can never silently change the UI cycle.
+ */
+const THEME_MODE_CYCLE: Record<ThemeMode, ThemeMode> = {
+  system: 'light',
+  light: 'dark',
+  dark: 'system',
+};
+
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const {
     theme: heroUITheme,
     setTheme: setHeroUITheme,
   } = useHeroUITheme('light');
   const theme: Theme = heroUITheme === 'dark' ? 'dark' : 'light';
+  const [themeMode, setThemeModeState] = useState<ThemeMode>('system');
+  const themeModeRef = useRef<ThemeMode>('system');
   const themeRef = useRef<Theme>(theme);
 
   const applyTheme = useCallback((next: Theme): boolean => {
@@ -57,32 +77,54 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     let disposed = false;
     const syncInitialTheme = async () => {
-      const next = await window.tud?.getTheme?.();
-      if (!disposed && (next === 'light' || next === 'dark')) {
-        applyTheme(next);
+      const state = await window.tud?.getTheme?.();
+      if (!disposed && state && isThemeMode(state.mode)) {
+        themeModeRef.current = state.mode;
+        setThemeModeState(state.mode);
+        applyTheme(state.resolved === 'dark' ? 'dark' : 'light');
       }
     };
 
     void syncInitialTheme();
-    const unsubscribe = window.tud?.onThemeChanged?.((next) => applyTheme(next));
+    // Main broadcasts the full theme state ({ mode, resolved }) whenever either
+    // changes — on explicit mode switches and on live OS appearance changes
+    // while in `system` mode. mode keeps the selector highlight in sync across
+    // every window (main window + tray popover).
+    const unsubscribe = window.tud?.onThemeChanged?.((state) => {
+      themeModeRef.current = state.mode;
+      setThemeModeState(state.mode);
+      applyTheme(state.resolved);
+    });
     return () => {
       disposed = true;
       unsubscribe?.();
     };
   }, [applyTheme]);
 
-  const setTheme = useCallback((next: Theme) => {
-    if (!applyTheme(next)) return;
-    window.tud?.setTheme?.(next);
+  const setThemeMode = useCallback((mode: ThemeMode) => {
+    // Keep the ref current so a rapid burst of clicks cycles forward instead
+    // of every click reading the same stale state.
+    themeModeRef.current = mode;
+    setThemeModeState(mode);
+    // light/dark need no system info and apply instantly. `system` is left to
+    // main's broadcast: local matchMedia reflects the current themeSource, not
+    // the real OS appearance, while a fixed mode is active — applying it here
+    // would briefly render the wrong theme before main corrects it.
+    if (mode !== 'system') {
+      applyTheme(mode);
+    }
+    window.tud?.setThemeMode?.(mode);
   }, [applyTheme]);
 
   const toggleTheme = useCallback(() => {
-    setTheme(theme === 'light' ? 'dark' : 'light');
-  }, [setTheme, theme]);
+    // Reads the ref so rapid consecutive presses advance one step each instead
+    // of all landing on the same next mode.
+    setThemeMode(THEME_MODE_CYCLE[themeModeRef.current]);
+  }, [setThemeMode]);
 
   const value = useMemo(
-    () => ({ theme, setTheme, toggleTheme }),
-    [theme, setTheme, toggleTheme],
+    () => ({ theme, themeMode, setThemeMode, toggleTheme }),
+    [theme, themeMode, setThemeMode, toggleTheme],
   );
 
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;

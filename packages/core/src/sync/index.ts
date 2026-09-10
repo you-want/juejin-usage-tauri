@@ -105,6 +105,45 @@ function bucketChanged(a: QueueBucket, b: QueueBucket): boolean {
   );
 }
 
+/**
+ * True when a cursors.json slot still carries incremental state (file offsets,
+ * dedup ids, cumulative watermarks). Empty shells a parser leaves behind when
+ * it finds nothing (`{ files: {} }`) do not count as state.
+ */
+function hasCursorState(value: unknown): boolean {
+  if (value == null) return false;
+  if (Array.isArray(value)) return value.length > 0;
+  if (typeof value !== 'object') return true;
+  for (const key in value as Record<string, unknown>) {
+    if (hasCursorState((value as Record<string, unknown>)[key])) return true;
+  }
+  return false;
+}
+
+function statefulCursorSlots(cursors: CursorsFile): Set<string> {
+  const slots = new Set<string>();
+  for (const [slot, value] of Object.entries(cursors)) {
+    if (hasCursorState(value)) slots.add(slot);
+  }
+  return slots;
+}
+
+/**
+ * A parser that started the round with an empty cursor slot re-read its source
+ * from the beginning, so the buckets it returns are a full snapshot of the
+ * collect window — not a delta on top of what the queue already holds.
+ *
+ * Detected from the slot the parse just filled instead of a source→slot table:
+ * every parser owns its own top-level key in cursors.json, so new sources stay
+ * covered without extra bookkeeping.
+ */
+function parsedFullRescan(before: Set<string>, after: CursorsFile): boolean {
+  for (const [slot, value] of Object.entries(after)) {
+    if (!before.has(slot) && hasCursorState(value)) return true;
+  }
+  return false;
+}
+
 async function syncSourceBuckets(
   dataDir: string,
   config: TudConfig,
@@ -122,11 +161,12 @@ async function syncSourceBuckets(
     };
     cursors: Awaited<ReturnType<typeof loadCursors>>;
   }>,
-  options?: { replace?: boolean; sharedCursors?: CursorsFile },
+  options?: { sharedCursors?: CursorsFile },
 ): Promise<SyncResult> {
   const collectSince = resolveLocalCollectSince(config);
   const shared = options?.sharedCursors;
   let cursors = shared ?? (await loadCursors(dataDir));
+  const statefulBefore = statefulCursorSlots(cursors);
   const { result, cursors: nextCursors } = await parseFn(cursors, collectSince);
   cursors = nextCursors;
 
@@ -169,12 +209,17 @@ async function syncSourceBuckets(
   );
   const existingMap = new Map(existing.map((r) => [bucketKey(r), r]));
 
+  // Widening the local range (7D → 90D) clears cursors so parsers backfill.
+  // Their output then repeats rows the queue already has, so adding it on top
+  // would count every already ingested event twice. Snapshot rows replace.
+  const snapshot = parsedFullRescan(statefulBefore, cursors);
+
   const toAppend: QueueBucket[] = [];
   const working = new Map(existingMap);
   for (const delta of result.buckets) {
     const key = bucketKey(delta);
     const prev = working.get(key);
-    working.set(key, options?.replace ? delta : prev ? mergeBuckets(prev, delta) : delta);
+    working.set(key, snapshot ? delta : prev ? mergeBuckets(prev, delta) : delta);
   }
   const touched = new Set(result.buckets.map((bucket) => unknownAlignGroupKey(bucket)));
   const everyCodeUnknownGroups = new Set<string>();

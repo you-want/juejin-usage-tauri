@@ -157,6 +157,14 @@ pnpm install
 - [CLI](./CONTRIBUTING.md#cli) — 命令行与本地面板
 - [Web](./CONTRIBUTING.md#web) — 线上看板
 
+## Contributing
+
+感谢各位掘友们的贡献支持！🎉 提交 PR 即可上榜
+
+<a href="https://github.com/juejin-cn/juejin-usage/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=juejin-cn/juejin-usage&max=500&columns=20" alt="Juejin Usage contributors" />
+</a>
+
 ## 📚 参考项目
 
 - [Token Tracker](https://github.com/xiufengsun/TokenTracker): 自动采集 30 款 AI 编码工具 的 token 用量，用一套漂亮的 Dashboard 看真实成本与趋势。

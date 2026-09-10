@@ -1,16 +1,17 @@
 import type { Key } from "@heroui/react";
-import { Moon, Sun } from "@gravity-ui/icons";
+import { MoonIcon, SunIcon, SunMoonIcon } from "lucide-react";
 import { ToggleButton, ToggleButtonGroup } from "@heroui/react";
+import { THEME_MODES, type ThemeMode } from "@/lib/theme";
 import { useTheme } from "@/hooks/useTheme";
 
 /** Dashboard top bar with theme controls. */
 export function DashboardHeader() {
-  const { theme, setTheme } = useTheme();
+  const { themeMode, setThemeMode } = useTheme();
 
   const changeTheme = (keys: Set<Key>) => {
-    const nextTheme = [...keys][0];
-    if (nextTheme === "light" || nextTheme === "dark") {
-      setTheme(nextTheme);
+    const nextMode = [...keys][0] as ThemeMode;
+    if (THEME_MODES.includes(nextMode)) {
+      setThemeMode(nextMode);
     }
   };
 
@@ -24,11 +25,20 @@ export function DashboardHeader() {
           className="rounded-full bg-default p-1"
           disallowEmptySelection
           isDetached
-          selectedKeys={new Set<Key>([theme])}
+          selectedKeys={new Set<Key>([themeMode])}
           selectionMode="single"
           size="sm"
           onSelectionChange={changeTheme}
         >
+          <ToggleButton
+            aria-label="跟随系统"
+            className="data-[selected=true]:bg-surface data-[selected=true]:text-foreground data-[selected=true]:shadow-sm"
+            id="system"
+            isIconOnly
+            variant="ghost"
+          >
+            <SunMoonIcon className="size-4 scale-[1.2]" />
+          </ToggleButton>
           <ToggleButton
             aria-label="使用亮色模式"
             className="data-[selected=true]:bg-surface data-[selected=true]:text-foreground data-[selected=true]:shadow-sm"
@@ -36,7 +46,7 @@ export function DashboardHeader() {
             isIconOnly
             variant="ghost"
           >
-            <Sun />
+            <SunIcon className="size-4" />
           </ToggleButton>
           <ToggleButton
             aria-label="使用暗色模式"
@@ -45,7 +55,7 @@ export function DashboardHeader() {
             isIconOnly
             variant="ghost"
           >
-            <Moon />
+            <MoonIcon className="size-4" />
           </ToggleButton>
         </ToggleButtonGroup>
       </div>

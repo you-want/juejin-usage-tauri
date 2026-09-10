@@ -1,10 +1,16 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import {
+  formatRankPosition,
   groupRankModelsByVendor,
   uniqueRankModelOptions,
   isRankRange,
+  pinCurrentUserRows,
+  rankShareFallbackLabel,
+  resolveLeaderboardCurrentUser,
+  resolveRankShareViewer,
 } from './leaderboard.ts';
+import type { LeaderboardRow } from './api.ts';
 
 describe('isRankRange', () => {
   it('accepts the four leaderboard ranges', () => {
@@ -153,5 +159,111 @@ describe('groupRankModelsByVendor', () => {
       groupRankModelsByVendor(['gpt-5', 'gpt-5'])[0]?.models,
       ['gpt-5'],
     );
+  });
+});
+
+describe('formatRankPosition', () => {
+  it('returns an em dash for missing ranks', () => {
+    assert.equal(formatRankPosition(null), '—');
+    assert.equal(formatRankPosition(undefined), '—');
+    assert.equal(formatRankPosition(0), '—');
+    assert.equal(formatRankPosition(-1), '—');
+  });
+
+  it('shows the actual rank including values above 99', () => {
+    assert.equal(formatRankPosition(1), '1');
+    assert.equal(formatRankPosition(99), '99');
+    assert.equal(formatRankPosition(100), '100');
+    assert.equal(formatRankPosition(237), '237');
+  });
+});
+
+function sampleRow(
+  userHash: string,
+  rank: number,
+  isCurrentUser = false,
+): LeaderboardRow {
+  return {
+    rank,
+    displayName: `用户 ${userHash}`,
+    userHash,
+    tokens: 1_000 - rank,
+    costUsd: 1,
+    isCurrentUser,
+  };
+}
+
+describe('pinCurrentUserRows', () => {
+  it('returns rows unchanged without a current user', () => {
+    const top = sampleRow('aaa', 1);
+    assert.deepEqual(pinCurrentUserRows([top], null), [
+      { pinned: false, row: top },
+    ]);
+  });
+
+  it('pins the current user above the existing rows', () => {
+    const top = sampleRow('aaa', 1);
+    const me = sampleRow('me', 2, true);
+    const result = pinCurrentUserRows([top, me], me);
+
+    assert.deepEqual(
+      result.map((item) => ({
+        pinned: item.pinned,
+        userHash: item.row.userHash,
+      })),
+      [
+        { pinned: true, userHash: 'me' },
+        { pinned: false, userHash: 'aaa' },
+        { pinned: false, userHash: 'me' },
+      ],
+    );
+  });
+});
+
+describe('resolveLeaderboardCurrentUser', () => {
+  it('prefers the currentUser field over matching rows', () => {
+    const listed = sampleRow('me', 4, true);
+    const currentUser = sampleRow('me', 137, true);
+    assert.equal(
+      resolveLeaderboardCurrentUser({ currentUser, rows: [listed] }),
+      currentUser,
+    );
+  });
+
+  it('falls back to the in-list current-user row', () => {
+    const listed = sampleRow('me', 4, true);
+    assert.equal(
+      resolveLeaderboardCurrentUser({ currentUser: null, rows: [listed] }),
+      listed,
+    );
+  });
+});
+
+describe('resolveRankShareViewer', () => {
+  it('uses 100+ copy for signed-in users who are off the board', () => {
+    const viewer = resolveRankShareViewer(
+      { currentUser: null, rows: [sampleRow('aaa', 1)] },
+      { isSignedIn: true },
+    );
+    assert.deepEqual(viewer, { kind: 'off_board' });
+    assert.equal(rankShareFallbackLabel('off_board'), '100+名');
+  });
+
+  it('keeps the login hint for anonymous viewers', () => {
+    const viewer = resolveRankShareViewer(
+      { currentUser: null, rows: [sampleRow('aaa', 1)] },
+      { isSignedIn: false },
+    );
+    assert.deepEqual(viewer, { kind: 'anonymous' });
+    assert.equal(rankShareFallbackLabel('anonymous'), '登录后查看');
+  });
+
+  it('omits personal rank when the viewer hid themselves', () => {
+    const me = sampleRow('me', 137, true);
+    const viewer = resolveRankShareViewer(
+      { currentUser: me, rows: [] },
+      { hideFromLeaderboard: true, isSignedIn: true },
+    );
+    assert.deepEqual(viewer, { kind: 'hidden' });
   });
 });

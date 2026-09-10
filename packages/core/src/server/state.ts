@@ -98,6 +98,12 @@ export interface LocalApiDeps {
   ) => Promise<SyncResult[]>;
   onSync?: (source?: string) => Promise<void>;
   onConfigChange?: (config: TudConfig) => void;
+  /**
+   * Fired right after cursors.json was cleared for a backfill. Processes that
+   * cache cursors elsewhere (Desktop sync worker) must drop their copy here,
+   * otherwise they keep replaying stale offsets and skip the rescan.
+   */
+  onCursorsCleared?: () => void | Promise<void>;
   getHookStatus?: () => Promise<HookStatus>;
 }
 
@@ -324,8 +330,11 @@ export async function runSync(
 /**
  * Expand local collect floor to cover `days` (今天/7D/30D/90D).
  * When expansion is needed, clears cursors only (keeps queue) and re-syncs so
- * parsers re-read Agent logs for the wider window. Also moves upload
- * `statsSince` earlier (never later) so the cloud window can catch up.
+ * parsers re-read Agent logs for the wider window. Rows the rescan re-emits
+ * replace their queue counterpart (see `parsedFullRescan`), so widening the
+ * range backfills history without recounting what is already stored. Also
+ * moves upload `statsSince` earlier (never later) so the cloud window can
+ * catch up.
  */
 export async function ensureLocalCollectRange(
   deps: LocalApiDeps,
@@ -370,6 +379,7 @@ export async function ensureLocalCollectRange(
 
   // Keep existing queue; only reset incremental cursors so parsers backfill.
   await clearCursors(deps.dataDir);
+  await deps.onCursorsCleared?.();
   const sync = await runSync(deps);
   return { expanded: true, config, sync };
 }

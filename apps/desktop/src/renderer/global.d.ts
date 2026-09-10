@@ -37,9 +37,17 @@ declare global {
       onDashboardRange: (
         callback: (range: import('../shared/dashboard-range').DashboardRange) => void,
       ) => () => void;
-      getTheme: () => Promise<'light' | 'dark'>;
-      setTheme: (theme: 'light' | 'dark') => void;
-      onThemeChanged: (callback: (theme: 'light' | 'dark') => void) => () => void;
+      getTheme: () => Promise<{
+        mode: import('../shared/theme').ThemeMode;
+        resolved: import('../shared/theme').Theme;
+      }>;
+      setThemeMode: (mode: import('../shared/theme').ThemeMode) => void;
+      onThemeChanged: (
+        callback: (state: {
+          mode: import('../shared/theme').ThemeMode;
+          resolved: import('../shared/theme').Theme;
+        }) => void,
+      ) => () => void;
       getOpenAtLogin: () => Promise<boolean>;
       setOpenAtLogin: (enabled: boolean) => Promise<boolean>;
       getLaunchHidden: () => Promise<boolean>;
