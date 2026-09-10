@@ -62,7 +62,7 @@ Juejin Usage 提供 macOS / Windows 桌面客户端，安装即用，无需额�
 | :--------------------------: | :------------------------: | :------------------------------: |
 | ![Click](./assets/click.png) | ![Yoyo](./assets/yoyo.png) | ![Hawking](./assets/hawking.png) |
 
-在「设置 → 桌面宠物」中点击「打开宠物目录」，将自定义宠物包放入 `~/.ai-usage/pets/`。每次打开设置都会自动扫描该目录；设置保持打开时，可点击「刷新」重新读取。每只宠物使用独立子目录，结构如下：
+在「设置 → 桌面宠物」中点击「打开宠物目录」，将自定义宠物包放入 `~/.ai-usage/pets/`。每次打开设置都会自动扫描该目录；设置保持打开时，可点击「刷新」重新读取。列表会显示每只宠物的 idle 预览；校验失败的包会标为「无效」且不可选。每只宠物使用独立子目录，结构如下：
 
 ```text
 pets/
@@ -71,7 +71,7 @@ pets/
     └── spritesheet.webp
 ```
 
-首版仅支持 v2 动画包：`spritesheet.webp` 必须是 8×11 格、每格 192×208 px 的 1536×2288 WebP 图集。`pet.json` 示例：
+首版仅支持 v2 动画包：`spritesheet.webp` 必须是 8×11 格、每格 192×208 px 的 1536×2288 WebP 图集。尺寸不对时可在仓库根执行 `node pets/normalize-spritesheet.mjs <图集路径>`（需 ImageMagick、带 libwebp 的 ffmpeg，或 `cwebp` + ffmpeg/`sips`）强制拉伸到目标尺寸——仅用于通过校验；正确动画仍需按格子导出。`pet.json` 示例：
 
 ```json
 {

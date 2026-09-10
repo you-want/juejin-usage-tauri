@@ -37,7 +37,9 @@ import { DESKTOP_PETS } from '@/pets';
 import type { DesktopPetDefinition } from '../../shared/desktop-pet-catalog';
 import { AboutContent } from '@/components/AboutContent';
 import { JuejinLoginConsentModal } from '@/components/JuejinLoginConsentModal';
+import { PetSelectPreview } from '@/components/PetSelectPreview';
 import { StatusBanner } from '@/components/StatusBanner';
+
 import {
   OPEN_SETTINGS_EVENT,
   dispatchJuejinLinkChanged,
@@ -73,6 +75,9 @@ export function SettingsPanel({
   const tab = activeTab ?? uncontrolledTab;
   const setTab = onTabChange ?? setUncontrolledTab;
   const [petCatalog, setPetCatalog] = useState<DesktopPetDefinition[]>(DESKTOP_PETS);
+  const [invalidPets, setInvalidPets] = useState<
+    Array<{ directory: string; reason: string }>
+  >([]);
   const [catalogSelectedPetId, setCatalogSelectedPetId] = useState<string>();
   const [refreshingPets, setRefreshingPets] = useState(false);
   const [petCatalogError, setPetCatalogError] = useState<string | null>(null);
@@ -86,6 +91,7 @@ export function SettingsPanel({
       const catalog = await window.tud.refreshDesktopPetCatalog();
       if (request !== petCatalogRequest.current) return;
       setPetCatalog(catalog.pets);
+      setInvalidPets(catalog.invalidPets);
       setCatalogSelectedPetId(catalog.selectedPetId);
     } catch (reason) {
       if (request === petCatalogRequest.current) {
@@ -157,8 +163,14 @@ export function SettingsPanel({
             <DesktopPetSettings
               catalogSelectedPetId={catalogSelectedPetId}
               catalogError={petCatalogError}
+              invalidPets={invalidPets}
               pets={petCatalog}
               refreshingPets={refreshingPets}
+              onRefreshPets={() => {
+                void refreshPetCatalog().catch(() => {
+                  // catalogError is set inside refreshPetCatalog.
+                });
+              }}
             />
           )}
         </Tabs.Panel>
@@ -214,13 +226,17 @@ export function SettingsPanel({
 function DesktopPetSettings({
   catalogSelectedPetId,
   catalogError,
+  invalidPets,
   pets,
   refreshingPets,
+  onRefreshPets,
 }: {
   catalogSelectedPetId?: string;
   catalogError: string | null;
+  invalidPets: Array<{ directory: string; reason: string }>;
   pets: DesktopPetDefinition[];
   refreshingPets: boolean;
+  onRefreshPets: () => void;
 }) {
   const [enabled, setEnabled] = useState(false);
   const [selectedPetId, setSelectedPetId] = useState('hawking');
@@ -313,6 +329,7 @@ function DesktopPetSettings({
   const onSelectedPetChange = async (value: string | number | null) => {
     if (value === null) return;
     const next = String(value);
+    if (next.startsWith('invalid:')) return;
     if (!pets.some((pet) => pet.id === next)) return;
     const previous = selectedPetId;
     setSelectedPetId(next);
@@ -418,7 +435,13 @@ function DesktopPetSettings({
           >
             <Label>宠物形象</Label>
             <Select.Trigger>
-              <Select.Value />
+              <span className="flex min-w-0 flex-1 items-center gap-2">
+                <PetSelectPreview petId={selectedPetId} />
+                {/* textValue only — default Value clones the whole ListBox.Item (incl. preview). */}
+                <Select.Value>
+                  {({ selectedText }) => selectedText}
+                </Select.Value>
+              </span>
               <Select.Indicator />
             </Select.Trigger>
             <Select.Popover>
@@ -429,19 +452,46 @@ function DesktopPetSettings({
                     key={pet.id}
                     textValue={pet.displayName}
                   >
-                    <div className="flex flex-col gap-0.5">
-                      <span>{pet.displayName}</span>
-                      <span className="text-xs text-muted">
-                        {pet.description}
-                      </span>
+                    <div className="flex min-w-0 items-center gap-2">
+                      <PetSelectPreview petId={pet.id} />
+                      <div className="flex min-w-0 flex-col gap-0.5">
+                        <span>{pet.displayName}</span>
+                        <span className="text-xs text-muted">
+                          {pet.description}
+                        </span>
+                      </div>
                     </div>
                     <ListBox.ItemIndicator />
                   </ListBox.Item>
                 ))}
+                {invalidPets.map((pet) => {
+                  const label = `${pet.directory} 无效：${pet.reason}`;
+                  return (
+                    <ListBox.Item
+                      id={`invalid:${pet.directory}`}
+                      isDisabled
+                      key={`invalid:${pet.directory}`}
+                      textValue={label}
+                    >
+                      <div className="flex min-w-0 flex-col gap-0.5">
+                        <span>{pet.directory} 无效</span>
+                        <span className="text-xs text-muted">{pet.reason}</span>
+                      </div>
+                    </ListBox.Item>
+                  );
+                })}
               </ListBox>
             </Select.Popover>
           </Select>
           <div className="flex justify-end gap-2 -mt-2">
+            <Button
+              isDisabled={refreshingPets}
+              size="sm"
+              variant="secondary"
+              onPress={() => { onRefreshPets(); }}
+            >
+              刷新
+            </Button>
             <Button
               size="sm"
               variant="secondary"
