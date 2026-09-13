@@ -125,6 +125,59 @@ async function readZcodeCredentials(): Promise<ZcodeAccountCredentials | null> {
   }
 }
 
+function openCodeHome(): string {
+  const configured = process.env.OPENCODE_HOME?.trim();
+  if (configured) return expandHome(configured);
+  if (process.platform === 'darwin') {
+    return path.join(homedir(), 'Library', 'Application Support', 'opencode');
+  }
+  if (process.platform === 'win32') {
+    const appData = process.env.APPDATA?.trim() || path.join(homedir(), 'AppData', 'Roaming');
+    return path.join(appData, 'opencode');
+  }
+  const xdg = process.env.XDG_DATA_HOME?.trim() || path.join(homedir(), '.local', 'share');
+  return path.join(xdg, 'opencode');
+}
+
+/** Look up a Z.ai / BigModel credential stored in OpenCode's `auth.json`. */
+export async function readOpenCodeAuth(): Promise<ZcodeAccountCredentials | null> {
+  const authPath = path.join(openCodeHome(), 'auth.json');
+  let text: string | null = null;
+  try {
+    text = await readFile(authPath, 'utf8');
+  } catch {
+    return null;
+  }
+  if (text === null) return null;
+  let root: unknown;
+  try {
+    root = JSON.parse(text);
+  } catch {
+    return null;
+  }
+  const record = asRecord(root);
+  if (!record) return null;
+  // OpenCode stores per-provider credentials under their canonical ids.
+  // `zhipuai` is the BigModel-side alias; map it back to `bigmodel` so the
+  // existing `quotaUrl()` host routing stays correct.
+  for (const [openCodeKey, provider] of [
+    ['zai', 'zai'],
+    ['zhipuai', 'bigmodel'],
+  ] as const) {
+    const entry = asRecord(record[openCodeKey]);
+    if (!entry) continue;
+    const token = typeof entry.token === 'string'
+      ? entry.token.trim()
+      : typeof entry.apiKey === 'string'
+        ? entry.apiKey.trim()
+        : typeof entry.api_key === 'string'
+          ? entry.api_key.trim()
+          : '';
+    if (token.length > 20) return { token, provider };
+  }
+  return null;
+}
+
 async function hasBuiltinAccountProvider(provider: ZcodeAccountCredentials['provider']): Promise<boolean> {
   try {
     const root = asRecord(JSON.parse(await readFile(configPath(), 'utf8')));
@@ -152,10 +205,19 @@ function quotaUrl(provider: ZcodeAccountCredentials['provider']): string {
 }
 
 async function fetchFreshZcodeSubscription(): Promise<ZcodeSubscriptionSnapshot> {
-  if (!existsSync(zcodeHome())) return unavailable('not-installed', '未检测到本机 ZCode');
-  const credentials = await readZcodeCredentials();
-  if (!credentials) return unavailable('not-signed-in', '请先通过 ZCode 账号授权登录');
-  if (!await hasBuiltinAccountProvider(credentials.provider)) {
+  const zcodeInstalled = existsSync(zcodeHome());
+  let credentials = zcodeInstalled ? await readZcodeCredentials() : null;
+  let fromOpenCode = false;
+  if (!credentials) {
+    credentials = await readOpenCodeAuth();
+    fromOpenCode = credentials !== null;
+  }
+  if (!credentials) {
+    return zcodeInstalled
+      ? unavailable('not-signed-in', '请先通过 ZCode 账号授权登录')
+      : unavailable('not-installed', '未检测到本机 ZCode');
+  }
+  if (!fromOpenCode && !await hasBuiltinAccountProvider(credentials.provider)) {
     return unavailable('custom-provider', '自定义模型无法获取配额');
   }
 

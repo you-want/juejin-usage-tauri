@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict';
 import { createCipheriv, createHash, randomBytes } from 'node:crypto';
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import test from 'node:test';
-import { decryptZcodeCredential, extractBillingPlan } from './zcode-subscription';
+import { decryptZcodeCredential, extractBillingPlan, readOpenCodeAuth } from './zcode-subscription';
 
 function encrypt(plain: string, secret: string): string {
   const nonce = randomBytes(12);
@@ -22,3 +25,37 @@ test('maps an active ZCode billing tier without exposing plan payload', () => {
   }), 'Pro');
   assert.equal(extractBillingPlan({ data: { plans: [] } }), null);
 });
+
+test('reads Z.ai and BigModel credentials from OpenCode auth.json', async (t) => {
+  const tempHome = mkdtempSync(path.join(tmpdir(), 'zcode-opencode-'));
+  const authPath = path.join(tempHome, 'auth.json');
+  t.after(() => {
+    if (existsSync(tempHome)) rmSync(tempHome, { recursive: true, force: true });
+  });
+
+  writeFileSync(authPath, JSON.stringify({
+    zai: { token: 'opencode-zai-credential-1234567890' },
+    zhipuai: { apiKey: 'opencode-bigmodel-credential-1234567890' },
+  }));
+  process.env.OPENCODE_HOME = tempHome;
+
+  const zai = await readOpenCodeAuth();
+  assert.equal(zai?.provider, 'zai');
+  assert.ok(zai?.token.startsWith('opencode-zai-credential'));
+
+  writeFileSync(authPath, JSON.stringify({
+    zhipuai: { token: 'opencode-bigmodel-credential-0987654321' },
+  }));
+  const bigmodel = await readOpenCodeAuth();
+  assert.equal(bigmodel?.provider, 'bigmodel');
+  assert.ok(bigmodel?.token.startsWith('opencode-bigmodel-credential'));
+
+  writeFileSync(authPath, JSON.stringify({ openai: { token: 'unrelated-token' } }));
+  assert.equal(await readOpenCodeAuth(), null);
+
+  rmSync(authPath);
+  assert.equal(await readOpenCodeAuth(), null);
+
+  delete process.env.OPENCODE_HOME;
+});
+
