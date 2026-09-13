@@ -144,6 +144,7 @@ export function isSyncSourcePresent(source: string): boolean {
         join(resolveCodebuddyHome(), 'projects'),
       ]);
     case 'workbuddy':
+      // Domestic and international editions use separate homes; either is enough.
       return anyExists([
         resolveWorkbuddyHome(),
         join(resolveWorkbuddyHome(), 'projects'),

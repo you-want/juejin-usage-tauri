@@ -1,23 +1,17 @@
 import type { ReactNode } from 'react';
-import { Card } from '@heroui/react';
-
-const RING_STEP = 5;
+import { Card, ProgressBar } from '@heroui/react';
 
 export interface SubscriptionUsageMetric {
   color: string;
   label: string;
   remainingPercent: number | null;
-  ringRadius: number;
+  /** Literal value for balances and credits; percentage remains the bar value. */
+  valueText?: string;
 }
 
 export interface SubscriptionUsageCardData {
-  /** Preferred for inline SVG marks that inherit the active theme color. */
+  /** Fixed-size LobeHub brand mark rendered in the card title bar. */
   icon?: ReactNode;
-  /** Monochrome Lobe marks invert on the dark tray surface. */
-  iconMonochrome?: boolean;
-  /** Override the default 20px brand-mark size when the artwork needs it. */
-  iconSizeClassName?: string;
-  iconSrc?: string;
   metrics: readonly SubscriptionUsageMetric[];
   stale?: boolean;
   title: string;
@@ -28,7 +22,7 @@ interface SubscriptionUsageCardProps {
   loading: boolean;
 }
 
-/** Shared tray presentation for subscription windows and concentric usage rings. */
+/** Shared tray presentation for subscription allowance progress bars. */
 export function SubscriptionUsageCard({
   data,
   loading,
@@ -43,119 +37,57 @@ export function SubscriptionUsageCard({
   if (loading || visibleMetrics.length === 0) return null;
 
   return (
-    <Card className="min-w-0 overflow-hidden rounded-2xl px-3 py-2">
-      <Card.Content className="grid min-h-22 grid-cols-[minmax(0,1fr)_5.5rem] items-center gap-x-1 p-0">
-        <div className="grid min-w-0 content-center gap-2.5">
-          <div className="flex h-5 min-w-0 items-center gap-1.5">
-            {data.icon ?? (
-              <img
-                alt=""
-                aria-hidden
-                className={`shrink-0 object-contain ${
-                  data.iconSizeClassName ?? 'size-5'
-                } ${data.iconMonochrome ? 'dark:invert' : ''}`}
-                src={data.iconSrc ?? ''}
-              />
-            )}
-            <p className="min-w-0 truncate text-xs font-semibold text-foreground">
-              {data.title}
-            </p>
-            {data.stale ? (
-              <span className="shrink-0 text-[10px] text-muted">旧</span>
-            ) : null}
-          </div>
-
-          <div className="grid h-[2.625rem] content-start pl-1">
-            <div className="grid gap-2.5">
-              {visibleMetrics.map((metric) => (
-                <RemainingMetric key={metric.label} metric={metric} />
-              ))}
-            </div>
-          </div>
+    <Card className="min-w-0 overflow-hidden rounded-2xl p-3">
+      <Card.Content className="grid grid-rows-[1.5rem_auto] gap-2 p-0">
+        <div className="flex min-w-0 items-center gap-3">
+          {data.icon}
+          <p className="min-w-0 truncate text-xs font-semibold text-foreground">
+            {data.title}
+          </p>
+          {data.stale ? (
+            <span className="shrink-0 text-[10px] text-muted">旧</span>
+          ) : null}
         </div>
-
-        <SubscriptionRings metrics={visibleMetrics} title={data.title} />
+        <SubscriptionProgressBars metrics={visibleMetrics} title={data.title} />
       </Card.Content>
     </Card>
   );
 }
 
-function RemainingMetric({
-  metric,
-}: {
-  metric: SubscriptionUsageMetric & { remainingPercent: number };
-}) {
-  return (
-    <div className="flex min-w-0 items-center justify-start gap-1.5 whitespace-nowrap text-xs font-medium leading-4">
-      <span
-        aria-hidden="true"
-        className="size-2 shrink-0 rounded-full"
-        style={{ backgroundColor: metric.color }}
-      />
-      <span className="flex shrink-0 items-center gap-2">
-        <span className="shrink-0 text-foreground">{metric.label}</span>
-        <span className="shrink-0 text-muted tabular-nums">
-          {Math.round(metric.remainingPercent)}%
-        </span>
-      </span>
-    </div>
-  );
-}
-
-function SubscriptionRings({
+function SubscriptionProgressBars({
   metrics,
   title,
 }: {
   metrics: readonly (SubscriptionUsageMetric & { remainingPercent: number })[];
   title: string;
 }) {
-  const description = metrics
-    .map((metric) => `${metric.label} 剩余 ${Math.round(metric.remainingPercent)}%`)
-    .join('，');
   return (
-    <svg
-      aria-label={`${title}：${description}`}
-      className="col-start-2 row-start-1 size-22 translate-x-2 self-center justify-self-end"
-      role="img"
-      viewBox="0 0 72 72"
-    >
-      {metrics.map((metric) => (
-        <Ring
-          key={metric.label}
-          color={metric.color}
-          radius={metric.ringRadius}
-          value={metric.remainingPercent}
-        />
+    <div className="grid min-h-12 auto-rows-5 content-start gap-1.5">
+      {metrics.slice(0, 3).map((metric) => (
+        <div className="flex min-w-0 items-center gap-3" key={metric.label}>
+          <span className="shrink-0 text-[11px] font-medium text-muted">{metric.label}</span>
+          <ProgressBar
+            aria-label={`${title} ${metric.label}剩余 ${Math.round(metric.remainingPercent)}%`}
+            className="min-w-0 flex-1"
+            maxValue={100}
+            size="sm"
+            style={{
+              gap: 0,
+              gridTemplateAreas: '"track"',
+              gridTemplateColumns: 'minmax(0, 1fr)',
+              gridTemplateRows: 'auto',
+            }}
+            value={metric.remainingPercent}
+          >
+            <ProgressBar.Track className="h-1.5 rounded-full bg-surface-secondary">
+              <ProgressBar.Fill className="rounded-full" style={{ backgroundColor: metric.color }} />
+            </ProgressBar.Track>
+          </ProgressBar>
+          <span className="shrink-0 whitespace-nowrap text-right text-[11px] font-medium tabular-nums text-foreground">
+            {metric.valueText ?? `${Math.round(metric.remainingPercent)}%`}
+          </span>
+        </div>
       ))}
-    </svg>
-  );
-}
-
-function Ring({ color, radius, value }: { color: string; radius: number; value: number }) {
-  const circumference = 2 * Math.PI * radius;
-  const steppedValue = Math.floor(value / RING_STEP) * RING_STEP;
-  return (
-    <>
-      <circle
-        cx="36"
-        cy="36"
-        fill="none"
-        r={radius}
-        stroke="var(--surface-secondary)"
-        strokeWidth="7"
-      />
-      <circle
-        cx="36"
-        cy="36"
-        fill="none"
-        r={radius}
-        stroke={color}
-        strokeDasharray={circumference}
-        strokeDashoffset={circumference * (1 - steppedValue / 100)}
-        strokeLinecap="round"
-        strokeWidth="7"
-        transform="rotate(-90 36 36)"
-      />
-    </>
+    </div>
   );
 }

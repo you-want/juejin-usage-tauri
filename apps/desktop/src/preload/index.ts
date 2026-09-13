@@ -31,6 +31,11 @@ import type { KimiSubscriptionSnapshot } from '../shared/kimi-subscription';
 import type { ZcodeSubscriptionSnapshot } from '../shared/zcode-subscription';
 import type { AntigravitySubscriptionSnapshot } from '../shared/antigravity-subscription';
 import type { QoderSubscriptionSnapshot } from '../shared/qoder-subscription';
+import type { MiniMaxSubscriptionSnapshot } from '../shared/minimax-subscription';
+import type { DeepSeekSubscriptionSnapshot } from '../shared/deepseek-subscription';
+import type { OpenCodeSubscriptionSnapshot } from '../shared/opencode-subscription';
+import type { TraeSubscriptionSnapshot } from '../shared/trae-subscription';
+import type { WorkBuddySubscriptionSnapshot } from '../shared/workbuddy-subscription';
 
 const API_REQUEST_CHANNEL = 'tud:api-request';
 const DATA_SYNCED_CHANNEL = 'tud:data-synced';
@@ -65,6 +70,13 @@ const KIMI_SUBSCRIPTION_GET_CHANNEL = 'kimi-subscription:get';
 const ZCODE_SUBSCRIPTION_GET_CHANNEL = 'zcode-subscription:get';
 const ANTIGRAVITY_SUBSCRIPTION_GET_CHANNEL = 'antigravity-subscription:get';
 const QODER_SUBSCRIPTION_GET_CHANNEL = 'qoder-subscription:get';
+const MINIMAX_SUBSCRIPTION_GET_CHANNEL = 'minimax-subscription:get';
+const DEEPSEEK_SUBSCRIPTION_GET_CHANNEL = 'deepseek-subscription:get';
+const OPENCODE_SUBSCRIPTION_GET_CHANNEL = 'opencode-subscription:get';
+const TRAE_GLOBAL_SUBSCRIPTION_GET_CHANNEL = 'trae-global-subscription:get';
+const TRAE_CN_SUBSCRIPTION_GET_CHANNEL = 'trae-cn-subscription:get';
+const WORKBUDDY_GLOBAL_SUBSCRIPTION_GET_CHANNEL = 'workbuddy-global-subscription:get';
+const WORKBUDDY_MAINLAND_SUBSCRIPTION_GET_CHANNEL = 'workbuddy-mainland-subscription:get';
 
 type SettingsTabId = 'sync' | 'pet' | 'app';
 
@@ -130,6 +142,27 @@ const tudApi = {
 
   getQoderSubscription: (): Promise<QoderSubscriptionSnapshot> =>
     ipcRenderer.invoke(QODER_SUBSCRIPTION_GET_CHANNEL),
+
+  getMiniMaxSubscription: (options?: { forceRefresh?: boolean }): Promise<MiniMaxSubscriptionSnapshot> =>
+    ipcRenderer.invoke(MINIMAX_SUBSCRIPTION_GET_CHANNEL, options),
+
+  getDeepSeekSubscription: (options?: { forceRefresh?: boolean }): Promise<DeepSeekSubscriptionSnapshot> =>
+    ipcRenderer.invoke(DEEPSEEK_SUBSCRIPTION_GET_CHANNEL, options),
+
+  getOpenCodeSubscription: (options?: { forceRefresh?: boolean }): Promise<OpenCodeSubscriptionSnapshot> =>
+    ipcRenderer.invoke(OPENCODE_SUBSCRIPTION_GET_CHANNEL, options),
+
+  getTraeGlobalSubscription: (options?: { forceRefresh?: boolean }): Promise<TraeSubscriptionSnapshot> =>
+    ipcRenderer.invoke(TRAE_GLOBAL_SUBSCRIPTION_GET_CHANNEL, options),
+
+  getTraeCnSubscription: (options?: { forceRefresh?: boolean }): Promise<TraeSubscriptionSnapshot> =>
+    ipcRenderer.invoke(TRAE_CN_SUBSCRIPTION_GET_CHANNEL, options),
+
+  getWorkBuddyGlobalSubscription: (options?: { forceRefresh?: boolean }): Promise<WorkBuddySubscriptionSnapshot> =>
+    ipcRenderer.invoke(WORKBUDDY_GLOBAL_SUBSCRIPTION_GET_CHANNEL, options),
+
+  getWorkBuddyMainlandSubscription: (options?: { forceRefresh?: boolean }): Promise<WorkBuddySubscriptionSnapshot> =>
+    ipcRenderer.invoke(WORKBUDDY_MAINLAND_SUBSCRIPTION_GET_CHANNEL, options),
 
 
   /** Open http(s) in the OS default browser (掘金登录). */

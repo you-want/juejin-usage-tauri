@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import qoderIcon from '@lobehub/icons-static-svg/icons/qoder-color.svg';
 import { qoderRemainingPercent, type QoderSubscriptionSnapshot } from '../../shared/qoder-subscription';
 import { SubscriptionUsageCard } from './SubscriptionUsageCard';
+import { SubscriptionBrandIcon } from './SubscriptionBrandIcon';
 
 const INITIAL_SNAPSHOT: QoderSubscriptionSnapshot = {
   status: 'temporarily-unavailable', planLabel: null, limits: [], fetchedAt: null, stale: false, message: null,
@@ -31,12 +31,11 @@ export function QoderSubscriptionCard() {
     return () => window.removeEventListener('focus', onFocus);
   }, [reload]);
   return <SubscriptionUsageCard data={{
-    iconSrc: qoderIcon,
+    icon: <SubscriptionBrandIcon brand="qoder" />,
     metrics: snapshot.limits.map((limit, index) => ({
       color: index === 0 && snapshot.limits.length > 1 ? '#7dcf00' : '#2b7eff',
-      label: limit.label,
+      label: limit.id === 'plan' ? 'Credits' : 'Add-on',
       remainingPercent: qoderRemainingPercent(limit.usedPercent),
-      ringRadius: index === 0 && snapshot.limits.length > 1 ? 17 : 27,
     })),
     // Qoder may serve the official CLI's most recently synchronized credits;
     // keep the provider title stable instead of appending the generic stale tag.

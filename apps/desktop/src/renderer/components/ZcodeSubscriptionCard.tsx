@@ -3,7 +3,7 @@ import {
   zcodeRemainingPercent,
   type ZcodeSubscriptionSnapshot,
 } from '../../shared/zcode-subscription';
-import { ZcodeSubscriptionBrandIcon } from './SubscriptionBrandIcon';
+import { SubscriptionBrandIcon } from './SubscriptionBrandIcon';
 import { SubscriptionUsageCard } from './SubscriptionUsageCard';
 
 const INITIAL_SNAPSHOT: ZcodeSubscriptionSnapshot = {
@@ -44,16 +44,15 @@ export function ZcodeSubscriptionCard() {
   return (
     <SubscriptionUsageCard
       data={{
-        icon: <ZcodeSubscriptionBrandIcon className="size-5" />,
+        icon: <SubscriptionBrandIcon brand="zcode" />,
         metrics: snapshot.limits
           .filter((limit) => limit.id !== 'mcp')
           .map((limit, index, all) => ({
             color: index === 0 && all.length > 1 ? '#7dcf00' : '#2b7eff',
             label: limit.label,
             remainingPercent: zcodeRemainingPercent(limit.usedPercent),
-            ringRadius: index === 0 && all.length > 1 ? 17 : 27,
           })),
-        stale: snapshot.stale,
+        stale: false,
         title: 'ZCode',
       }}
       loading={loading}

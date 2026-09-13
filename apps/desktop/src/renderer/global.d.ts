@@ -51,6 +51,27 @@ declare global {
       getQoderSubscription: () => Promise<
         import('../shared/qoder-subscription').QoderSubscriptionSnapshot
       >;
+      getMiniMaxSubscription: (options?: { forceRefresh?: boolean }) => Promise<
+        import('../shared/minimax-subscription').MiniMaxSubscriptionSnapshot
+      >;
+      getDeepSeekSubscription: (options?: { forceRefresh?: boolean }) => Promise<
+        import('../shared/deepseek-subscription').DeepSeekSubscriptionSnapshot
+      >;
+      getOpenCodeSubscription: (options?: { forceRefresh?: boolean }) => Promise<
+        import('../shared/opencode-subscription').OpenCodeSubscriptionSnapshot
+      >;
+      getTraeGlobalSubscription: (options?: { forceRefresh?: boolean }) => Promise<
+        import('../shared/trae-subscription').TraeSubscriptionSnapshot
+      >;
+      getTraeCnSubscription: (options?: { forceRefresh?: boolean }) => Promise<
+        import('../shared/trae-subscription').TraeSubscriptionSnapshot
+      >;
+      getWorkBuddyGlobalSubscription: (options?: { forceRefresh?: boolean }) => Promise<
+        import('../shared/workbuddy-subscription').WorkBuddySubscriptionSnapshot
+      >;
+      getWorkBuddyMainlandSubscription: (options?: { forceRefresh?: boolean }) => Promise<
+        import('../shared/workbuddy-subscription').WorkBuddySubscriptionSnapshot
+      >;
       openExternal: (
         url: string,
       ) => Promise<{ ok: boolean; message?: string }>;

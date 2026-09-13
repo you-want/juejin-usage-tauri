@@ -33,7 +33,7 @@ const isMac = process.platform === 'darwin';
 
 const TRAY_POPOVER_RESIZE_CHANNEL = 'tray-popover:resize';
 
-const POPOVER_WIDTH = 420;
+const POPOVER_WIDTH = 430;
 const POPOVER_MIN_HEIGHT = 200;
 const POPOVER_MAX_HEIGHT = 700;
 /** Initial height; the renderer reports its real content height on first paint. */

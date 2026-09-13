@@ -10,16 +10,13 @@ Electron 桌面客户端：与 CLI 共用 `~/.ai-usage` 数据，主进程直接
 - 心跳文件 `~/.ai-usage/tud.heartbeat`：运行中续期；runtime 挂掉会自动拉起。对端桌面心跳过期时，新实例会 kill 旧进程再启动
 - `config.json` 损坏时自动备份为 `config.json.bak.<ts>` 并重建（尽量捞回登录 token）
 - 通过 **内存 Hono local-api**（不占 :8452）经 IPC 向渲染层提供与 CLI 相同的 `/functions/tud-*` 契约
-- Dashboard / 设置读同一本地 queue，默认关闭 mock
+- Dashboard / 设置读同一本地 queue
 
 ## 启动
 
 ```bash
-# 真实本地数据（默认）
+# 启动桌面端
 pnpm dev:desktop
-
-# 仅 UI 联调样本 fixtures
-pnpm --filter @juejin-opensource/jusage-desktop dev:mock
 
 # 构建
 pnpm build:desktop
@@ -64,8 +61,6 @@ apps/desktop/
 
 ## 数据层
 
-- 默认 `VITE_ENABLE_MOCK_DATA=false`：走 IPC → Core
-- `dev:mock`：仓库 sample fixtures 兜底（无本地数据时看 UI）
 - Renderer 的 `api.ts`：存在 `window.tud.api` 时用 IPC，否则回退 `fetch`（兼容非 Electron 场景）
 
 ## 窗口外观
