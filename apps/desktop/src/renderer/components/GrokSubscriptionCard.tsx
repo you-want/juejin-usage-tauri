@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import grokIcon from '@lobehub/icons-static-svg/icons/grok.svg';
 import {
   grokRemainingPercent,
   type GrokSubscriptionSnapshot,
 } from '../../shared/grok-subscription';
 import { SubscriptionUsageCard } from './SubscriptionUsageCard';
+import { SubscriptionBrandIcon } from './SubscriptionBrandIcon';
 
 const INITIAL_SNAPSHOT: GrokSubscriptionSnapshot = {
   status: 'temporarily-unavailable',
@@ -47,12 +47,11 @@ export function GrokSubscriptionCard() {
   return (
     <SubscriptionUsageCard
       data={{
-        iconSrc: grokIcon,
+        icon: <SubscriptionBrandIcon brand="grok" />,
         metrics: snapshot.limits.map((limit, index) => ({
           color: index === 0 && snapshot.limits.length > 1 ? '#7dcf00' : '#2b7eff',
           label: limit.label,
           remainingPercent: grokRemainingPercent(limit.usedPercent),
-          ringRadius: index === 0 && snapshot.limits.length > 1 ? 17 : 27,
         })),
         stale: snapshot.stale,
         title: 'Grok',

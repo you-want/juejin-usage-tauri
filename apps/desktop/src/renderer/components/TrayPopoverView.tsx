@@ -39,6 +39,11 @@ import { KimiSubscriptionCard } from './KimiSubscriptionCard';
 import { ZcodeSubscriptionCard } from './ZcodeSubscriptionCard';
 import { AntigravitySubscriptionCard } from './AntigravitySubscriptionCard';
 import { QoderSubscriptionCard } from './QoderSubscriptionCard';
+import { MiniMaxSubscriptionCard } from './MiniMaxSubscriptionCard';
+import { DeepSeekSubscriptionCard } from './DeepSeekSubscriptionCard';
+import { OpenCodeSubscriptionCard } from './OpenCodeSubscriptionCard';
+import { TraeSubscriptionGroup } from './TraeSubscriptionGroup';
+import { WorkBuddySubscriptionGroup } from './WorkBuddySubscriptionGroup';
 import './TrayPopoverView.css';
 
 const POPOVER_MAX_HEIGHT = 700;
@@ -312,10 +317,7 @@ export function TrayPopoverView() {
           <h1 className="text-md text-foreground">用量概览</h1>
           <ThemeToggle />
         </div>
-        <section
-          aria-label="订阅额度"
-          className="grid grid-cols-2 gap-2.5 empty:hidden"
-        >
+        <section aria-label="订阅额度" className="grid grid-cols-2 gap-2.5 empty:hidden">
           <CodexSubscriptionCard />
           <ClaudeSubscriptionCard />
           <CursorSubscriptionCard />
@@ -324,6 +326,11 @@ export function TrayPopoverView() {
           <ZcodeSubscriptionCard />
           <AntigravitySubscriptionCard />
           <QoderSubscriptionCard />
+          <MiniMaxSubscriptionCard />
+          <OpenCodeSubscriptionCard />
+          <DeepSeekSubscriptionCard />
+          <WorkBuddySubscriptionGroup />
+          <TraeSubscriptionGroup />
         </section>
         <div className="flex min-w-0 items-center gap-2">
           <Tabs

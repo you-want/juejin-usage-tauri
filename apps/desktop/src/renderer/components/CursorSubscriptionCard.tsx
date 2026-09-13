@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import cursorIcon from '@lobehub/icons-static-svg/icons/cursor.svg';
 import {
   cursorRemainingPercent,
   type CursorSubscriptionSnapshot,
 } from '../../shared/cursor-subscription';
 import { SubscriptionUsageCard, type SubscriptionUsageMetric } from './SubscriptionUsageCard';
+import { SubscriptionBrandIcon } from './SubscriptionBrandIcon';
 
 const INITIAL_SNAPSHOT: CursorSubscriptionSnapshot = {
   status: 'temporarily-unavailable',
@@ -51,31 +51,28 @@ export function CursorSubscriptionCard() {
         color: '#2b7eff',
         label: 'Plan',
         remainingPercent: cursorRemainingPercent(snapshot.plan.usedPercent),
-        ringRadius: 27,
       }]
     : [
         {
           color: '#7dcf00',
-          label: '自有',
+          label: 'Cursor',
           remainingPercent: snapshot.cursorModels
             ? cursorRemainingPercent(snapshot.cursorModels.usedPercent)
             : null,
-          ringRadius: 17,
         },
         {
           color: '#2b7eff',
-          label: '其他',
+          label: 'Other',
           remainingPercent: snapshot.otherModels
             ? cursorRemainingPercent(snapshot.otherModels.usedPercent)
             : null,
-          ringRadius: 27,
         },
       ];
 
   return (
     <SubscriptionUsageCard
       data={{
-        iconSrc: cursorIcon,
+        icon: <SubscriptionBrandIcon brand="cursor" />,
         metrics,
         stale: snapshot.stale,
         title: 'Cursor',

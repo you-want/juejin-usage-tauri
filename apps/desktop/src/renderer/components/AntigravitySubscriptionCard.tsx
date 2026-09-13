@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import antigravityIcon from '@lobehub/icons-static-svg/icons/antigravity-color.svg';
 import { antigravityRemainingPercent, type AntigravitySubscriptionSnapshot } from '../../shared/antigravity-subscription';
 import { SubscriptionUsageCard } from './SubscriptionUsageCard';
+import { SubscriptionBrandIcon } from './SubscriptionBrandIcon';
 
 const INITIAL_SNAPSHOT: AntigravitySubscriptionSnapshot = {
   status: 'temporarily-unavailable', planLabel: null, limits: [], fetchedAt: null, stale: false, message: null,
@@ -26,14 +26,17 @@ export function AntigravitySubscriptionCard() {
     return () => window.removeEventListener('focus', onFocus);
   }, [reload]);
   return <SubscriptionUsageCard data={{
-    iconSrc: antigravityIcon,
+    icon: <SubscriptionBrandIcon brand="antigravity" />,
     metrics: snapshot.limits.map((limit, index) => ({
       color: index === 0 && snapshot.limits.length > 1 ? '#7dcf00' : '#2b7eff',
-      label: index === 0 ? '自有' : '其他',
+      label: geminiModelLabel(limit.label),
       remainingPercent: antigravityRemainingPercent(limit.usedPercent),
-      ringRadius: index === 0 && snapshot.limits.length > 1 ? 17 : 27,
     })),
     stale: snapshot.stale,
     title: 'Gemini',
   }} loading={loading} />;
+}
+
+function geminiModelLabel(label: string): string {
+  return label.replace(/^gemini\s+/i, '') || label;
 }

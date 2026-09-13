@@ -3,7 +3,7 @@ import {
   kimiRemainingPercent,
   type KimiSubscriptionSnapshot,
 } from '../../shared/kimi-subscription';
-import { KimiSubscriptionBrandIcon } from './SubscriptionBrandIcon';
+import { SubscriptionBrandIcon } from './SubscriptionBrandIcon';
 import { SubscriptionUsageCard } from './SubscriptionUsageCard';
 
 const INITIAL_SNAPSHOT: KimiSubscriptionSnapshot = {
@@ -44,12 +44,11 @@ export function KimiSubscriptionCard() {
   return (
     <SubscriptionUsageCard
       data={{
-        icon: <KimiSubscriptionBrandIcon className="size-5" />,
+        icon: <SubscriptionBrandIcon brand="kimi" />,
         metrics: snapshot.limits.map((limit, index) => ({
           color: index === 0 && snapshot.limits.length > 1 ? '#7dcf00' : '#2b7eff',
           label: limit.label,
           remainingPercent: kimiRemainingPercent(limit.usedPercent),
-          ringRadius: index === 0 && snapshot.limits.length > 1 ? 17 : 27,
         })),
         stale: snapshot.stale,
         title: 'Kimi Code',

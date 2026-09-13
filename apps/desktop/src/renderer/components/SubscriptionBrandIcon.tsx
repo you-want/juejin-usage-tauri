@@ -1,34 +1,39 @@
-import type { ComponentProps } from 'react';
+import Antigravity from '@lobehub/icons/es/Antigravity';
+import Claude from '@lobehub/icons/es/Claude';
+import CodeBuddy from '@lobehub/icons/es/CodeBuddy';
+import Codex from '@lobehub/icons/es/Codex';
+import Cursor from '@lobehub/icons/es/Cursor';
+import DeepSeek from '@lobehub/icons/es/DeepSeek';
+import Grok from '@lobehub/icons/es/Grok';
+import Kimi from '@lobehub/icons/es/Kimi';
+import Minimax from '@lobehub/icons/es/Minimax';
+import OpenCode from '@lobehub/icons/es/OpenCode';
+import Qoder from '@lobehub/icons/es/Qoder';
+import Trae from '@lobehub/icons/es/Trae';
+import ZAI from '@lobehub/icons/es/ZAI';
 
-type BrandIconProps = Omit<ComponentProps<'svg'>, 'children' | 'viewBox'>;
+export type SubscriptionBrand =
+  | 'antigravity' | 'claude' | 'codebuddy' | 'codex' | 'cursor' | 'deepseek'
+  | 'grok' | 'kimi' | 'minimax' | 'opencode' | 'qoder' | 'trae' | 'zcode';
 
-/** Inline Lobe Kimi mark: semantic text color keeps its vector edges crisp. */
-export function KimiSubscriptionBrandIcon({ className, ...props }: BrandIconProps) {
-  return (
-    <svg
-      aria-hidden
-      className={`shrink-0 text-foreground ${className ?? ''}`}
-      fill="currentColor"
-      viewBox="0 0 24 24"
-      {...props}
-    >
-      <path d="M21.846 0a1.923 1.923 0 110 3.846H20.15a.226.226 0 01-.227-.226V1.923C19.923.861 20.784 0 21.846 0z" />
-      <path d="M11.065 11.199l7.257-7.2c.137-.136.06-.41-.116-.41H14.3a.164.164 0 00-.117.051l-7.82 7.756c-.122.12-.302.013-.302-.179V3.82c0-.127-.083-.23-.185-.23H3.186c-.103 0-.186.103-.186.23V19.77c0 .128.083.23.186.23h2.69c.103 0 .186-.102.186-.23v-3.25c0-.069.025-.135.069-.178l2.424-2.406a.158.158 0 01.205-.023l6.484 4.772a7.677 7.677 0 003.453 1.283c.108.012.2-.095.2-.23v-3.06c0-.117-.07-.212-.164-.227a5.028 5.028 0 01-2.027-.807l-5.613-4.064c-.117-.078-.132-.279-.028-.381z" />
-    </svg>
-  );
-}
+const iconClassName = 'size-6 shrink-0';
+const monoIconClassName = `${iconClassName} text-foreground`;
 
-/** Inline Lobe Z.ai mark: semantic text color adapts to both tray themes. */
-export function ZcodeSubscriptionBrandIcon({ className, ...props }: BrandIconProps) {
-  return (
-    <svg
-      aria-hidden
-      className={`shrink-0 text-foreground ${className ?? ''}`}
-      fill="currentColor"
-      viewBox="0 0 24 24"
-      {...props}
-    >
-      <path d="M12.105 2L9.927 4.953H.653L2.83 2h9.276zM23.254 19.048L21.078 22h-9.242l2.174-2.952h9.244zM24 2L9.264 22H0L14.736 2H24z" />
-    </svg>
-  );
+/** Fixed-size LobeHub brand mark; mono variants inherit the active theme. */
+export function SubscriptionBrandIcon({ brand }: { brand: SubscriptionBrand }) {
+  switch (brand) {
+    case 'antigravity': return <Antigravity.Color aria-hidden className={iconClassName} size={24} />;
+    case 'claude': return <Claude.Color aria-hidden className={iconClassName} size={24} />;
+    case 'codebuddy': return <CodeBuddy.Color aria-hidden className={iconClassName} size={24} />;
+    case 'codex': return <Codex.Color aria-hidden className={iconClassName} size={24} />;
+    case 'cursor': return <Cursor aria-hidden className={monoIconClassName} size={24} />;
+    case 'deepseek': return <DeepSeek.Color aria-hidden className={iconClassName} size={24} />;
+    case 'grok': return <Grok aria-hidden className={monoIconClassName} size={24} />;
+    case 'kimi': return <Kimi aria-hidden className={monoIconClassName} size={24} />;
+    case 'minimax': return <Minimax.Color aria-hidden className={iconClassName} size={24} />;
+    case 'opencode': return <OpenCode aria-hidden className={monoIconClassName} size={24} />;
+    case 'qoder': return <Qoder.Color aria-hidden className={iconClassName} size={24} />;
+    case 'trae': return <Trae.Color aria-hidden className={iconClassName} size={24} />;
+    case 'zcode': return <ZAI aria-hidden className={monoIconClassName} size={24} />;
+  }
 }

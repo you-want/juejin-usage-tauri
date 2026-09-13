@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import claudeColorIcon from '@lobehub/icons-static-svg/icons/claude-color.svg';
 import {
   claudeRemainingPercent,
   type ClaudeSubscriptionSnapshot,
 } from '../../shared/claude-subscription';
 import { SubscriptionUsageCard } from './SubscriptionUsageCard';
+import { SubscriptionBrandIcon } from './SubscriptionBrandIcon';
 
 const INITIAL_SNAPSHOT: ClaudeSubscriptionSnapshot = {
   status: 'authorization-required',
@@ -51,7 +51,7 @@ export function ClaudeSubscriptionCard() {
   return (
     <SubscriptionUsageCard
       data={{
-        iconSrc: claudeColorIcon,
+        icon: <SubscriptionBrandIcon brand="claude" />,
         metrics: [
           {
             color: '#7dcf00',
@@ -59,7 +59,6 @@ export function ClaudeSubscriptionCard() {
             remainingPercent: snapshot.fiveHour
               ? claudeRemainingPercent(snapshot.fiveHour.usedPercent)
               : null,
-            ringRadius: 17,
           },
           {
             color: '#2b7eff',
@@ -67,7 +66,6 @@ export function ClaudeSubscriptionCard() {
             remainingPercent: snapshot.sevenDay
               ? claudeRemainingPercent(snapshot.sevenDay.usedPercent)
               : null,
-            ringRadius: 27,
           },
         ],
         stale: snapshot.stale,

@@ -12,7 +12,6 @@
   "main": "./out/main/index.js",
   "scripts": {
     "dev": "electron-vite dev",
-    "dev:mock": "cross-env VITE_ENABLE_MOCK_DATA=true electron-vite dev",
     "build": "electron-vite build",
     "start": "electron-vite preview",
     "build:mac": "electron-vite build && electron-builder --mac",
@@ -28,6 +27,7 @@
     "@heroui/react": "^3.2.4",
     "@heroui/styles": "^3.2.4",
     "@juejin-opensource/jusage-core": "workspace:*",
+    "@lobehub/icons": "^5.18.0",
     "@lobehub/icons-static-svg": "^1.94.0",
     "@nivo/heatmap": "^0.99.0",
     "@tailwindcss/vite": "^4.3.2",

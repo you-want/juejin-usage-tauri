@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import codexColorIcon from '@lobehub/icons-static-svg/icons/codex-color.svg';
 import {
   codexRemainingPercent,
   type CodexSubscriptionSnapshot,
 } from '../../shared/codex-subscription';
 import { SubscriptionUsageCard } from './SubscriptionUsageCard';
+import { SubscriptionBrandIcon } from './SubscriptionBrandIcon';
 
 const INITIAL_SNAPSHOT: CodexSubscriptionSnapshot = {
   status: 'unavailable',
@@ -46,8 +46,7 @@ export function CodexSubscriptionCard() {
   return (
     <SubscriptionUsageCard
       data={{
-        iconSrc: codexColorIcon,
-        iconSizeClassName: 'size-6',
+        icon: <SubscriptionBrandIcon brand="codex" />,
         metrics: [
           {
             color: '#7dcf00',
@@ -55,7 +54,6 @@ export function CodexSubscriptionCard() {
             remainingPercent: snapshot.fiveHour
               ? codexRemainingPercent(snapshot.fiveHour.usedPercent)
               : null,
-            ringRadius: 17,
           },
           {
             color: '#2b7eff',
@@ -63,7 +61,6 @@ export function CodexSubscriptionCard() {
             remainingPercent: snapshot.weekly
               ? codexRemainingPercent(snapshot.weekly.usedPercent)
               : null,
-            ringRadius: 27,
           },
         ],
         title: 'Codex',
