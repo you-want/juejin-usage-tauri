@@ -148,6 +148,13 @@ export interface CursorsFile {
     /** sessionId|shutdown|stamp|model dedup keys. */
     seenHashes?: string[];
   };
+  commandCode?: {
+    files: Record<string, ClaudeFileCursor>;
+    /** Legacy first-wins keys; still honored so already-ingested rows are not double-counted. */
+    seenHashes?: string[];
+    /** Last-seen cumulative usage per message.id for streaming last-wins deltas. */
+    seenUsage?: Record<string, TokenTotals>;
+  };
   antigravity?: {
     /** Per transcript.jsonl: inode/size/mtime + delta-billing cursor. */
     files: Record<
@@ -463,6 +470,11 @@ export interface DailyUsageRow {
   models: Record<string, number>;
   /** Optional for backward compatibility with older daily payloads. */
   projects?: DailyProjectUsage[];
+  /** Present when local/server daily aggregation includes token breakdown. */
+  inputTokens?: number;
+  outputTokens?: number;
+  cachedInputTokens?: number;
+  cacheCreationInputTokens?: number;
 }
 
 export interface DailyUsageResponse {

@@ -17,13 +17,14 @@ import { ompAgentDirCollidesWithPi, ompSessionsDir } from '../parsers/omp.js';
 import { openclawRoots } from '../parsers/openclaw.js';
 import { piSessionsDir } from '../parsers/pi.js';
 import { qwenTmpDir } from '../parsers/qwen.js';
-import { workbuddyHomeCandidates } from '../parsers/workbuddy.js';
+import { resolveWorkbuddyHome } from '../parsers/workbuddy.js';
 import { zcodeDbPath } from '../parsers/zcode.js';
 import { dshHome } from '../parsers/dsh.js';
 import { zedDbPath } from '../parsers/zed.js';
 import { warpDbPaths } from '../parsers/warp.js';
 import {
   codexHomeCandidates,
+  commandCodeProjectsDirs,
   copilotSessionStateDir,
   cursorStateVscdbPath,
   geminiTmpDir,
@@ -74,6 +75,8 @@ export function isSyncSourcePresent(source: string): boolean {
     case 'claude':
       // Empty ~/.claude/projects is common; still attempt parse (cheap when empty).
       return true;
+    case 'command-code':
+      return anyExists(commandCodeProjectsDirs());
     case 'codex':
       return anyExists(
         codexHomeCandidates().flatMap((home) => [home, join(home, 'sessions')]),
@@ -142,9 +145,11 @@ export function isSyncSourcePresent(source: string): boolean {
       ]);
     case 'workbuddy':
       // Domestic and international editions use separate homes; either is enough.
-      return workbuddyHomeCandidates().some((home) =>
-        anyExists([home, join(home, 'projects'), join(home, 'workbuddy.db')]),
-      );
+      return anyExists([
+        resolveWorkbuddyHome(),
+        join(resolveWorkbuddyHome(), 'projects'),
+        join(resolveWorkbuddyHome(), 'workbuddy.db'),
+      ]);
     case 'grok':
       return anyExists([
         resolveGrokBuildHome(),

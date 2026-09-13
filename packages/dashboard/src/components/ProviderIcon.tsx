@@ -4,6 +4,7 @@ import ampIcon from '@lobehub/icons-static-svg/icons/amp-color.svg';
 import claudeCodeIcon from '@lobehub/icons-static-svg/icons/claudecode-color.svg';
 import clineIcon from '@lobehub/icons-static-svg/icons/cline.svg';
 import codeBuddyIcon from '@lobehub/icons-static-svg/icons/codebuddy-color.svg';
+import commandCodeIcon from '@/assets/brand-logos/command-code.svg';
 import codexIcon from '@lobehub/icons-static-svg/icons/codex.svg';
 import copilotIcon from '@lobehub/icons-static-svg/icons/copilot-color.svg';
 import cursorIcon from '@lobehub/icons-static-svg/icons/cursor.svg';
@@ -36,6 +37,7 @@ const PROVIDER_ICON_MAP: Record<string, ProviderIconAsset> = {
   amp: { src: ampIcon },
   antigravity: { src: antigravityIcon },
   'claude-code': { src: claudeCodeIcon },
+  'command-code': { monochrome: true, src: commandCodeIcon },
   cline: { monochrome: true, src: clineIcon },
   codebuddy: { src: codeBuddyIcon },
   codex: { monochrome: true, src: codexIcon },
@@ -138,6 +140,7 @@ function normalizeProviderKey(provider: string): string {
   if (key.startsWith('kilocode') || key === 'kilo-code') return 'kilocode';
   if (key.startsWith('zed')) return 'zed';
   if (key.startsWith('warp')) return 'warp';
+  if (key.startsWith('command-code') || key.startsWith('commandcode')) return 'command-code';
 
   return PROVIDER_ALIASES[key] ?? key;
 }
@@ -164,6 +167,9 @@ export function ProviderIcon({
 }: ProviderIconProps) {
   const key = normalizeProviderKey(provider);
   const asset = PROVIDER_ICON_MAP[key];
+  // Inline SVGs use currentColor. On light badges (e.g. bg-white in the tool
+  // usage card) force a dark fill so dark-mode foreground does not wash out.
+  const svgColor = color ?? (onLightBackground ? '#111827' : undefined);
 
   if (asset) {
     return (
@@ -192,7 +198,7 @@ export function ProviderIcon({
       <DroidIcon
         className={className}
         size={size}
-        style={{ color }}
+        style={{ color: svgColor }}
       />
     );
   }
@@ -202,7 +208,7 @@ export function ProviderIcon({
       <OmpIcon
         className={className}
         size={size}
-        style={{ color }}
+        style={{ color: svgColor }}
       />
     );
   }
@@ -212,7 +218,7 @@ export function ProviderIcon({
       <ZedIcon
         className={className}
         size={size}
-        style={{ color }}
+        style={{ color: svgColor }}
       />
     );
   }
@@ -222,7 +228,7 @@ export function ProviderIcon({
       <WarpIcon
         className={className}
         size={size}
-        style={{ color }}
+        style={{ color: svgColor }}
       />
     );
   }
@@ -232,12 +238,12 @@ export function ProviderIcon({
       <DeepSeekHarnessIcon
         className={className}
         size={size}
-        style={{ color }}
+        style={{ color: svgColor }}
       />
     );
   }
 
-  return <PlaceholderIcon className={className} size={size} style={{ color }} />;
+  return <PlaceholderIcon className={className} size={size} style={{ color: svgColor }} />;
 }
 
 function OmpIcon({
