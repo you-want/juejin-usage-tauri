@@ -4,6 +4,7 @@ import { CURSOR_POLL_MIN_FETCH_INTERVAL_MS, SYNC_SOURCE_GAP_MS, syncLogPath } fr
 import { measureCpuPhase } from '../debug-log.js';
 import { isSyncSourcePresent } from './source-presence.js';
 import { parseClaudeIncremental } from '../parsers/claude.js';
+import { parseCommandCodeIncremental } from '../parsers/command-code.js';
 import { parseCodexIncremental } from '../parsers/codex.js';
 import { parseCursorIncremental } from '../parsers/cursor.js';
 import { parseQoderIncremental } from '../parsers/qoder.js';
@@ -411,6 +412,10 @@ export async function syncQwenwork(dataDir: string, config: TudConfig, opts?: Sy
   return syncSourceBuckets(dataDir, config, 'qwenwork', parseQwenworkIncremental, { sharedCursors: opts?.sharedCursors });
 }
 
+export async function syncCommandCode(dataDir: string, config: TudConfig, opts?: SyncSourceOptions): Promise<SyncResult> {
+  return syncSourceBuckets(dataDir, config, 'command-code', parseCommandCodeIncremental, { sharedCursors: opts?.sharedCursors });
+}
+
 export async function syncCursor(
   dataDir: string,
   config: TudConfig,
@@ -558,6 +563,7 @@ export const SYNC_SOURCE_IDS = [
   'zed',
   'warp',
   'qwenwork',
+  'command-code',
 ] as const;
 
 export type SyncSourceId = (typeof SYNC_SOURCE_IDS)[number];
@@ -673,6 +679,9 @@ async function syncOneSource(
       return syncWarp(dataDir, config, opts);
     case 'qwenwork':
       return syncQwenwork(dataDir, config, opts);
+    case 'command-code':
+    case 'commandcode':
+      return syncCommandCode(dataDir, config, opts);
     default:
       return {
         source,

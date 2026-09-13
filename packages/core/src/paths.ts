@@ -553,3 +553,8 @@ export function copilotSessionStateDir(): string {
 export function qwenworkProjectsDirs(): string[] {
   return [join(homedir(), '.qwenwork'), join(homedir(), '.qwenworkcn')];
 }
+
+/** Command Code session transcript roots (`~/.commandcode/projects`). */
+export function commandCodeProjectsDirs(): string[] {
+  return [join(homedir(), '.commandcode', 'projects')];
+}
