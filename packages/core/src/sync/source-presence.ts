@@ -33,6 +33,7 @@ import {
   qoderCliProjectsDirs,
   qoderIdeLocalDbEntries,
   qoderWorkProjectsDirs,
+  qwenworkProjectsDirs,
   traeAgentDbEntries,
 } from '../paths.js';
 
@@ -77,6 +78,8 @@ export function isSyncSourcePresent(source: string): boolean {
       return true;
     case 'command-code':
       return anyExists(commandCodeProjectsDirs());
+    case 'qwenwork':
+      return anyExists(qwenworkProjectsDirs());
     case 'codex':
       return anyExists(
         codexHomeCandidates().flatMap((home) => [home, join(home, 'sessions')]),

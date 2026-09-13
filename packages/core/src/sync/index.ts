@@ -36,6 +36,7 @@ import { parseKilocodeIncremental } from '../parsers/kilocode.js';
 import { parseGooseIncremental } from '../parsers/goose.js';
 import { parseZedIncremental } from '../parsers/zed.js';
 import { parseWarpIncremental } from '../parsers/warp.js';
+import { parseQwenworkIncremental } from '../parsers/qwenwork.js';
 import {
   appendBuckets,
   loadBucketsForRange,
@@ -407,6 +408,10 @@ export async function syncWarp(dataDir: string, config: TudConfig, opts?: SyncSo
   return syncSourceBuckets(dataDir, config, 'warp', parseWarpIncremental, { sharedCursors: opts?.sharedCursors });
 }
 
+export async function syncQwenwork(dataDir: string, config: TudConfig, opts?: SyncSourceOptions): Promise<SyncResult> {
+  return syncSourceBuckets(dataDir, config, 'qwenwork', parseQwenworkIncremental, { sharedCursors: opts?.sharedCursors });
+}
+
 export async function syncCommandCode(dataDir: string, config: TudConfig, opts?: SyncSourceOptions): Promise<SyncResult> {
   return syncSourceBuckets(dataDir, config, 'command-code', parseCommandCodeIncremental, { sharedCursors: opts?.sharedCursors });
 }
@@ -557,6 +562,7 @@ export const SYNC_SOURCE_IDS = [
   'goose',
   'zed',
   'warp',
+  'qwenwork',
   'command-code',
 ] as const;
 
@@ -671,6 +677,8 @@ async function syncOneSource(
       return syncZed(dataDir, config, opts);
     case 'warp':
       return syncWarp(dataDir, config, opts);
+    case 'qwenwork':
+      return syncQwenwork(dataDir, config, opts);
     case 'command-code':
     case 'commandcode':
       return syncCommandCode(dataDir, config, opts);

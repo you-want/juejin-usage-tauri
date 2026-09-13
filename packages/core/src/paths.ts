@@ -549,6 +549,11 @@ export function copilotSessionStateDir(): string {
   return join(copilotHome(), 'session-state');
 }
 
+/** QwenWork session transcript roots (`~/.qwenwork` and `~/.qwenworkcn`). */
+export function qwenworkProjectsDirs(): string[] {
+  return [join(homedir(), '.qwenwork'), join(homedir(), '.qwenworkcn')];
+}
+
 /** Command Code session transcript roots (`~/.commandcode/projects`). */
 export function commandCodeProjectsDirs(): string[] {
   return [join(homedir(), '.commandcode', 'projects')];
