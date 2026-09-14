@@ -19,7 +19,8 @@
     "build:win": "electron-vite build && electron-builder --win",
     "release:mac": "electron-vite build && electron-builder --mac --publish always",
     "release:win": "electron-vite build && electron-builder --win --publish always",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "tsc -p tsconfig.test.json && node --test dist-test/shared/pet-sync-feedback.test.js dist-test/shared/auto-update.test.js"
   },
   "dependencies": {
     "@fontsource-variable/jetbrains-mono": "5.2.8",
@@ -49,7 +50,7 @@
     "@tanstack/router-plugin": "^1.168.20",
     "@types/node": "^22.20.1",
     "@types/react": "^19.0.10",
-    "@types/react-dom": "^19.0.4",
+    "@types/react-dom": "^19.0.10",
     "@vitejs/plugin-react": "^4.3.4",
     "electron": "35.4.0",
     "electron-builder": "^25.1.8",

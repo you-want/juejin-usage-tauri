@@ -294,12 +294,16 @@ function DesktopPetSettings({
   const [frameIntervalMs, setFrameIntervalMs] = useState(180);
   const [autoMoveEnabled, setAutoMoveEnabled] = useState(true);
   const [autoMoveIntervalMinutes, setAutoMoveIntervalMinutes] = useState(2);
+  const [syncFeedbackEnabled, setSyncFeedbackEnabled] = useState(false);
+  const [syncFeedbackDurationSec, setSyncFeedbackDurationSec] = useState(3);
   const saveTimer = useRef<number | null>(null);
   const pendingPreferenceChanges = useRef<{
     scale?: number;
     frameIntervalMs?: number;
     autoMoveEnabled?: boolean;
     autoMoveIntervalMinutes?: number;
+    syncFeedbackEnabled?: boolean;
+    syncFeedbackDurationSec?: number;
   }>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -335,6 +339,8 @@ function DesktopPetSettings({
         frameIntervalMs: number;
         autoMoveEnabled: boolean;
         autoMoveIntervalMinutes: number;
+        syncFeedbackEnabled: boolean;
+        syncFeedbackDurationSec: number;
       },
       skipMotion = false,
     ) => {
@@ -345,6 +351,8 @@ function DesktopPetSettings({
       setFrameIntervalMs(pref.frameIntervalMs);
       setAutoMoveEnabled(pref.autoMoveEnabled);
       setAutoMoveIntervalMinutes(pref.autoMoveIntervalMinutes);
+      setSyncFeedbackEnabled(pref.syncFeedbackEnabled);
+      setSyncFeedbackDurationSec(pref.syncFeedbackDurationSec);
     };
 
     void window.tud
@@ -415,6 +423,8 @@ function DesktopPetSettings({
     frameIntervalMs?: number;
     autoMoveEnabled?: boolean;
     autoMoveIntervalMinutes?: number;
+    syncFeedbackEnabled?: boolean;
+    syncFeedbackDurationSec?: number;
   }) => {
     try {
       const saved = await window.tud.setDesktopPetPreferences(changes);
@@ -422,6 +432,8 @@ function DesktopPetSettings({
       setFrameIntervalMs(saved.frameIntervalMs);
       setAutoMoveEnabled(saved.autoMoveEnabled);
       setAutoMoveIntervalMinutes(saved.autoMoveIntervalMinutes);
+      setSyncFeedbackEnabled(saved.syncFeedbackEnabled);
+      setSyncFeedbackDurationSec(saved.syncFeedbackDurationSec);
     } catch (reason) {
       setError(
         reason instanceof Error ? reason.message : '更新桌面宠物设置失败',
@@ -434,6 +446,8 @@ function DesktopPetSettings({
     frameIntervalMs?: number;
     autoMoveEnabled?: boolean;
     autoMoveIntervalMinutes?: number;
+    syncFeedbackEnabled?: boolean;
+    syncFeedbackDurationSec?: number;
   }) => {
     pendingPreferenceChanges.current = {
       ...pendingPreferenceChanges.current,
@@ -717,6 +731,46 @@ function DesktopPetSettings({
               <Slider.Thumb />
             </Slider.Track>
           </Slider>
+          <Checkbox
+            id="desktop-pet-sync-feedback-enabled"
+            isDisabled={petControlsDisabled}
+            isSelected={syncFeedbackEnabled}
+            onChange={(checked) => {
+              setSyncFeedbackEnabled(checked);
+              void savePetPreferences({ syncFeedbackEnabled: checked });
+            }}
+          >
+            <Checkbox.Content>
+              <Checkbox.Control>
+                <Checkbox.Indicator />
+              </Checkbox.Control>
+              同步后提示 Token 增量
+            </Checkbox.Content>
+          </Checkbox>
+          <NumberField
+            isDisabled={petControlsDisabled || !syncFeedbackEnabled}
+            maxValue={10}
+            minValue={1}
+            onChange={(value) => {
+              if (!Number.isFinite(value)) return;
+              const next = Math.min(10, Math.max(1, Math.round(value)));
+              setSyncFeedbackDurationSec(next);
+              schedulePetPreferenceSave({ syncFeedbackDurationSec: next });
+            }}
+            step={1}
+            value={syncFeedbackDurationSec}
+            variant="secondary"
+          >
+            <Label>提示时长</Label>
+            <NumberField.Group>
+              <NumberField.DecrementButton />
+              <NumberField.Input />
+              <NumberField.IncrementButton />
+            </NumberField.Group>
+            <Description>
+              同步到新增 Token 时，气泡展示 {syncFeedbackDurationSec} 秒后自动关闭。
+            </Description>
+          </NumberField>
         </div>
       </div>
     </div>

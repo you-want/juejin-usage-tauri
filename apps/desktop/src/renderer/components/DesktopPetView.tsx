@@ -28,10 +28,12 @@ import {
   petSpriteCell,
   type PetAnimation,
 } from '../../shared/desktop-pet-sprite';
+import type { PetSyncFeedback } from '../../shared/pet-sync-feedback';
 
 const DISPLAY_SCALE = 0.5;
 const DRAG_ANIMATION_SPEED_MULTIPLIER = 0.55;
 const BUBBLE_GAP_PX = 8;
+const DEFAULT_SYNC_FEEDBACK_DURATION_SEC = 3;
 
 async function fetchRangeTotals(range: DashboardRange): Promise<{
   totalTokens: number;
@@ -57,12 +59,16 @@ export function DesktopPetView() {
   const [range, setRange] = useState<DashboardRange>(DEFAULT_DASHBOARD_RANGE);
   const [summary, setSummary] = useState<{ totalTokens: number; totalCostUsd: number } | null>(null);
   const [summaryError, setSummaryError] = useState(false);
+  const [syncFeedback, setSyncFeedback] = useState<PetSyncFeedback | null>(null);
   const [spritesheetUrl, setSpritesheetUrl] = useState<string | null>(null);
   const [pets, setPets] = useState<DesktopPetDefinition[]>(DESKTOP_PETS);
   const spriteRef = useRef<HTMLButtonElement>(null);
   const frameRef = useRef(0);
   const alphaCanvas = useRef<HTMLCanvasElement | null>(null);
   const ignored = useRef(false);
+  const feedbackTimer = useRef<number | null>(null);
+  const syncFeedbackEnabledRef = useRef(false);
+  const syncFeedbackDurationSecRef = useRef(DEFAULT_SYNC_FEEDBACK_DURATION_SEC);
   const dragState = useRef<{
     pointerId: number;
     screenX: number;
@@ -115,11 +121,21 @@ export function DesktopPetView() {
       setScale(pref.scale);
       setFrameIntervalMs(pref.frameIntervalMs);
       setSelectedPetId(pref.selectedPetId);
+      syncFeedbackEnabledRef.current = pref.syncFeedbackEnabled === true;
+      syncFeedbackDurationSecRef.current =
+        typeof pref.syncFeedbackDurationSec === 'number'
+          ? pref.syncFeedbackDurationSec
+          : DEFAULT_SYNC_FEEDBACK_DURATION_SEC;
     });
     const unsubscribe = window.tud.onDesktopPetPreferences((pref) => {
       setScale(pref.scale);
       setFrameIntervalMs(pref.frameIntervalMs);
       setSelectedPetId(pref.selectedPetId);
+      syncFeedbackEnabledRef.current = pref.syncFeedbackEnabled === true;
+      syncFeedbackDurationSecRef.current =
+        typeof pref.syncFeedbackDurationSec === 'number'
+          ? pref.syncFeedbackDurationSec
+          : DEFAULT_SYNC_FEEDBACK_DURATION_SEC;
     });
     return () => {
       cancelled = true;
@@ -170,6 +186,32 @@ export function DesktopPetView() {
     };
   }, [isTokenTooltipOpen, range]);
 
+  useEffect(() => {
+    const clearFeedbackTimer = () => {
+      if (feedbackTimer.current !== null) {
+        window.clearTimeout(feedbackTimer.current);
+        feedbackTimer.current = null;
+      }
+    };
+
+    const unsubscribe = window.tud.onDataSynced((feedback) => {
+      if (!syncFeedbackEnabledRef.current || !feedback || dragState.current) return;
+      clearFeedbackTimer();
+      setIsTokenTooltipOpen(false);
+      setSyncFeedback(feedback);
+      const durationMs = Math.max(1, syncFeedbackDurationSecRef.current) * 1000;
+      feedbackTimer.current = window.setTimeout(() => {
+        feedbackTimer.current = null;
+        setSyncFeedback(null);
+      }, durationMs);
+    });
+
+    return () => {
+      unsubscribe();
+      clearFeedbackTimer();
+    };
+  }, []);
+
   const setMouseIgnored = (shouldIgnore: boolean) => {
     if (shouldIgnore === ignored.current) return;
     ignored.current = shouldIgnore;
@@ -218,6 +260,11 @@ export function DesktopPetView() {
     if (event.button !== 0 || event.ctrlKey) return;
     event.preventDefault();
     setMouseIgnored(false);
+    if (feedbackTimer.current !== null) {
+      window.clearTimeout(feedbackTimer.current);
+      feedbackTimer.current = null;
+    }
+    setSyncFeedback(null);
     event.currentTarget.setPointerCapture(event.pointerId);
     dragState.current = {
       pointerId: event.pointerId,
@@ -258,7 +305,14 @@ export function DesktopPetView() {
   useEffect(() => {
     const cancelDrag = () => finishDrag(undefined, true);
     // Do not preventDefault: main shows the native menu from webContents `context-menu`.
-    const onContextMenu = () => setIsTokenTooltipOpen(false);
+    const onContextMenu = () => {
+      setIsTokenTooltipOpen(false);
+      setSyncFeedback(null);
+      if (feedbackTimer.current !== null) {
+        window.clearTimeout(feedbackTimer.current);
+        feedbackTimer.current = null;
+      }
+    };
     window.addEventListener('blur', cancelDrag);
     window.addEventListener('contextmenu', onContextMenu);
     return () => {
@@ -269,6 +323,8 @@ export function DesktopPetView() {
   }, []);
 
   const pet = getDesktopPet(selectedPetId, pets);
+  const isBubbleOpen = isTokenTooltipOpen || syncFeedback !== null;
+
   return (
     <div
       className={
@@ -287,28 +343,34 @@ export function DesktopPetView() {
         src={spritesheetUrl ?? undefined}
         onLoad={(event) => loadAlphaMap(event.currentTarget)}
       />
-      {isTokenTooltipOpen ? (
+      {isBubbleOpen ? (
         <div
           className="desktop-pet-bubble"
           onMouseEnter={() => setMouseIgnored(false)}
           style={{ width: layout.popoverWidth, bottom: spriteHeight + BUBBLE_GAP_PX }}
         >
-          <div className="desktop-pet-bubble-range">{DASHBOARD_RANGE_LABELS[range]}</div>
-          <PetStatRow
-            dotClassName="desktop-pet-stat-dot--token"
-            exactLabel={summary ? formatTokensExact(summary.totalTokens) : undefined}
-            format={formatTokens}
-            label="Token"
-            state={summaryError ? 'error' : summary === null ? 'loading' : 'ready'}
-            value={summary?.totalTokens ?? 0}
-          />
-          <PetStatRow
-            dotClassName="desktop-pet-stat-dot--cost"
-            format={formatUsd}
-            label="费用"
-            state={summaryError ? 'error' : summary === null ? 'loading' : 'ready'}
-            value={summary?.totalCostUsd ?? 0}
-          />
+          {syncFeedback ? (
+            <PetSyncFeedbackContent feedback={syncFeedback} />
+          ) : (
+            <>
+              <div className="desktop-pet-bubble-range">{DASHBOARD_RANGE_LABELS[range]}</div>
+              <PetStatRow
+                dotClassName="desktop-pet-stat-dot--token"
+                exactLabel={summary ? formatTokensExact(summary.totalTokens) : undefined}
+                format={formatTokens}
+                label="Token"
+                state={summaryError ? 'error' : summary === null ? 'loading' : 'ready'}
+                value={summary?.totalTokens ?? 0}
+              />
+              <PetStatRow
+                dotClassName="desktop-pet-stat-dot--cost"
+                format={formatUsd}
+                label="费用"
+                state={summaryError ? 'error' : summary === null ? 'loading' : 'ready'}
+                value={summary?.totalCostUsd ?? 0}
+              />
+            </>
+          )}
           <span aria-hidden className="desktop-pet-bubble-arrow" />
         </div>
       ) : null}
@@ -346,6 +408,48 @@ export function DesktopPetView() {
           type="button"
         />
       </div>
+    </div>
+  );
+}
+
+/** Compact celebration content shown inside the pet's lightweight bubble. */
+function PetSyncFeedbackContent({ feedback }: { feedback: PetSyncFeedback }) {
+  const milestones = [
+    feedback.isDailyRecord ? '🎉 今日新高' : null,
+    feedback.activeStreakDays >= 2
+      ? `🔥 连续使用 ${feedback.activeStreakDays} 天`
+      : null,
+  ].filter((value): value is string => Boolean(value));
+
+  return (
+    <div
+      aria-live="polite"
+      className="desktop-pet-feedback"
+      role="status"
+    >
+      <div className="desktop-pet-feedback-headline">
+        <span
+          aria-hidden
+          className="desktop-pet-feedback-dot"
+        />
+        <span className="desktop-pet-feedback-text">
+          <span className="desktop-pet-feedback-sign">+</span>
+          <strong
+            className="desktop-pet-feedback-amount"
+            title={formatTokensExact(feedback.addedTokens)}
+          >
+            {formatTokens(feedback.addedTokens)}
+          </strong>
+          <span className="desktop-pet-feedback-unit">Token</span>
+        </span>
+      </div>
+      {milestones.length > 0 && (
+        <div className="desktop-pet-feedback-milestones">
+          {milestones.map((milestone) => (
+            <span key={milestone}>{milestone}</span>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

@@ -36,6 +36,10 @@ import type { DeepSeekSubscriptionSnapshot } from '../shared/deepseek-subscripti
 import type { OpenCodeSubscriptionSnapshot } from '../shared/opencode-subscription';
 import type { TraeSubscriptionSnapshot } from '../shared/trae-subscription';
 import type { WorkBuddySubscriptionSnapshot } from '../shared/workbuddy-subscription';
+import {
+  isPetSyncFeedback,
+  type PetSyncFeedback,
+} from '../shared/pet-sync-feedback';
 
 const API_REQUEST_CHANNEL = 'tud:api-request';
 const DATA_SYNCED_CHANNEL = 'tud:data-synced';
@@ -234,6 +238,8 @@ const tudApi = {
     frameIntervalMs: number;
     autoMoveEnabled: boolean;
     autoMoveIntervalMinutes: number;
+    syncFeedbackEnabled: boolean;
+    syncFeedbackDurationSec: number;
   }> => ipcRenderer.invoke(DESKTOP_PET_GET_CHANNEL),
 
   setDesktopPetEnabled: (enabled: boolean): Promise<boolean> =>
@@ -262,6 +268,8 @@ const tudApi = {
     frameIntervalMs: number;
     autoMoveEnabled: boolean;
     autoMoveIntervalMinutes: number;
+    syncFeedbackEnabled: boolean;
+    syncFeedbackDurationSec: number;
   }> => ipcRenderer.invoke('desktop-pet:set-selected', selectedPetId),
 
   setDesktopPetPreferences: (changes: {
@@ -269,6 +277,8 @@ const tudApi = {
     frameIntervalMs?: number;
     autoMoveEnabled?: boolean;
     autoMoveIntervalMinutes?: number;
+    syncFeedbackEnabled?: boolean;
+    syncFeedbackDurationSec?: number;
   }): Promise<{
     enabled: boolean;
     selectedPetId: string;
@@ -277,6 +287,8 @@ const tudApi = {
     frameIntervalMs: number;
     autoMoveEnabled: boolean;
     autoMoveIntervalMinutes: number;
+    syncFeedbackEnabled: boolean;
+    syncFeedbackDurationSec: number;
   }> => ipcRenderer.invoke('desktop-pet:set-preferences', changes),
 
   setDesktopPetMouseIgnored: (ignored: boolean) =>
@@ -308,6 +320,8 @@ const tudApi = {
     frameIntervalMs: number;
     autoMoveEnabled: boolean;
     autoMoveIntervalMinutes: number;
+    syncFeedbackEnabled: boolean;
+    syncFeedbackDurationSec: number;
   }) => void) => {
     const listener = (_event: unknown, preferences: unknown) => {
       if (!preferences || typeof preferences !== 'object') return;
@@ -319,8 +333,20 @@ const tudApi = {
         frameIntervalMs?: unknown;
         autoMoveEnabled?: unknown;
         autoMoveIntervalMinutes?: unknown;
+        syncFeedbackEnabled?: unknown;
+        syncFeedbackDurationSec?: unknown;
       };
       if (typeof value.enabled !== 'boolean' || typeof value.selectedPetId !== 'string' || typeof value.scale !== 'number' || typeof value.frameIntervalMs !== 'number' || typeof value.autoMoveEnabled !== 'boolean' || typeof value.autoMoveIntervalMinutes !== 'number') return;
+      const syncFeedbackEnabled = typeof value.syncFeedbackEnabled === 'boolean'
+        ? value.syncFeedbackEnabled
+        : false;
+      const syncFeedbackDurationSec =
+        typeof value.syncFeedbackDurationSec === 'number'
+        && Number.isInteger(value.syncFeedbackDurationSec)
+        && value.syncFeedbackDurationSec >= 1
+        && value.syncFeedbackDurationSec <= 10
+          ? value.syncFeedbackDurationSec
+          : 3;
       callback({
         enabled: value.enabled,
         selectedPetId: value.selectedPetId,
@@ -328,6 +354,8 @@ const tudApi = {
         frameIntervalMs: value.frameIntervalMs,
         autoMoveEnabled: value.autoMoveEnabled,
         autoMoveIntervalMinutes: value.autoMoveIntervalMinutes,
+        syncFeedbackEnabled,
+        syncFeedbackDurationSec,
         ...(typeof value.position?.x === 'number' && typeof value.position.y === 'number'
           ? { position: { x: value.position.x, y: value.position.y } }
           : {}),
@@ -364,8 +392,10 @@ const tudApi = {
       ipcRenderer.invoke(API_REQUEST_CHANNEL, path, init),
   },
 
-  onDataSynced: (callback: () => void) => {
-    const listener = () => callback();
+  onDataSynced: (callback: (feedback?: PetSyncFeedback | null) => void) => {
+    const listener = (_event: unknown, feedback: unknown) => {
+      callback(isPetSyncFeedback(feedback) ? feedback : null);
+    };
     ipcRenderer.on(DATA_SYNCED_CHANNEL, listener);
     return () => ipcRenderer.removeListener(DATA_SYNCED_CHANNEL, listener);
   },

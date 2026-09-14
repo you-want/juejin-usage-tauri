@@ -591,4 +591,45 @@ export class AggregateCache {
   sealedDayCount(): number {
     return this.days.size;
   }
+
+  /**
+   * Lightweight per-day token totals for desktop pet sync feedback.
+   * Reads sealed-day scalars plus today's rows only — no models/projects copy.
+   */
+  getSlimDayTokens(
+    rows: QueueBucket[],
+    statsSince: string,
+  ): { totalTokens: number; days: Array<{ date: string; tokens: number }> } {
+    const today = localDateNow(this.timeZone);
+    const statsDate =
+      /^\d{4}-\d{2}-\d{2}$/.test(statsSince)
+        ? statsSince
+        : localDateAndHour(statsSince, this.timeZone).date;
+
+    const days: Array<{ date: string; tokens: number }> = [];
+    let totalTokens = 0;
+
+    for (const [date, entry] of this.days) {
+      if (date < statsDate || date >= today) continue;
+      const tokens = Math.max(0, entry.daily.tokens);
+      if (tokens === 0) continue;
+      days.push({ date, tokens });
+      totalTokens += tokens;
+    }
+
+    const todayAgg = aggregateDaily(
+      this.todayRows(rows, today),
+      1,
+      EPOCH_SINCE,
+      this.timeZone,
+      { fromDate: today, toDate: today },
+    );
+    const todayTokens = Math.max(0, todayAgg.days[0]?.tokens ?? 0);
+    if (today >= statsDate) {
+      days.push({ date: today, tokens: todayTokens });
+      totalTokens += todayTokens;
+    }
+
+    return { totalTokens, days };
+  }
 }

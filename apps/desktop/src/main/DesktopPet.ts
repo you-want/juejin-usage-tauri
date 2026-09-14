@@ -686,7 +686,15 @@ export function registerDesktopPetIpc(actions: DesktopPetHostActions): void {
   ipcMain.handle(PET_SET_PREFERENCES_CHANNEL, async (_event, changes: unknown) => {
     if (!changes || typeof changes !== 'object') throw new Error('desktop pet preferences must be an object');
     const current = await loadDesktopPetPref();
-    const next = changes as Partial<Pick<DesktopPetPref, 'scale' | 'frameIntervalMs' | 'autoMoveEnabled' | 'autoMoveIntervalMinutes'>>;
+    const next = changes as Partial<Pick<
+      DesktopPetPref,
+      | 'scale'
+      | 'frameIntervalMs'
+      | 'autoMoveEnabled'
+      | 'autoMoveIntervalMinutes'
+      | 'syncFeedbackEnabled'
+      | 'syncFeedbackDurationSec'
+    >>;
     const scale = typeof next.scale === 'number' && next.scale >= 0.35 && next.scale <= 0.75
       ? next.scale : current.scale ?? DEFAULT_DESKTOP_PET_SCALE;
     const frameIntervalMs = typeof next.frameIntervalMs === 'number' && next.frameIntervalMs >= 120 && next.frameIntervalMs <= 320
@@ -698,13 +706,25 @@ export function registerDesktopPetIpc(actions: DesktopPetHostActions): void {
       && next.autoMoveIntervalMinutes >= 1
       && next.autoMoveIntervalMinutes <= 120
       ? next.autoMoveIntervalMinutes : current.autoMoveIntervalMinutes;
+    const syncFeedbackEnabled = typeof next.syncFeedbackEnabled === 'boolean'
+      ? next.syncFeedbackEnabled
+      : current.syncFeedbackEnabled;
+    const syncFeedbackDurationSec = typeof next.syncFeedbackDurationSec === 'number'
+      && Number.isInteger(next.syncFeedbackDurationSec)
+      && next.syncFeedbackDurationSec >= 1
+      && next.syncFeedbackDurationSec <= 10
+      ? next.syncFeedbackDurationSec
+      : current.syncFeedbackDurationSec;
     const saved = await saveDesktopPetPref({
       ...current,
       scale,
       frameIntervalMs,
       autoMoveEnabled,
       autoMoveIntervalMinutes,
+      syncFeedbackEnabled,
+      syncFeedbackDurationSec,
     });
+    sendPreferences(saved);
     await syncDesktopPet();
     return saved;
   });
