@@ -15,7 +15,7 @@ import {
   type PetUsageSnapshot,
 } from '@/lib/pet-sync-feedback';
 import { localDateDaysAgo, localDateNow } from '@/lib/stats-timezone';
-import { getDesktopPet, loadPetSpritesheet } from '@/pets';
+import { DESKTOP_PETS, getDesktopPet, loadPetSpritesheet, type DesktopPetDefinition } from '@/pets';
 import {
   DASHBOARD_RANGE_DAYS,
   DASHBOARD_RANGE_LABELS,
@@ -71,6 +71,7 @@ export function DesktopPetView() {
   const [summaryError, setSummaryError] = useState(false);
   const [syncFeedback, setSyncFeedback] = useState<PetSyncFeedback | null>(null);
   const [spritesheetUrl, setSpritesheetUrl] = useState<string | null>(null);
+  const [pets, setPets] = useState<DesktopPetDefinition[]>(DESKTOP_PETS);
   const spriteRef = useRef<HTMLButtonElement>(null);
   const frameRef = useRef(0);
   const alphaCanvas = useRef<HTMLCanvasElement | null>(null);
@@ -144,6 +145,14 @@ export function DesktopPetView() {
   }, []);
 
   useEffect(() => { alphaCanvas.current = null; }, [selectedPetId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void window.tud.getDesktopPetCatalog().then((catalog) => {
+      if (!cancelled) setPets(catalog.pets);
+    });
+    return () => { cancelled = true; };
+  }, [selectedPetId]);
 
   // Load only the selected pet's atlas; unchosen spritesheets stay unloaded.
   useEffect(() => {
@@ -342,7 +351,7 @@ export function DesktopPetView() {
     };
   }, []);
 
-  const pet = getDesktopPet(selectedPetId);
+  const pet = getDesktopPet(selectedPetId, pets);
   const isBubbleOpen = isTokenTooltipOpen || syncFeedback !== null;
 
   return (
