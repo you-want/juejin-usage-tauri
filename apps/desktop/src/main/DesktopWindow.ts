@@ -14,7 +14,7 @@ export interface DesktopWindowOptions {
 
 export type DesktopWindowTheme = 'dark' | 'light';
 
-const WINDOW_BACKGROUND_COLORS: Record<DesktopWindowTheme, string> = {
+export const WINDOW_BACKGROUND_COLORS: Record<DesktopWindowTheme, string> = {
   dark: '#050607',
   light: '#f5f5f5',
 };

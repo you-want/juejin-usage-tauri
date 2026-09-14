@@ -40,6 +40,7 @@ import {
 } from '@juejin-opensource/jusage-core';
 import { evictCliAutostart } from './evict-cli-autostart';
 import {
+  invalidateSyncWorkerCursors,
   isSyncWorkerRunning,
   runSyncViaWorker,
   startSyncWorker,
@@ -217,6 +218,9 @@ function buildApp(state: {
     getHookStatus: () => getHookStatus(state.dir),
     onConfigChange: (next) => {
       if (runtime) runtime.config = next;
+    },
+    onCursorsCleared: () => {
+      invalidateSyncWorkerCursors();
     },
     onSync: async () => {
       notifySynced();

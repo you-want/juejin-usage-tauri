@@ -23,7 +23,8 @@ import { dshHome } from '../parsers/dsh.js';
 import { zedDbPath } from '../parsers/zed.js';
 import { warpDbPaths } from '../parsers/warp.js';
 import {
-  codexHome,
+  codexHomeCandidates,
+  commandCodeProjectsDirs,
   copilotSessionStateDir,
   cursorStateVscdbPath,
   geminiTmpDir,
@@ -32,6 +33,7 @@ import {
   qoderCliProjectsDirs,
   qoderIdeLocalDbEntries,
   qoderWorkProjectsDirs,
+  qwenworkProjectsDirs,
   traeAgentDbEntries,
 } from '../paths.js';
 
@@ -74,8 +76,14 @@ export function isSyncSourcePresent(source: string): boolean {
     case 'claude':
       // Empty ~/.claude/projects is common; still attempt parse (cheap when empty).
       return true;
+    case 'command-code':
+      return anyExists(commandCodeProjectsDirs());
+    case 'qwenwork':
+      return anyExists(qwenworkProjectsDirs());
     case 'codex':
-      return anyExists([codexHome(), join(codexHome(), 'sessions')]);
+      return anyExists(
+        codexHomeCandidates().flatMap((home) => [home, join(home, 'sessions')]),
+      );
     case 'cursor':
       return anyExists([cursorStateVscdbPath()]);
     case 'qoder':
@@ -139,6 +147,7 @@ export function isSyncSourcePresent(source: string): boolean {
         join(resolveCodebuddyHome(), 'projects'),
       ]);
     case 'workbuddy':
+      // Domestic and international editions use separate homes; either is enough.
       return anyExists([
         resolveWorkbuddyHome(),
         join(resolveWorkbuddyHome(), 'projects'),

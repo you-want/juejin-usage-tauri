@@ -153,6 +153,20 @@ export async function startSyncWorker(dataDir: string): Promise<boolean> {
   }
 }
 
+/**
+ * Tell the worker its cached cursors.json copy is stale. Posted before the sync
+ * that follows a range expansion, so the rescan actually re-reads the logs.
+ * utilityProcess messages keep their order, so the reset lands first.
+ */
+export function invalidateSyncWorkerCursors(): void {
+  if (!child || !ready) return;
+  try {
+    child.postMessage({ type: 'invalidateCursors' } satisfies SyncWorkerRequest);
+  } catch {
+    // A worker that is gone reloads cursors.json from disk when it restarts.
+  }
+}
+
 export function stopSyncWorker(): void {
   stopping = true;
   lastDataDir = null;

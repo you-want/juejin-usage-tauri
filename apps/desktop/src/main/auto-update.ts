@@ -10,7 +10,7 @@ import {
   AUTO_UPDATE_STATE_CHANGED_CHANNEL,
   createDownloadedUpdateState,
   type AutoUpdateState,
-} from '../shared/auto-update';
+} from '../shared/auto-update.js';
 
 const PERIODIC_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
 const INSTALL_EXIT_TIMEOUT_MS = 30_000;
@@ -25,7 +25,8 @@ let state: AutoUpdateState = {
 };
 let periodicTimer: NodeJS.Timeout | null = null;
 let initialized = false;
-let installing = false;
+type InstallAttempt = { recovering: boolean };
+let installAttempt: InstallAttempt | null = null;
 let downloadedVersion: string | undefined;
 let installExitTimer: NodeJS.Timeout | null = null;
 let beforeInstall: (() => Promise<void>) | null = null;
@@ -126,7 +127,10 @@ async function checkForUpdates(): Promise<AutoUpdateState> {
     currentVersion: app.getVersion(),
   });
   try {
-    await autoUpdater.checkForUpdates();
+    const result = await autoUpdater.checkForUpdates();
+    // Automatic downloads have a separate promise. Errors are displayed by
+    // the updater event handler, but the rejection still needs a consumer.
+    void result?.downloadPromise?.catch(() => {});
   } catch {
     // electron-updater emits `error` before rejecting. The event handler owns
     // the user-facing state; swallowing here avoids an unhandled rejection.
@@ -134,12 +138,24 @@ async function checkForUpdates(): Promise<AutoUpdateState> {
   return state;
 }
 
-async function recoverInstallAttempt(message: string): Promise<void> {
-  if (!installing) return;
-  installing = false;
+async function recoverInstallAttempt(
+  attempt: InstallAttempt,
+  message: string,
+): Promise<void> {
+  if (installAttempt !== attempt || attempt.recovering) return;
+  attempt.recovering = true;
   clearInstallExitTimer();
   await clearUpdateMarker().catch(() => {});
+  if (installAttempt !== attempt) return;
   await recoverFromInstallFailure();
+  if (installAttempt !== attempt) return;
+  // electron-updater 6.x BaseUpdater (Windows/Linux) retains this latch if
+  // install launched but app.quit was cancelled. Without resetting it the
+  // first manual quitAndInstall only clears the latch and does no installation.
+  if ('quitAndInstallCalled' in autoUpdater) {
+    autoUpdater.quitAndInstallCalled = false;
+  }
+  installAttempt = null;
   if (!downloadedVersion) {
     setState({
       status: 'error',
@@ -159,11 +175,11 @@ async function recoverInstallAttempt(message: string): Promise<void> {
   );
 }
 
-async function installDownloadedUpdate(): Promise<AutoUpdateState> {
-  const version = downloadedVersion ?? state.version;
-  if (!version || installing) return state;
-  downloadedVersion = version;
-  installing = true;
+function installDownloadedUpdate(): AutoUpdateState {
+  const version = downloadedVersion;
+  if (!version || installAttempt || state.status !== 'downloaded') return state;
+  const attempt: InstallAttempt = { recovering: false };
+  installAttempt = attempt;
   setState({
     status: 'installing',
     currentVersion: app.getVersion(),
@@ -171,25 +187,35 @@ async function installDownloadedUpdate(): Promise<AutoUpdateState> {
     percent: 100,
     checkedAt: state.checkedAt,
   });
+  // Acknowledge IPC immediately: a hung preparation must not keep the renderer
+  // request pending after the watchdog has made the update retryable again.
+  void runInstallAttempt(attempt, version);
+  return state;
+}
+
+async function runInstallAttempt(attempt: InstallAttempt, version: string): Promise<void> {
   try {
     // Arm the watchdog before beforeInstall: stopLocalRuntime can hang, and
     // quitAndInstall has no success ack. If the process is still here later,
     // recover runtime and let the user retry.
     installExitTimer = setTimeout(() => {
       void recoverInstallAttempt(
-        '自动重启未完成，请点击“重启并更新”再次尝试。',
+        attempt,
+        '自动重启未完成，请点击“更新并重启”再次尝试。',
       );
     }, INSTALL_EXIT_TIMEOUT_MS);
     installExitTimer.unref();
     await writeUpdateMarker(version);
+    if (installAttempt !== attempt || attempt.recovering) return;
     await beforeInstall?.();
-    if (!installing) return state;
+    // A late completion from a timed-out attempt cannot install on behalf of
+    // a newer retry or interrupt the runtime restored by recovery.
+    if (installAttempt !== attempt || attempt.recovering) return;
     autoUpdater.quitAndInstall(false, true);
   } catch (error) {
     const message = installErrorMessage(error);
-    await recoverInstallAttempt(message);
+    await recoverInstallAttempt(attempt, message);
   }
-  return state;
 }
 
 async function recoverFromInstallFailure(): Promise<void> {
@@ -230,7 +256,7 @@ export async function initializeAutoUpdate(options: {
 }): Promise<void> {
   if (initialized) return;
   initialized = true;
-  installing = false;
+  installAttempt = null;
   downloadedVersion = undefined;
   clearInstallExitTimer();
   beforeInstall = options.beforeInstall;
@@ -271,11 +297,12 @@ export async function initializeAutoUpdate(options: {
     });
   });
   autoUpdater.on('update-available', (info) => {
+    const checkedAt = new Date().toISOString();
     setState({
-      status: 'available',
+      status: 'downloading',
       currentVersion: app.getVersion(),
       version: info.version,
-      checkedAt: new Date().toISOString(),
+      checkedAt,
     });
   });
   autoUpdater.on('update-not-available', (info) => {
@@ -299,6 +326,7 @@ export async function initializeAutoUpdate(options: {
     });
   });
   autoUpdater.on('update-downloaded', (info) => {
+    if (installAttempt || downloadedVersion === info.version) return;
     downloadedVersion = info.version;
     setState(
       createDownloadedUpdateState(
@@ -307,11 +335,17 @@ export async function initializeAutoUpdate(options: {
         state.checkedAt,
       ),
     );
-    void installDownloadedUpdate();
+    installDownloadedUpdate();
   });
   autoUpdater.on('error', (error) => {
-    if (installing) {
-      void recoverInstallAttempt(installErrorMessage(error));
+    if (installAttempt) {
+      void recoverInstallAttempt(installAttempt, installErrorMessage(error));
+      return;
+    }
+    if (downloadedVersion) {
+      setState(createDownloadedUpdateState(
+        app.getVersion(), downloadedVersion, state.checkedAt, installErrorMessage(error),
+      ));
       return;
     }
     setState({
@@ -339,7 +373,7 @@ export function disposeAutoUpdate(): void {
   ipcMain.removeHandler(AUTO_UPDATE_ACK_COMPLETED_CHANNEL);
   autoUpdater.removeAllListeners();
   clearInstallExitTimer();
-  installing = false;
+  installAttempt = null;
   downloadedVersion = undefined;
   beforeInstall = null;
   onInstallFailed = null;

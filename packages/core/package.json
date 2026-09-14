@@ -1,6 +1,6 @@
 {
   "name": "@juejin-opensource/jusage-core",
-  "version": "0.1.8",
+  "version": "0.1.9",
   "description": "AI Agent Token 用量采集与本地 API 核心库（parsers / sync / hooks / pricing / upload）",
   "type": "module",
   "license": "MIT",
@@ -35,6 +35,10 @@
       "types": "./dist/daily-model-key.d.ts",
       "import": "./dist/daily-model-key.js"
     },
+    "./dashboard-trend": {
+      "types": "./dist/dashboard-trend.d.ts",
+      "import": "./dist/dashboard-trend.js"
+    },
     "./timezone": {
       "types": "./dist/timezone.d.ts",
       "import": "./dist/timezone.js"
@@ -58,10 +62,12 @@
     "test:compile": "tsc -p tsconfig.test.json && node -e \"require('node:fs').copyFileSync('src/pricing/pricing.json','dist-test/src/pricing/pricing.json')\""
   },
   "dependencies": {
-    "hono": "^4.7.5"
+    "hono": "^4.7.5",
+    "proper-lockfile": "^4.1.2"
   },
   "devDependencies": {
     "@types/node": "^22.13.10",
+    "@types/proper-lockfile": "^4.1.4",
     "typescript": "^5.8.2"
   },
   "engines": {

@@ -24,6 +24,54 @@ declare global {
         callback: (state: import('../shared/auto-update').AutoUpdateState) => void,
       ) => () => void;
       copyImageToClipboard: (dataUrl: string) => Promise<boolean>;
+      getCodexSubscription: () => Promise<
+        import('../shared/codex-subscription').CodexSubscriptionSnapshot
+      >;
+      getClaudeSubscription: (options?: {
+        allowCredentialAccess?: boolean;
+        forceRefresh?: boolean;
+      }) => Promise<
+        import('../shared/claude-subscription').ClaudeSubscriptionSnapshot
+      >;
+      getCursorSubscription: () => Promise<
+        import('../shared/cursor-subscription').CursorSubscriptionSnapshot
+      >;
+      getGrokSubscription: () => Promise<
+        import('../shared/grok-subscription').GrokSubscriptionSnapshot
+      >;
+      getKimiSubscription: () => Promise<
+        import('../shared/kimi-subscription').KimiSubscriptionSnapshot
+      >;
+      getZcodeSubscription: () => Promise<
+        import('../shared/zcode-subscription').ZcodeSubscriptionSnapshot
+      >;
+      getAntigravitySubscription: () => Promise<
+        import('../shared/antigravity-subscription').AntigravitySubscriptionSnapshot
+      >;
+      getQoderSubscription: () => Promise<
+        import('../shared/qoder-subscription').QoderSubscriptionSnapshot
+      >;
+      getMiniMaxSubscription: (options?: { forceRefresh?: boolean }) => Promise<
+        import('../shared/minimax-subscription').MiniMaxSubscriptionSnapshot
+      >;
+      getDeepSeekSubscription: (options?: { forceRefresh?: boolean }) => Promise<
+        import('../shared/deepseek-subscription').DeepSeekSubscriptionSnapshot
+      >;
+      getOpenCodeSubscription: (options?: { forceRefresh?: boolean }) => Promise<
+        import('../shared/opencode-subscription').OpenCodeSubscriptionSnapshot
+      >;
+      getTraeGlobalSubscription: (options?: { forceRefresh?: boolean }) => Promise<
+        import('../shared/trae-subscription').TraeSubscriptionSnapshot
+      >;
+      getTraeCnSubscription: (options?: { forceRefresh?: boolean }) => Promise<
+        import('../shared/trae-subscription').TraeSubscriptionSnapshot
+      >;
+      getWorkBuddyGlobalSubscription: (options?: { forceRefresh?: boolean }) => Promise<
+        import('../shared/workbuddy-subscription').WorkBuddySubscriptionSnapshot
+      >;
+      getWorkBuddyMainlandSubscription: (options?: { forceRefresh?: boolean }) => Promise<
+        import('../shared/workbuddy-subscription').WorkBuddySubscriptionSnapshot
+      >;
       openExternal: (
         url: string,
       ) => Promise<{ ok: boolean; message?: string }>;
@@ -37,9 +85,17 @@ declare global {
       onDashboardRange: (
         callback: (range: import('../shared/dashboard-range').DashboardRange) => void,
       ) => () => void;
-      getTheme: () => Promise<'light' | 'dark'>;
-      setTheme: (theme: 'light' | 'dark') => void;
-      onThemeChanged: (callback: (theme: 'light' | 'dark') => void) => () => void;
+      getTheme: () => Promise<{
+        mode: import('../shared/theme').ThemeMode;
+        resolved: import('../shared/theme').Theme;
+      }>;
+      setThemeMode: (mode: import('../shared/theme').ThemeMode) => void;
+      onThemeChanged: (
+        callback: (state: {
+          mode: import('../shared/theme').ThemeMode;
+          resolved: import('../shared/theme').Theme;
+        }) => void,
+      ) => () => void;
       getOpenAtLogin: () => Promise<boolean>;
       setOpenAtLogin: (enabled: boolean) => Promise<boolean>;
       getLaunchHidden: () => Promise<boolean>;
@@ -54,6 +110,22 @@ declare global {
         autoMoveIntervalMinutes: number;
       }>;
       setDesktopPetEnabled: (enabled: boolean) => Promise<boolean>;
+      getDesktopPetCatalog: () => Promise<import('../shared/desktop-pet-catalog').DesktopPetCatalog>;
+      refreshDesktopPetCatalog: () => Promise<import('../shared/desktop-pet-catalog').DesktopPetCatalog & { selectedPetId: string }>;
+      fetchRemoteDesktopPetCatalog: (force?: boolean) => Promise<
+        import('../shared/desktop-pet-catalog').DesktopPetCatalog & {
+          selectedPetId: string;
+          remoteError: string | null;
+        }
+      >;
+      installRemoteDesktopPet: (id: string) => Promise<
+        import('../shared/desktop-pet-catalog').DesktopPetCatalog & {
+          selectedPetId: string;
+          remoteError: string | null;
+        }
+      >;
+      openDesktopPetDirectory: () => Promise<string>;
+      getDesktopPetSpritesheetUrl: (id: string) => Promise<string>;
       setSelectedDesktopPet: (selectedPetId: string) => Promise<{
         enabled: boolean;
         selectedPetId: string;

@@ -1,5 +1,6 @@
 import {
   Loader2Icon,
+  SunMoonIcon,
   MoonIcon,
   RefreshCwIcon,
   SettingsIcon,
@@ -7,6 +8,7 @@ import {
   XIcon,
 } from 'lucide-react';
 import { useTheme } from '@/hooks/useTheme';
+import type { ThemeMode } from '@/lib/theme';
 import { cn } from '@/lib/utils';
 
 const glassShell =
@@ -14,6 +16,12 @@ const glassShell =
 
 const fabBtn =
   'flex size-10 items-center justify-center rounded-[10px] text-muted opacity-45 transition-all duration-150 hover:bg-white/60 hover:text-foreground hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus/40 disabled:pointer-events-none disabled:opacity-30 dark:hover:bg-white/10';
+
+const THEME_MODE_META: Record<ThemeMode, { icon: typeof SunMoonIcon; label: string }> = {
+  system: { icon: SunMoonIcon, label: '跟随系统' },
+  light: { icon: SunIcon, label: '浅色' },
+  dark: { icon: MoonIcon, label: '深色' },
+};
 
 interface ActionRailProps {
   settingsOpen: boolean;
@@ -31,8 +39,8 @@ export function ActionRail({
   refreshing,
   refreshLabel,
 }: ActionRailProps) {
-  const { theme, toggleTheme } = useTheme();
-  const ThemeIcon = theme === 'light' ? MoonIcon : SunIcon;
+  const { themeMode, toggleTheme } = useTheme();
+  const { icon: ThemeModeIcon, label: modeLabel } = THEME_MODE_META[themeMode];
 
   return (
     <div className={cn(glassShell, 'flex flex-col gap-0.5 p-1.5')}>
@@ -54,11 +62,11 @@ export function ActionRail({
       <button
         type="button"
         onClick={toggleTheme}
-        aria-label={theme === 'light' ? '切换到深色模式' : '切换到浅色模式'}
-        title={theme === 'light' ? '深色' : '浅色'}
+        aria-label={`切换主题：当前${modeLabel}`}
+        title={`主题：${modeLabel}`}
         className={fabBtn}
       >
-        <ThemeIcon className="size-4" />
+        <ThemeModeIcon className={themeMode === 'system' ? 'size-4 scale-[1.2]' : 'size-4'} />
       </button>
 
       <button

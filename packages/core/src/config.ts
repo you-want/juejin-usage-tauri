@@ -1,16 +1,85 @@
 import { randomUUID } from 'node:crypto';
 import { hostname } from 'node:os';
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
+import { dirname } from 'node:path';
+import { mkdir, readFile, rename, stat, unlink, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
+import { lock } from 'proper-lockfile';
 
 import type { TudConfig } from './types.js';
-import { configPath, resolveDataDir, syncLogPath } from './paths.js';
+import {
+  configPath,
+  petsDir,
+  resolveDataDir,
+  stableDeviceIdPath,
+  syncLogPath,
+} from './paths.js';
 import { appendJsonLog } from './debug-log.js';
 import { clearCursors } from './queue/index.js';
 import {
   BAKED_PRICING_TTL_MS,
   BAKED_PRICING_URL,
 } from './pricing/baked-defaults.js';
+
+const DEVICE_ID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export function isDeviceId(value: string | null | undefined): boolean {
+  return Boolean(value?.trim() && DEVICE_ID_RE.test(value.trim()));
+}
+
+/** Read durable deviceId from XDG/AppData sidecar (null if missing/invalid). */
+export async function readStableDeviceId(): Promise<string | null> {
+  try {
+    const raw = (await readFile(stableDeviceIdPath(), 'utf8')).trim();
+    return isDeviceId(raw) ? raw.trim() : null;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
+    return null;
+  }
+}
+
+/** Persist deviceId outside the wipeable data dir. */
+export async function writeStableDeviceId(deviceId: string): Promise<void> {
+  const id = deviceId.trim();
+  if (!isDeviceId(id)) {
+    throw new Error(`Invalid deviceId for sidecar: ${deviceId}`);
+  }
+  const path = stableDeviceIdPath();
+  await mkdir(dirname(path), { recursive: true });
+  const temporary = `${path}.${process.pid}.${randomUUID()}.tmp`;
+  try {
+    await writeFile(temporary, `${id}\n`, {
+      encoding: 'utf8',
+      flag: 'wx',
+      mode: 0o600,
+    });
+    await rename(temporary, path);
+  } finally {
+    await unlink(temporary).catch((error: NodeJS.ErrnoException) => {
+      if (error.code !== 'ENOENT') throw error;
+    });
+  }
+}
+
+/**
+ * Prefer config → sidecar → new randomUUID. Always sync a valid id to sidecar.
+ */
+export async function resolveOrCreateDeviceId(
+  existing?: string | null,
+): Promise<{ deviceId: string; created: boolean }> {
+  const fromConfig = existing?.trim();
+  if (fromConfig && isDeviceId(fromConfig)) {
+    await writeStableDeviceId(fromConfig);
+    return { deviceId: fromConfig, created: false };
+  }
+  const fromSidecar = await readStableDeviceId();
+  if (fromSidecar) {
+    return { deviceId: fromSidecar, created: false };
+  }
+  const deviceId = randomUUID();
+  await writeStableDeviceId(deviceId);
+  return { deviceId, created: true };
+}
 
 /** Production public API root (no trailing slash). Same semantics as VITE_API_BASE. */
 export const DEFAULT_JUEJIN_API_URL = 'https://api.juejin.cn/aiusage_api';
@@ -113,11 +182,11 @@ export async function ensureDataDir(dataDir?: string): Promise<string> {
   await mkdir(`${dir}/queue`, { recursive: true });
   await mkdir(`${dir}/bin`, { recursive: true });
   await mkdir(`${dir}/logs`, { recursive: true });
+  await mkdir(petsDir(dir), { recursive: true });
   return dir;
 }
 
-function defaultConfig(dir: string): TudConfig {
-  const deviceId = randomUUID();
+function defaultConfig(dir: string, deviceId: string = randomUUID()): TudConfig {
   return {
     deviceId,
     // Filled by touchStatsSince on start/sync (supports hidden --days debug seed).
@@ -155,6 +224,8 @@ export function resolveLinkedUserId(
 /**
  * Ensure deviceId / production cloud defaults / pricing bake exist.
  * Returns whether config was mutated.
+ * Prefer `resolveOrCreateDeviceId` at load time so wipe recovers from sidecar;
+ * this sync helper only fills a missing id with a new UUID when called alone.
  */
 export function ensureIdentity(config: TudConfig): {
   changed: boolean;
@@ -163,7 +234,7 @@ export function ensureIdentity(config: TudConfig): {
   let changed = false;
   let deviceIdCreated = false;
 
-  if (!config.deviceId?.trim()) {
+  if (!isDeviceId(config.deviceId)) {
     config.deviceId = randomUUID();
     deviceIdCreated = true;
     changed = true;
@@ -235,18 +306,13 @@ async function recoverCorruptConfig(
     // If rename fails, still try to overwrite with a valid config.
   }
   const salvaged = salvageIdentityFromCorruptConfig(raw);
-  const config = defaultConfig(dir);
-  if (salvaged.deviceId) {
-    config.deviceId = salvaged.deviceId;
-    if (!salvaged.token) {
-      config.juejin.token = salvaged.deviceId;
-    }
-  }
+  const { deviceId } = await resolveOrCreateDeviceId(salvaged.deviceId);
+  const config = defaultConfig(dir, deviceId);
   if (salvaged.token) {
     config.juejin.token = salvaged.token;
   }
   ensureIdentity(config);
-  await saveConfig(dir, config);
+  await writeConfigUnlocked(dir, config);
   const recovery: CorruptConfigRecovery = {
     backupPath,
     tokenSalvaged: Boolean(salvaged.token),
@@ -263,10 +329,16 @@ async function recoverCorruptConfig(
 
 export async function loadConfig(dataDir?: string): Promise<LoadConfigResult> {
   const dir = await ensureDataDir(dataDir);
+  return withConfigLock(dir, () => loadConfigUnlocked(dir));
+}
+
+/** Caller holds the config lock, including initialization and migration writes. */
+async function loadConfigUnlocked(dir: string): Promise<LoadConfigResult> {
   const path = configPath(dir);
   if (!existsSync(path)) {
-    const config = defaultConfig(dir);
-    await saveConfig(dir, config);
+    const { deviceId } = await resolveOrCreateDeviceId();
+    const config = defaultConfig(dir, deviceId);
+    await writeConfigUnlocked(dir, config);
     return { dir, config };
   }
   const raw = await readFile(path, 'utf8');
@@ -281,15 +353,135 @@ export async function loadConfig(dataDir?: string): Promise<LoadConfigResult> {
   }
   const config = parsed as TudConfig;
   config.dataDir = dir;
-  const { changed } = ensureIdentity(config);
-  if (changed) {
-    await saveConfig(dir, config);
+  let identityChanged = false;
+  if (!isDeviceId(config.deviceId)) {
+    const resolved = await resolveOrCreateDeviceId(config.deviceId);
+    config.deviceId = resolved.deviceId;
+    identityChanged = true;
+  } else {
+    await writeStableDeviceId(config.deviceId);
+  }
+  const { changed, deviceIdCreated } = ensureIdentity(config);
+  if (deviceIdCreated) {
+    await writeStableDeviceId(config.deviceId);
+  }
+  if (identityChanged || changed) {
+    await writeConfigUnlocked(dir, config);
   }
   return { dir, config };
 }
 
 export async function saveConfig(dir: string, config: TudConfig): Promise<void> {
-  await writeFile(configPath(dir), `${JSON.stringify(config, null, 2)}\n`, 'utf8');
+  await withConfigLock(dir, async () => {
+    const persisted = await readPersistedConfig(dir);
+    const next = { ...config };
+    // A settings snapshot may predate a completed background sync/upload.
+    // These fields belong to the runtime, not to the settings writer.
+    for (const field of ['lastSyncAt', 'lastUploadAt'] as const) {
+      if (persisted?.[field]) {
+        next[field] = latestTimestamp(persisted[field], config[field]);
+      }
+    }
+    await writeConfigUnlocked(dir, next);
+    for (const field of ['lastSyncAt', 'lastUploadAt'] as const) {
+      if (field in next) config[field] = next[field];
+    }
+  });
+}
+
+async function withConfigLock<T>(dir: string, operation: () => Promise<T>): Promise<T> {
+  // Both the main process and sync worker must use the same lock. It also
+  // covers a config that does not exist yet, and recovers locks left by crashes.
+  const release = await lock(configPath(dir), {
+    realpath: false,
+    stale: 10_000,
+    update: 5_000,
+    retries: { retries: 100, factor: 1.2, minTimeout: 10, maxTimeout: 200 },
+  });
+  try {
+    return await operation();
+  } finally {
+    await release();
+  }
+}
+
+async function readPersistedConfig(dir: string): Promise<TudConfig | null> {
+  let raw: string;
+  try {
+    raw = await readFile(configPath(dir), 'utf8');
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
+    throw error;
+  }
+  const parsed: unknown = JSON.parse(raw);
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error('Invalid config: expected an object');
+  }
+  return parsed as TudConfig;
+}
+
+const RENAME_RETRY_CODES = new Set(['EPERM', 'EACCES', 'EBUSY']);
+/** Backs off to ~5.7s total; a slow scanner outlasted a 0.8s ladder on CI. */
+const RENAME_RETRY_DELAYS_MS = [
+  5, 10, 20, 40, 80, 120, 160, 200, 250, 300, 400, 500, 600, 800, 1000, 1200,
+];
+
+/**
+ * `rename` over an existing path is an atomic replace on POSIX, but on Windows
+ * it fails with EPERM/EACCES/EBUSY while any handle to the destination is still
+ * open — a reader that has not closed yet, an indexer, or a virus scanner
+ * touching the file we just wrote. The writers are already serialised by the
+ * config lock, so the only useful response is to wait out the other handle.
+ */
+async function renameReplacing(from: string, to: string): Promise<void> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      await rename(from, to);
+      return;
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code ?? '';
+      const delay = RENAME_RETRY_DELAYS_MS[attempt];
+      if (delay === undefined || !RENAME_RETRY_CODES.has(code)) {
+        // Keep `code` and the stack; only note that waiting did not help, so a
+        // report distinguishes "lost a race" from "blocked the whole time".
+        if (attempt > 0 && error instanceof Error) {
+          error.message = `${error.message} (still ${code} after ${attempt} retries)`;
+        }
+        throw error;
+      }
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    }
+  }
+}
+
+async function writeConfigUnlocked(dir: string, config: TudConfig): Promise<void> {
+  const path = configPath(dir);
+  const temporary = `${path}.${process.pid}.${randomUUID()}.tmp`;
+  const mode = await stat(path).then((info) => info.mode & 0o777).catch((error: NodeJS.ErrnoException) => {
+    if (error.code === 'ENOENT') return 0o600;
+    throw error;
+  });
+  try {
+    await writeFile(temporary, `${JSON.stringify(config, null, 2)}\n`, {
+      encoding: 'utf8', flag: 'wx', mode,
+    });
+    await renameReplacing(temporary, path);
+  } finally {
+    await unlink(temporary).catch((error: NodeJS.ErrnoException) => {
+      if (error.code !== 'ENOENT') throw error;
+    });
+  }
+}
+
+function latestTimestamp(
+  persisted: string | null | undefined,
+  proposed: string | null | undefined,
+): string | null | undefined {
+  const persistedMs = Date.parse(persisted ?? '');
+  const proposedMs = Date.parse(proposed ?? '');
+  return Number.isFinite(persistedMs) &&
+    (!Number.isFinite(proposedMs) || persistedMs > proposedMs)
+    ? persisted : proposed;
 }
 
 export async function touchStatsSince(
@@ -329,11 +521,25 @@ export async function touchStatsSince(
 }
 
 export async function setLastSyncAt(dir: string, config: TudConfig): Promise<void> {
-  config.lastSyncAt = new Date().toISOString();
-  await saveConfig(dir, config);
+  await setRuntimeTimestamp(dir, config, 'lastSyncAt');
 }
 
 export async function setLastUploadAt(dir: string, config: TudConfig): Promise<void> {
-  config.lastUploadAt = new Date().toISOString();
-  await saveConfig(dir, config);
+  await setRuntimeTimestamp(dir, config, 'lastUploadAt');
+}
+
+async function setRuntimeTimestamp(
+  dir: string,
+  config: TudConfig,
+  field: 'lastSyncAt' | 'lastUploadAt',
+): Promise<void> {
+  const completedAt = new Date().toISOString();
+  await withConfigLock(dir, async () => {
+    // Parsers/uploaders hold old snapshots across awaits. Never write their
+    // settings back just to record completion of background work.
+    const persisted = await readPersistedConfig(dir) ?? { ...config };
+    persisted[field] = latestTimestamp(persisted[field], completedAt);
+    await writeConfigUnlocked(dir, persisted);
+    config[field] = persisted[field];
+  });
 }

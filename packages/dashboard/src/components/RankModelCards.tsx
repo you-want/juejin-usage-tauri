@@ -3,12 +3,14 @@ import { Avatar, Chip, Skeleton, Switch } from '@heroui/react';
 import { MyRankCard } from '@/components/MyRankCard';
 import { RankTitleDecor } from '@/components/RankDecorations';
 import type {
+  LeaderboardBoard,
   LeaderboardMetric,
   LeaderboardOverviewResponse,
   LeaderboardRow,
   LeaderboardUserProfile,
 } from '@/lib/api';
 import { formatTokens, formatUsd } from '@/lib/format';
+import { pinCurrentUserRows, resolveLeaderboardCurrentUser } from '@/lib/leaderboard';
 import { cn } from '@/lib/utils';
 
 type DetailedLeaderboardRow = LeaderboardRow & {
@@ -17,7 +19,7 @@ type DetailedLeaderboardRow = LeaderboardRow & {
 };
 
 const LIST_CARD =
-  'overflow-hidden rounded-2xl border border-white/60 bg-white/90 shadow-[0_8px_30px_rgb(15_60_120_/0.06)] dark:border-white/8 dark:bg-surface dark:shadow-[0_8px_30px_rgb(0_0_0_/0.35)]';
+  'rounded-2xl border border-white/60 bg-white/90 shadow-[0_8px_30px_rgb(15_60_120_/0.06)] dark:border-white/8 dark:bg-surface dark:shadow-[0_8px_30px_rgb(0_0_0_/0.35)]';
 
 /** Prefetch avatars slightly before they enter the viewport. */
 const AVATAR_ROOT_MARGIN = '240px 0px';
@@ -94,7 +96,11 @@ export function RankUserTable({
             refreshing && 'pointer-events-none opacity-60',
           )}
         >
-          <UserList board={board} profiles={profiles} />
+          <UserList
+            board={board}
+            hideFromLeaderboard={hideFromLeaderboard}
+            profiles={profiles}
+          />
         </div>
       )}
     </section>
@@ -103,19 +109,25 @@ export function RankUserTable({
 
 function UserList({
   board,
+  hideFromLeaderboard,
   profiles,
 }: {
-  board: { rows: LeaderboardRow[] } | null;
+  board: LeaderboardBoard | null;
+  hideFromLeaderboard: boolean;
   profiles: Record<string, LeaderboardUserProfile>;
 }) {
   const rows = board?.rows ?? [];
+  const currentUser = hideFromLeaderboard
+    ? null
+    : resolveLeaderboardCurrentUser(board);
+  const displayRows = pinCurrentUserRows(rows, currentUser);
 
-  if (rows.length === 0) {
+  if (rows.length === 0 && !currentUser) {
     return (
       <div
         className={cn(
           LIST_CARD,
-          'flex min-h-56 flex-col items-center justify-center gap-2 text-center',
+          'flex min-h-56 flex-col items-center justify-center gap-2 overflow-hidden text-center',
         )}
       >
         <p className="text-sm">当前范围暂无用户排行数据</p>
@@ -130,7 +142,7 @@ function UserList({
         aria-hidden
         className="flex items-center gap-2 px-4 py-2.5 text-[11px] text-muted sm:gap-5 sm:px-6 sm:py-3 sm:text-xs"
       >
-        <span className="w-6 shrink-0 sm:w-8" />
+        <span className="w-10 shrink-0 sm:w-12" />
         <span className="min-w-0 flex-1">用户</span>
         <div className="flex shrink-0 items-center gap-2 sm:gap-8">
           <span className="w-[3.25rem] text-right sm:w-24">总 Token</span>
@@ -138,7 +150,7 @@ function UserList({
         </div>
       </div>
       <ol className="min-w-0">
-        {rows.map((row) => {
+        {displayRows.map(({ pinned, row }) => {
           const detailedRow = row as DetailedLeaderboardRow;
           const uid = detailedRow.uid ?? row.userHash;
           const profile = profiles[uid];
@@ -151,8 +163,13 @@ function UserList({
 
           return (
             <li
-              className="min-w-0 [content-visibility:auto] [contain-intrinsic-size:auto_56px] transition-colors hover:bg-black/[0.02] dark:hover:bg-white/[0.04]"
-              key={row.userHash}
+              className={cn(
+                'min-w-0 transition-colors',
+                pinned
+                  ? 'sticky top-0 z-10 border-b border-[#1e80ff]/15 bg-[#eef6ff] shadow-[0_8px_16px_rgb(15_60_120_/0.06)] hover:bg-[#e4f1ff] dark:border-[#4b9cff]/20 dark:bg-[#16324f] dark:shadow-[0_8px_16px_rgb(0_0_0_/0.25)] dark:hover:bg-[#1a3d5c]'
+                  : 'hover:bg-black/[0.02] dark:hover:bg-white/[0.04] [content-visibility:auto] [contain-intrinsic-size:auto_56px]',
+              )}
+              key={pinned ? `pinned-${row.userHash}` : row.userHash}
             >
               <div className="flex min-w-0 items-center gap-2 px-4 py-3 sm:gap-5 sm:px-6 sm:py-4">
                 <RankNumber rank={row.rank} />
@@ -245,7 +262,8 @@ function RankNumber({ rank }: { rank: number }) {
     <span
       aria-label={`第 ${rank} 名`}
       className={cn(
-        'w-6 shrink-0 text-center text-xl font-bold tabular-nums leading-none sm:w-8 sm:text-2xl',
+        'w-10 shrink-0 text-center font-bold tabular-nums leading-none sm:w-12',
+        rank > 99 ? 'text-base sm:text-lg' : 'text-xl sm:text-2xl',
         rank === 1 && 'text-[#F53F3F] dark:text-[#ff6b6b]',
         rank === 2 && 'text-[#F77234] dark:text-[#ff9a5c]',
         rank === 3 && 'text-[#FF7D00] dark:text-[#ffb020]',
@@ -284,9 +302,9 @@ function UsageMetrics({
 
 function UserListSkeleton() {
   return (
-    <div aria-label="用户排行榜加载中" className={cn(LIST_CARD, 'min-w-0')}>
+    <div aria-label="用户排行榜加载中" className={cn(LIST_CARD, 'min-w-0 overflow-hidden')}>
       <div className="flex items-center gap-2 px-4 py-2.5 sm:gap-5 sm:px-6 sm:py-3">
-        <span className="w-6 shrink-0 sm:w-8" />
+        <span className="w-10 shrink-0 sm:w-12" />
         <Skeleton className="h-3 w-8 rounded-md" />
         <div className="ml-auto flex shrink-0 items-center gap-2 sm:gap-8">
           <Skeleton className="h-3 w-12 rounded-md sm:w-16" />
@@ -298,7 +316,7 @@ function UserListSkeleton() {
           className="flex items-center gap-2 px-4 py-3 sm:gap-5 sm:px-6 sm:py-4"
           key={index}
         >
-          <Skeleton className="h-6 w-6 shrink-0 rounded-md sm:h-7 sm:w-8" />
+          <Skeleton className="h-6 w-10 shrink-0 rounded-md sm:h-7 sm:w-12" />
           <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-2.5">
             <Skeleton className="size-7 shrink-0 rounded-full sm:size-8" />
             <Skeleton className="h-4 w-24 max-w-full rounded-md sm:w-36" />

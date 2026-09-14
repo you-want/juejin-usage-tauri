@@ -62,7 +62,7 @@ test('leaderboard is unconfigured when cloud sync settings are incomplete', asyn
     assert.equal(body.success, true);
     assert.equal(body.data?.configured, false);
     assert.equal(body.data?.days, 1);
-    assert.equal(body.data?.limit, 50);
+    assert.equal(body.data?.limit, 100);
     assert.equal(body.data?.metric, 'tokens');
   }
 });
@@ -179,7 +179,7 @@ test('leaderboard overview returns a stable unconfigured catalog shape', async (
   assert.equal(body.data?.configured, false);
   assert.equal(body.data?.range, 'all');
   assert.equal(body.data?.days, null);
-  assert.equal(body.data?.limit, 50);
+  assert.equal(body.data?.limit, 100);
   assert.deepEqual(body.data?.tools, []);
   assert.equal(body.data?.global.tokens.totalUsers, 0);
 });
@@ -197,7 +197,7 @@ test('leaderboard overview proxy forwards range and clamped limit', async () => 
     configured: true,
     range: 'month',
     days: 30,
-    limit: 50,
+    limit: 100,
     generatedAt: '2026-07-23T00:00:00.000Z',
     global: { cost: emptyBoard('cost'), tokens: emptyBoard('tokens') },
     tools: [],
@@ -219,7 +219,7 @@ test('leaderboard overview proxy forwards range and clamped limit', async () => 
     assert.equal(response.status, 200);
     assert.equal(
       requestedUrl,
-      'https://usage.example.com/functions/tud-leaderboard-overview?range=month&limit=50',
+      'https://usage.example.com/functions/tud-leaderboard-overview?range=month&limit=100',
     );
     assert.equal(body.data?.range, 'month');
   } finally {

@@ -1,7 +1,9 @@
-import { app, BrowserWindow, clipboard, ipcMain, nativeImage } from 'electron';
+import { app, BrowserWindow, clipboard, ipcMain, nativeImage, nativeTheme } from 'electron';
 import {
   initAutostartOnLaunch,
+  loadThemeMode,
   registerAutostartIpc,
+  saveThemeMode,
   shouldStartHidden,
   unregisterAutostartIpc,
 } from './autostart';
@@ -22,8 +24,22 @@ import {
   hideTrayPopover,
   markTrayPopoverQuitting,
   resetTrayPopoverQuitting,
+  setPopoverTheme,
 } from './TrayPopover';
 import { registerLocalApiIpc } from './local-api-ipc';
+import { registerCodexSubscriptionIpc } from './codex-subscription-ipc';
+import { registerClaudeSubscriptionIpc } from './claude-subscription-ipc';
+import { registerCursorSubscriptionIpc } from './cursor-subscription-ipc';
+import { registerGrokSubscriptionIpc } from './grok-subscription-ipc';
+import { registerKimiSubscriptionIpc } from './kimi-subscription-ipc';
+import { registerZcodeSubscriptionIpc } from './zcode-subscription-ipc';
+import { registerAntigravitySubscriptionIpc } from './antigravity-subscription-ipc';
+import { registerQoderSubscriptionIpc } from './qoder-subscription-ipc';
+import { registerMiniMaxSubscriptionIpc } from './minimax-subscription-ipc';
+import { registerDeepSeekSubscriptionIpc } from './deepseek-subscription-ipc';
+import { registerOpenCodeSubscriptionIpc } from './opencode-subscription-ipc';
+import { registerTraeSubscriptionIpc } from './trae-subscription-ipc';
+import { registerWorkBuddySubscriptionIpc } from './workbuddy-subscription-ipc';
 import {
   localApiRequest,
   pokeSyncOnForeground,
@@ -38,6 +54,7 @@ import {
   syncDesktopPet,
   unregisterDesktopPetIpc,
 } from './DesktopPet';
+import { registerDesktopPetAssetProtocol } from './DesktopPetCatalog';
 import {
   applyDeepLinkConfig,
   findDeepLinkInArgv,
@@ -46,6 +63,7 @@ import {
   type OpenSettingsPayload,
 } from './deep-link';
 import { disposeAutoUpdate, initializeAutoUpdate } from './auto-update';
+import { isThemeMode, resolveTheme, type ThemeMode } from '../shared/theme';
 import {
   DEFAULT_DATA_DIR,
   evictRuntimeKind,
@@ -73,6 +91,20 @@ const SHARE_CARD_COPY_IMAGE_CHANNEL = 'share-card:copy-image';
 
 const windows = new Set<DesktopWindow>();
 let disposeLocalApiIpc: (() => void) | null = null;
+let disposeCodexSubscriptionIpc: (() => void) | null = null;
+let disposeClaudeSubscriptionIpc: (() => void) | null = null;
+let disposeCursorSubscriptionIpc: (() => void) | null = null;
+let disposeGrokSubscriptionIpc: (() => void) | null = null;
+let disposeKimiSubscriptionIpc: (() => void) | null = null;
+let disposeZcodeSubscriptionIpc: (() => void) | null = null;
+let disposeAntigravitySubscriptionIpc: (() => void) | null = null;
+let disposeQoderSubscriptionIpc: (() => void) | null = null;
+let disposeMiniMaxSubscriptionIpc: (() => void) | null = null;
+let disposeDeepSeekSubscriptionIpc: (() => void) | null = null;
+let disposeOpenCodeSubscriptionIpc: (() => void) | null = null;
+let disposeTraeSubscriptionIpc: (() => void) | null = null;
+let disposeWorkBuddySubscriptionIpc: (() => void) | null = null;
+let currentThemeMode: ThemeMode = 'system';
 let currentTheme: Theme = 'light';
 let pendingDeepLinkUrl: string | null = null;
 let runtimeReady = false;
@@ -109,26 +141,62 @@ function broadcastConfigResetNotice(): void {
   }
 }
 
-function isTheme(value: unknown): value is Theme {
-  return value === 'light' || value === 'dark';
+function onNativeThemeUpdated(): void {
+  // `system` mode re-resolves on OS appearance changes; fixed modes keep the
+  // resolved theme stable (shouldUseDarkColors follows themeSource).
+  const next = resolveTheme(currentThemeMode, nativeTheme.shouldUseDarkColors);
+  if (next === currentTheme) return;
+  applyResolvedTheme(next);
+  broadcastThemeState();
+}
+
+/** Apply the rendered theme to window chrome; no-op when unchanged. */
+function applyResolvedTheme(next: Theme): void {
+  if (next === currentTheme) return;
+  currentTheme = next;
+  for (const desktopWindow of windows) {
+    if (desktopWindow.window.isDestroyed()) continue;
+    desktopWindow.setThemeBackground(currentTheme);
+  }
+  setPopoverTheme(currentTheme);
+}
+
+/** Push the full theme state to every window: mode drives the selector
+ *  highlight, resolved drives the rendered theme. */
+function broadcastThemeState(): void {
+  const payload = { mode: currentThemeMode, resolved: currentTheme };
+  for (const window of BrowserWindow.getAllWindows()) {
+    window.webContents.send(THEME_CHANGED_CHANNEL, payload);
+  }
 }
 
 function registerThemeIpc(): void {
   ipcMain.removeHandler(THEME_GET_CHANNEL);
-  ipcMain.handle(THEME_GET_CHANNEL, () => currentTheme);
+  ipcMain.handle(THEME_GET_CHANNEL, () => ({
+    mode: currentThemeMode,
+    resolved: currentTheme,
+  }));
 
   ipcMain.removeAllListeners(THEME_SET_CHANNEL);
-  ipcMain.on(THEME_SET_CHANNEL, (_event, nextTheme: unknown) => {
-    if (!isTheme(nextTheme) || nextTheme === currentTheme) return;
-    currentTheme = nextTheme;
-    for (const desktopWindow of windows) {
-      if (desktopWindow.window.isDestroyed()) continue;
-      desktopWindow.setThemeBackground(currentTheme);
-    }
-    for (const window of BrowserWindow.getAllWindows()) {
-      window.webContents.send(THEME_CHANGED_CHANNEL, currentTheme);
-    }
+  ipcMain.on(THEME_SET_CHANNEL, (_event, nextMode: unknown) => {
+    if (!isThemeMode(nextMode) || nextMode === currentThemeMode) return;
+    currentThemeMode = nextMode;
+    nativeTheme.themeSource = nextMode;
+    // Persist the user's choice; failure must not block the in-memory switch.
+    saveThemeMode(nextMode).catch((err) => {
+      console.error(
+        '[tud-desktop] failed to persist theme mode:',
+        err instanceof Error ? err.message : err,
+      );
+    });
+    // Always broadcast the full state: the selector highlight must follow the
+    // new mode even when the resolved theme does not change.
+    applyResolvedTheme(resolveTheme(nextMode, nativeTheme.shouldUseDarkColors));
+    broadcastThemeState();
   });
+
+  nativeTheme.removeListener('updated', onNativeThemeUpdated);
+  nativeTheme.on('updated', onNativeThemeUpdated);
 }
 
 function registerShareCardIpc(): void {
@@ -367,7 +435,25 @@ void acquireDesktopInstanceLock().then((gotLock) => {
   }
 
   app.whenReady().then(async () => {
+    registerDesktopPetAssetProtocol();
     applyDevDockIcon();
+
+    // Restore the persisted theme mode before any window / IPC is registered
+    // so the first window and theme:get already resolve correctly.
+    try {
+      currentThemeMode = await loadThemeMode();
+    } catch (err) {
+      console.error(
+        '[tud-desktop] failed to load theme mode:',
+        err instanceof Error ? err.message : err,
+      );
+    }
+    nativeTheme.themeSource = currentThemeMode;
+    currentTheme = resolveTheme(
+      currentThemeMode,
+      nativeTheme.shouldUseDarkColors,
+    );
+
     ipcMain.removeAllListeners('app:quit');
     ipcMain.on('app:quit', () => app.quit());
 
@@ -386,26 +472,19 @@ void acquireDesktopInstanceLock().then((gotLock) => {
       triggerSync,
     });
     disposeLocalApiIpc = registerLocalApiIpc();
-    await initializeAutoUpdate({
-      beforeInstall: async () => {
-        // Release close interceptors before stopping runtime so a hung stop
-        // cannot leave tray/main-window preventDefault blocking quit.
-        hideTrayPopover();
-        markTrayPopoverQuitting();
-        markAppQuitting();
-        setLocalRuntimeQuitting(true);
-        await stopLocalRuntime();
-      },
-      onInstallFailed: async () => {
-        resetAppQuitting();
-        resetTrayPopoverQuitting();
-        resumeLocalRuntimeWatchdog();
-        await startLocalRuntime();
-        // quitAndInstall may have already destroyed the main window.
-        showMainWindow();
-      },
-    });
-
+    disposeCodexSubscriptionIpc = registerCodexSubscriptionIpc();
+    disposeClaudeSubscriptionIpc = registerClaudeSubscriptionIpc();
+    disposeCursorSubscriptionIpc = registerCursorSubscriptionIpc();
+    disposeGrokSubscriptionIpc = registerGrokSubscriptionIpc();
+    disposeKimiSubscriptionIpc = registerKimiSubscriptionIpc();
+    disposeZcodeSubscriptionIpc = registerZcodeSubscriptionIpc();
+    disposeAntigravitySubscriptionIpc = registerAntigravitySubscriptionIpc();
+    disposeQoderSubscriptionIpc = registerQoderSubscriptionIpc();
+    disposeMiniMaxSubscriptionIpc = registerMiniMaxSubscriptionIpc();
+    disposeDeepSeekSubscriptionIpc = registerDeepSeekSubscriptionIpc();
+    disposeOpenCodeSubscriptionIpc = registerOpenCodeSubscriptionIpc();
+    disposeTraeSubscriptionIpc = registerTraeSubscriptionIpc();
+    disposeWorkBuddySubscriptionIpc = registerWorkBuddySubscriptionIpc();
     try {
       await initAutostartOnLaunch();
     } catch (err) {
@@ -449,6 +528,28 @@ void acquireDesktopInstanceLock().then((gotLock) => {
       showMainWindow,
       openSettings: () => openSettings(),
       triggerSync,
+      theme: currentTheme,
+    });
+
+    // Cached updates can finish immediately. Start updating only after runtime
+    // and windows are ready, so startup cannot restart services during install.
+    await initializeAutoUpdate({
+      beforeInstall: async () => {
+        hideTrayPopover();
+        markTrayPopoverQuitting();
+        markAppQuitting();
+        setLocalRuntimeQuitting(true);
+        await stopLocalRuntime();
+      },
+      onInstallFailed: async () => {
+        resetAppQuitting();
+        resetTrayPopoverQuitting();
+        resumeLocalRuntimeWatchdog();
+        // Keep the recovery UI accessible even when runtime startup fails.
+        showMainWindow();
+        await startLocalRuntime();
+        await syncDesktopPet();
+      },
     });
 
     if (pendingDeepLinkUrl) {
@@ -486,9 +587,16 @@ void acquireDesktopInstanceLock().then((gotLock) => {
   app.on('before-quit', () => {
     markAppQuitting();
     setLocalRuntimeQuitting(true);
+    void stopLocalRuntime();
+  });
+
+  // before-quit/window close can be cancelled. Keep IPC and the update
+  // watchdog alive until windows have closed and the app is actually exiting.
+  app.on('will-quit', () => {
     ipcMain.removeHandler(THEME_GET_CHANNEL);
     ipcMain.removeHandler(SHARE_CARD_COPY_IMAGE_CHANNEL);
     ipcMain.removeAllListeners(THEME_SET_CHANNEL);
+    nativeTheme.removeListener('updated', onNativeThemeUpdated);
     unregisterOpenExternalIpc();
     unregisterAutostartIpc();
     unregisterDesktopPetIpc();
@@ -496,7 +604,32 @@ void acquireDesktopInstanceLock().then((gotLock) => {
     disposeTrayPopover();
     disposeLocalApiIpc?.();
     disposeLocalApiIpc = null;
+    disposeCodexSubscriptionIpc?.();
+    disposeCodexSubscriptionIpc = null;
+    disposeClaudeSubscriptionIpc?.();
+    disposeClaudeSubscriptionIpc = null;
+    disposeCursorSubscriptionIpc?.();
+    disposeCursorSubscriptionIpc = null;
+    disposeGrokSubscriptionIpc?.();
+    disposeGrokSubscriptionIpc = null;
+    disposeKimiSubscriptionIpc?.();
+    disposeKimiSubscriptionIpc = null;
+    disposeZcodeSubscriptionIpc?.();
+    disposeZcodeSubscriptionIpc = null;
+    disposeAntigravitySubscriptionIpc?.();
+    disposeAntigravitySubscriptionIpc = null;
+    disposeQoderSubscriptionIpc?.();
+    disposeQoderSubscriptionIpc = null;
+    disposeMiniMaxSubscriptionIpc?.();
+    disposeMiniMaxSubscriptionIpc = null;
+    disposeDeepSeekSubscriptionIpc?.();
+    disposeDeepSeekSubscriptionIpc = null;
+    disposeOpenCodeSubscriptionIpc?.();
+    disposeOpenCodeSubscriptionIpc = null;
+    disposeTraeSubscriptionIpc?.();
+    disposeTraeSubscriptionIpc = null;
+    disposeWorkBuddySubscriptionIpc?.();
+    disposeWorkBuddySubscriptionIpc = null;
     disposeAutoUpdate();
-    void stopLocalRuntime();
   });
 });

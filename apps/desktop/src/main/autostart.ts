@@ -17,6 +17,7 @@ import {
   isDashboardRange,
   type DashboardRange,
 } from '../shared/dashboard-range';
+import { isThemeMode, type ThemeMode } from '../shared/theme';
 
 const AUTOSTART_GET_CHANNEL = 'autostart:get';
 const AUTOSTART_SET_CHANNEL = 'autostart:set';
@@ -48,6 +49,8 @@ interface DesktopPrefs {
   /** 开机自启时是否静默启动（仅托盘，不显示主窗口）。默认开启。 */
   launchHidden: boolean;
   desktopPet?: DesktopPetPref;
+  /** 主题模式（system / light / dark）。缺省跟随系统。 */
+  themeMode?: ThemeMode;
   /**
    * Last dashboard time range. Stored here so the pet window can follow it;
    * pet.html does not share the dashboard renderer's localStorage origin.
@@ -81,6 +84,7 @@ async function readPrefsFile(): Promise<DesktopPrefs | null> {
       launchHidden: typeof parsed.launchHidden === 'boolean'
         ? parsed.launchHidden
         : true,
+      themeMode: isThemeMode(parsed.themeMode) ? parsed.themeMode : 'system',
       dashboardRange: isDashboardRange(parsed.dashboardRange)
         ? parsed.dashboardRange
         : undefined,
@@ -115,18 +119,32 @@ async function writePrefs(prefs: DesktopPrefs): Promise<void> {
   await writeFile(prefsPath(), `${JSON.stringify(prefs, null, 2)}\n`, 'utf8');
 }
 
+/** Serialize prefs read-modify-write so consecutive updates cannot clobber
+ *  each other (theme switches are user-paced, but a quick flip could otherwise
+ *  interleave reads against the same file). */
+let prefsQueue: Promise<unknown> = Promise.resolve();
+
+function withPrefsLock<T>(task: () => Promise<T>): Promise<T> {
+  const run = prefsQueue.then(task, task);
+  prefsQueue = run.then(() => undefined, () => undefined);
+  return run;
+}
+
 async function patchPrefs(patch: Partial<DesktopPrefs>): Promise<DesktopPrefs> {
-  const existing = await readPrefsFile();
-  const next: DesktopPrefs = {
-    openAtLogin: patch.openAtLogin ?? existing?.openAtLogin ?? true,
-    launchHidden: patch.launchHidden ?? existing?.launchHidden ?? true,
-    desktopPet: patch.desktopPet !== undefined ? patch.desktopPet : existing?.desktopPet,
-    dashboardRange: patch.dashboardRange !== undefined
-      ? patch.dashboardRange
-      : existing?.dashboardRange,
-  };
-  await writePrefs(next);
-  return next;
+  return withPrefsLock(async () => {
+    const existing = await readPrefsFile();
+    const next: DesktopPrefs = {
+      openAtLogin: patch.openAtLogin ?? existing?.openAtLogin ?? true,
+      launchHidden: patch.launchHidden ?? existing?.launchHidden ?? true,
+      desktopPet: patch.desktopPet !== undefined ? patch.desktopPet : existing?.desktopPet,
+      themeMode: patch.themeMode !== undefined ? patch.themeMode : existing?.themeMode,
+      dashboardRange: patch.dashboardRange !== undefined
+        ? patch.dashboardRange
+        : existing?.dashboardRange,
+    };
+    await writePrefs(next);
+    return next;
+  });
 }
 
 function broadcastDashboardRange(range: DashboardRange): void {
@@ -135,6 +153,20 @@ function broadcastDashboardRange(range: DashboardRange): void {
       window.webContents.send(DASHBOARD_RANGE_CHANGED_CHANNEL, range);
     }
   }
+}
+
+/** Persisted theme mode; defaults to following the OS. */
+export function loadThemeMode(): Promise<ThemeMode> {
+  // Read under the same lock as writes so a concurrent writeFile truncation
+  // cannot surface a half-written prefs file.
+  return withPrefsLock(async () => {
+    const prefs = await readPrefsFile();
+    return prefs?.themeMode ?? 'system';
+  });
+}
+
+export function saveThemeMode(mode: ThemeMode): Promise<void> {
+  return patchPrefs({ themeMode: mode }).then(() => undefined);
 }
 
 /** Frozen at init: was *this* process started as a silent login launch? */

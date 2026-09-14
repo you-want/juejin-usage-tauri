@@ -33,6 +33,7 @@ export function useLeaderboardData(
   const { authStatus } = useJuejinAuth();
   const [revision, setRevision] = useState(0);
   const lastKeyRef = useRef<string | null>(null);
+  const manualReloadRef = useRef(false);
   const [state, setState] = useState<LeaderboardDataState>({
     data: null,
     loading: true,
@@ -40,7 +41,8 @@ export function useLeaderboardData(
     error: null,
   });
 
-  const reload = useCallback(() => {
+  const reload = useCallback((options?: { silent?: boolean }) => {
+    manualReloadRef.current = options?.silent !== true;
     setRevision((current) => current + 1);
   }, []);
 
@@ -63,6 +65,10 @@ export function useLeaderboardData(
 
     // Skeleton only when empty. Filter/range switches keep prior rows visible
     // (refreshing). Same-key polls stay silent to avoid periodic layout jumps.
+    // Manual reloads always surface the refreshing state so the retry button
+    // gives feedback even when the key is unchanged.
+    const isManualReload = manualReloadRef.current;
+    manualReloadRef.current = false;
     setState((current) => {
       if (current.data == null) {
         return {
@@ -74,7 +80,7 @@ export function useLeaderboardData(
       }
       const isFilterChange =
         lastKeyRef.current != null && lastKeyRef.current !== key;
-      if (isFilterChange) {
+      if (isFilterChange || isManualReload) {
         return {
           ...current,
           loading: false,
@@ -120,7 +126,7 @@ export function useLeaderboardData(
     const tick = (now: number) => {
       if (now - last >= POLL_MS) {
         last = now;
-        reload();
+        reload({ silent: true });
       }
       rafId = requestAnimationFrame(tick);
     };
@@ -128,7 +134,7 @@ export function useLeaderboardData(
 
     const onFocus = () => {
       last = performance.now();
-      reload();
+      reload({ silent: true });
     };
     window.addEventListener('focus', onFocus);
 

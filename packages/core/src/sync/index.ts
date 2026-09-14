@@ -4,6 +4,7 @@ import { CURSOR_POLL_MIN_FETCH_INTERVAL_MS, SYNC_SOURCE_GAP_MS, syncLogPath } fr
 import { measureCpuPhase } from '../debug-log.js';
 import { isSyncSourcePresent } from './source-presence.js';
 import { parseClaudeIncremental } from '../parsers/claude.js';
+import { parseCommandCodeIncremental } from '../parsers/command-code.js';
 import { parseCodexIncremental } from '../parsers/codex.js';
 import { parseCursorIncremental } from '../parsers/cursor.js';
 import { parseQoderIncremental } from '../parsers/qoder.js';
@@ -35,6 +36,7 @@ import { parseKilocodeIncremental } from '../parsers/kilocode.js';
 import { parseGooseIncremental } from '../parsers/goose.js';
 import { parseZedIncremental } from '../parsers/zed.js';
 import { parseWarpIncremental } from '../parsers/warp.js';
+import { parseQwenworkIncremental } from '../parsers/qwenwork.js';
 import {
   appendBuckets,
   loadBucketsForRange,
@@ -105,6 +107,45 @@ function bucketChanged(a: QueueBucket, b: QueueBucket): boolean {
   );
 }
 
+/**
+ * True when a cursors.json slot still carries incremental state (file offsets,
+ * dedup ids, cumulative watermarks). Empty shells a parser leaves behind when
+ * it finds nothing (`{ files: {} }`) do not count as state.
+ */
+function hasCursorState(value: unknown): boolean {
+  if (value == null) return false;
+  if (Array.isArray(value)) return value.length > 0;
+  if (typeof value !== 'object') return true;
+  for (const key in value as Record<string, unknown>) {
+    if (hasCursorState((value as Record<string, unknown>)[key])) return true;
+  }
+  return false;
+}
+
+function statefulCursorSlots(cursors: CursorsFile): Set<string> {
+  const slots = new Set<string>();
+  for (const [slot, value] of Object.entries(cursors)) {
+    if (hasCursorState(value)) slots.add(slot);
+  }
+  return slots;
+}
+
+/**
+ * A parser that started the round with an empty cursor slot re-read its source
+ * from the beginning, so the buckets it returns are a full snapshot of the
+ * collect window — not a delta on top of what the queue already holds.
+ *
+ * Detected from the slot the parse just filled instead of a source→slot table:
+ * every parser owns its own top-level key in cursors.json, so new sources stay
+ * covered without extra bookkeeping.
+ */
+function parsedFullRescan(before: Set<string>, after: CursorsFile): boolean {
+  for (const [slot, value] of Object.entries(after)) {
+    if (!before.has(slot) && hasCursorState(value)) return true;
+  }
+  return false;
+}
+
 async function syncSourceBuckets(
   dataDir: string,
   config: TudConfig,
@@ -122,11 +163,12 @@ async function syncSourceBuckets(
     };
     cursors: Awaited<ReturnType<typeof loadCursors>>;
   }>,
-  options?: { replace?: boolean; sharedCursors?: CursorsFile },
+  options?: { sharedCursors?: CursorsFile },
 ): Promise<SyncResult> {
   const collectSince = resolveLocalCollectSince(config);
   const shared = options?.sharedCursors;
   let cursors = shared ?? (await loadCursors(dataDir));
+  const statefulBefore = statefulCursorSlots(cursors);
   const { result, cursors: nextCursors } = await parseFn(cursors, collectSince);
   cursors = nextCursors;
 
@@ -169,12 +211,17 @@ async function syncSourceBuckets(
   );
   const existingMap = new Map(existing.map((r) => [bucketKey(r), r]));
 
+  // Widening the local range (7D → 90D) clears cursors so parsers backfill.
+  // Their output then repeats rows the queue already has, so adding it on top
+  // would count every already ingested event twice. Snapshot rows replace.
+  const snapshot = parsedFullRescan(statefulBefore, cursors);
+
   const toAppend: QueueBucket[] = [];
   const working = new Map(existingMap);
   for (const delta of result.buckets) {
     const key = bucketKey(delta);
     const prev = working.get(key);
-    working.set(key, options?.replace ? delta : prev ? mergeBuckets(prev, delta) : delta);
+    working.set(key, snapshot ? delta : prev ? mergeBuckets(prev, delta) : delta);
   }
   const touched = new Set(result.buckets.map((bucket) => unknownAlignGroupKey(bucket)));
   const everyCodeUnknownGroups = new Set<string>();
@@ -361,6 +408,14 @@ export async function syncWarp(dataDir: string, config: TudConfig, opts?: SyncSo
   return syncSourceBuckets(dataDir, config, 'warp', parseWarpIncremental, { sharedCursors: opts?.sharedCursors });
 }
 
+export async function syncQwenwork(dataDir: string, config: TudConfig, opts?: SyncSourceOptions): Promise<SyncResult> {
+  return syncSourceBuckets(dataDir, config, 'qwenwork', parseQwenworkIncremental, { sharedCursors: opts?.sharedCursors });
+}
+
+export async function syncCommandCode(dataDir: string, config: TudConfig, opts?: SyncSourceOptions): Promise<SyncResult> {
+  return syncSourceBuckets(dataDir, config, 'command-code', parseCommandCodeIncremental, { sharedCursors: opts?.sharedCursors });
+}
+
 export async function syncCursor(
   dataDir: string,
   config: TudConfig,
@@ -507,9 +562,42 @@ export const SYNC_SOURCE_IDS = [
   'goose',
   'zed',
   'warp',
+  'qwenwork',
+  'command-code',
 ] as const;
 
 export type SyncSourceId = (typeof SYNC_SOURCE_IDS)[number];
+
+/** Accepted spellings that map onto a canonical source id (see syncOneSource). */
+const SYNC_SOURCE_ALIASES: Record<string, SyncSourceId> = {
+  'roo-code': 'roocode',
+  'qwen-code': 'qwen',
+  'grok-build': 'grok',
+  mimocode: 'mimo',
+  everycode: 'every-code',
+  kilo: 'kilo-cli',
+  'kilo-code': 'kilocode',
+};
+
+/**
+ * Normalize a user-supplied source filter (CLI `--source`, local API body).
+ *
+ * - missing / empty / `all` → `undefined`（全量同步）
+ * - known id or alias（大小写不敏感）→ canonical id
+ * - anything else → `null`; the caller must reject it instead of passing it
+ *   on, otherwise the sync silently runs zero parsers while reporting success.
+ */
+export function normalizeSyncSource(
+  raw: string | undefined | null,
+): SyncSourceId | undefined | null {
+  if (raw == null) return undefined;
+  const value = raw.trim().toLowerCase();
+  if (!value || value === 'all') return undefined;
+  if ((SYNC_SOURCE_IDS as readonly string[]).includes(value)) {
+    return value as SyncSourceId;
+  }
+  return SYNC_SOURCE_ALIASES[value] ?? null;
+}
 
 async function syncOneSource(
   dataDir: string,
@@ -589,6 +677,11 @@ async function syncOneSource(
       return syncZed(dataDir, config, opts);
     case 'warp':
       return syncWarp(dataDir, config, opts);
+    case 'qwenwork':
+      return syncQwenwork(dataDir, config, opts);
+    case 'command-code':
+    case 'commandcode':
+      return syncCommandCode(dataDir, config, opts);
     default:
       return {
         source,
@@ -614,11 +707,15 @@ export async function syncAll(
   config: TudConfig,
   source?: string,
 ): Promise<SyncResult[]> {
-  if (source) {
-    if (source === 'omp' && ompAgentDirCollidesWithPi()) {
+  // CLI / local API validate and normalize before calling in; treat `all`
+  // as a full sweep here too so no direct caller can hit the
+  // unknown-source branch with it.
+  const filter = source === 'all' ? undefined : source;
+  if (filter) {
+    if (filter === 'omp' && ompAgentDirCollidesWithPi()) {
       return [];
     }
-    return [await syncOneSource(dataDir, config, source)];
+    return [await syncOneSource(dataDir, config, filter)];
   }
 
   // One cursors.json load/save per round instead of per channel.

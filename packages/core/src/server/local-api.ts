@@ -20,6 +20,7 @@ import type {
   TudConfigUpdate,
   TudConfigView,
 } from '../types.js';
+import { normalizeSyncSource } from '../sync/index.js';
 import { normalizeApiUrl, uploadToServer } from '../upload/index.js';
 import {
   ensureLocalCollectRange,
@@ -495,7 +496,10 @@ export function createLocalApiApp(deps: LocalApiDeps): Hono {
       return c.json({ success: false, message: 'INVALID_JSON', data: null }, 400);
     }
 
-    const config = deps.getConfig();
+    const activeConfig = deps.getConfig();
+    // Stage edits so validation or persistence failures cannot mutate the
+    // configuration currently used by the local runtime.
+    const config = { ...activeConfig, juejin: { ...activeConfig.juejin } };
     const prevApiUrl = normalizeApiUrl(config.juejin.apiUrl ?? '');
     const prevToken = config.juejin.token?.trim() || null;
     const prevEnabled = config.juejin.enabled;
@@ -538,7 +542,10 @@ export function createLocalApiApp(deps: LocalApiDeps): Hono {
     }
 
     await saveConfig(deps.dataDir, config);
-    deps.onConfigChange?.(config);
+    // Preserve getConfig() callers that keep the original object and do not
+    // provide an onConfigChange callback.
+    activeConfig.juejin = config.juejin;
+    deps.onConfigChange?.(activeConfig);
 
     const nextApiUrl = normalizeApiUrl(config.juejin.apiUrl ?? '');
     const nextToken = config.juejin.token?.trim() || null;
@@ -567,7 +574,16 @@ export function createLocalApiApp(deps: LocalApiDeps): Hono {
     } catch {
       // empty body ok
     }
-    const result = await runSync(deps, source);
+    // `all`/missing → full sweep; unknown values must 400 instead of running
+    // zero parsers behind a success envelope.
+    const filter = normalizeSyncSource(source);
+    if (filter === null) {
+      return c.json(
+        { success: false, message: 'UNKNOWN_SYNC_SOURCE', data: null },
+        400,
+      );
+    }
+    const result = await runSync(deps, filter);
     return c.json(
       ok({
         ok: result.ok,
