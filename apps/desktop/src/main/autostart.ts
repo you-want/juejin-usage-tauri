@@ -37,12 +37,18 @@ export interface DesktopPetPref {
   frameIntervalMs: number;
   autoMoveEnabled: boolean;
   autoMoveIntervalMinutes: number;
+  /** Show a short toast on the pet when sync adds tokens. Default off. */
+  syncFeedbackEnabled: boolean;
+  /** How long the sync toast stays visible, in seconds. */
+  syncFeedbackDurationSec: number;
 }
 
 export const DEFAULT_DESKTOP_PET_SCALE = 0.5;
 export const DEFAULT_DESKTOP_PET_FRAME_INTERVAL_MS = 180;
 export const DEFAULT_DESKTOP_PET_AUTO_MOVE_ENABLED = true;
 export const DEFAULT_DESKTOP_PET_AUTO_MOVE_INTERVAL_MINUTES = 2;
+export const DEFAULT_DESKTOP_PET_SYNC_FEEDBACK_ENABLED = false;
+export const DEFAULT_DESKTOP_PET_SYNC_FEEDBACK_DURATION_SEC = 3;
 
 interface DesktopPrefs {
   openAtLogin: boolean;
@@ -107,6 +113,14 @@ async function readPrefsFile(): Promise<DesktopPrefs | null> {
             autoMoveIntervalMinutes: isDesktopPetAutoMoveInterval(desktopPet.autoMoveIntervalMinutes)
               ? desktopPet.autoMoveIntervalMinutes
               : DEFAULT_DESKTOP_PET_AUTO_MOVE_INTERVAL_MINUTES,
+            syncFeedbackEnabled: typeof desktopPet.syncFeedbackEnabled === 'boolean'
+              ? desktopPet.syncFeedbackEnabled
+              : DEFAULT_DESKTOP_PET_SYNC_FEEDBACK_ENABLED,
+            syncFeedbackDurationSec: isDesktopPetSyncFeedbackDuration(
+              desktopPet.syncFeedbackDurationSec,
+            )
+              ? desktopPet.syncFeedbackDurationSec
+              : DEFAULT_DESKTOP_PET_SYNC_FEEDBACK_DURATION_SEC,
           }
         : undefined,
     };
@@ -238,6 +252,8 @@ export async function loadDesktopPetPref(): Promise<DesktopPetPref> {
     frameIntervalMs: DEFAULT_DESKTOP_PET_FRAME_INTERVAL_MS,
     autoMoveEnabled: DEFAULT_DESKTOP_PET_AUTO_MOVE_ENABLED,
     autoMoveIntervalMinutes: DEFAULT_DESKTOP_PET_AUTO_MOVE_INTERVAL_MINUTES,
+    syncFeedbackEnabled: DEFAULT_DESKTOP_PET_SYNC_FEEDBACK_ENABLED,
+    syncFeedbackDurationSec: DEFAULT_DESKTOP_PET_SYNC_FEEDBACK_DURATION_SEC,
   };
 }
 
@@ -269,6 +285,10 @@ function isDesktopPetFrameInterval(value: unknown): value is number {
 
 function isDesktopPetAutoMoveInterval(value: unknown): value is number {
   return typeof value === 'number' && Number.isInteger(value) && value >= 1 && value <= 120;
+}
+
+function isDesktopPetSyncFeedbackDuration(value: unknown): value is number {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 1 && value <= 10;
 }
 
 /** First launch: enable + register. Later: re-apply stored preference. */

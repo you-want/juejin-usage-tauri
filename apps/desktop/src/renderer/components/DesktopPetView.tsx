@@ -9,12 +9,6 @@ import {
 import { useAnimatedNumber } from '@/hooks/useAnimatedNumber';
 import { fetchDaily } from '@/lib/api';
 import { formatTokens, formatTokensExact, formatUsd } from '@/lib/format';
-import {
-  buildPetSyncFeedback,
-  type PetSyncFeedback,
-  type PetUsageSnapshot,
-} from '@/lib/pet-sync-feedback';
-import { localDateDaysAgo, localDateNow } from '@/lib/stats-timezone';
 import { DESKTOP_PETS, getDesktopPet, loadPetSpritesheet, type DesktopPetDefinition } from '@/pets';
 import {
   DASHBOARD_RANGE_DAYS,
@@ -34,25 +28,21 @@ import {
   petSpriteCell,
   type PetAnimation,
 } from '../../shared/desktop-pet-sprite';
+import type { PetSyncFeedback } from '../../shared/pet-sync-feedback';
 
 const DISPLAY_SCALE = 0.5;
 const DRAG_ANIMATION_SPEED_MULTIPLIER = 0.55;
-const SYNC_FEEDBACK_DURATION_MS = 5_000;
 const BUBBLE_GAP_PX = 8;
+const DEFAULT_SYNC_FEEDBACK_DURATION_SEC = 3;
 
-function calculateRangeTotals(
-  rows: Array<{ date: string; tokens: number; costUsd: number }>,
-  range: DashboardRange,
-  today: string,
-): {
+async function fetchRangeTotals(range: DashboardRange): Promise<{
   totalTokens: number;
   totalCostUsd: number;
-} {
-  const startDate = localDateDaysAgo(DASHBOARD_RANGE_DAYS[range]);
+}> {
+  const daily = await fetchDaily(DASHBOARD_RANGE_DAYS[range]);
   let totalTokens = 0;
   let totalCostUsd = 0;
-  for (const row of rows) {
-    if (row.date < startDate || row.date > today) continue;
+  for (const row of daily.days ?? []) {
     totalTokens += row.tokens;
     totalCostUsd += row.costUsd;
   }
@@ -76,9 +66,9 @@ export function DesktopPetView() {
   const frameRef = useRef(0);
   const alphaCanvas = useRef<HTMLCanvasElement | null>(null);
   const ignored = useRef(false);
-  const usageSnapshot = useRef<PetUsageSnapshot | null>(null);
   const feedbackTimer = useRef<number | null>(null);
-  const enqueueUsageRefresh = useRef<(announce: boolean) => void>(() => undefined);
+  const syncFeedbackEnabledRef = useRef(false);
+  const syncFeedbackDurationSecRef = useRef(DEFAULT_SYNC_FEEDBACK_DURATION_SEC);
   const dragState = useRef<{
     pointerId: number;
     screenX: number;
@@ -90,7 +80,6 @@ export function DesktopPetView() {
     : Math.max(60, Math.round(frameIntervalMs * DRAG_ANIMATION_SPEED_MULTIPLIER));
   const layout = getDesktopPetLayout(scale);
   const { spriteWidth, spriteHeight } = layout;
-
 
   /**
    * Frame clock writes `backgroundPosition` on the sprite node. A React
@@ -132,11 +121,21 @@ export function DesktopPetView() {
       setScale(pref.scale);
       setFrameIntervalMs(pref.frameIntervalMs);
       setSelectedPetId(pref.selectedPetId);
+      syncFeedbackEnabledRef.current = pref.syncFeedbackEnabled === true;
+      syncFeedbackDurationSecRef.current =
+        typeof pref.syncFeedbackDurationSec === 'number'
+          ? pref.syncFeedbackDurationSec
+          : DEFAULT_SYNC_FEEDBACK_DURATION_SEC;
     });
     const unsubscribe = window.tud.onDesktopPetPreferences((pref) => {
       setScale(pref.scale);
       setFrameIntervalMs(pref.frameIntervalMs);
       setSelectedPetId(pref.selectedPetId);
+      syncFeedbackEnabledRef.current = pref.syncFeedbackEnabled === true;
+      syncFeedbackDurationSecRef.current =
+        typeof pref.syncFeedbackDurationSec === 'number'
+          ? pref.syncFeedbackDurationSec
+          : DEFAULT_SYNC_FEEDBACK_DURATION_SEC;
     });
     return () => {
       cancelled = true;
@@ -167,73 +166,51 @@ export function DesktopPetView() {
   }, [selectedPetId]);
 
   useEffect(() => {
+    if (!isTokenTooltipOpen) return;
     let cancelled = false;
-    let refreshQueue = Promise.resolve();
-
-    const refreshUsage = async (announce: boolean) => {
-      try {
-        const daily = await fetchDaily(365);
-        if (cancelled) return;
-
-        const dailyRows = daily.days ?? [];
-        const today = localDateNow();
-        const nextSummary = calculateRangeTotals(dailyRows, range, today);
-        const previous = usageSnapshot.current;
-        const current: PetUsageSnapshot = {
-          totalTokens: dailyRows.reduce(
-            (total, row) => total + row.tokens,
-            0,
-          ),
-          dailyRows,
-        };
-        usageSnapshot.current = current;
-        setSummary({
-          totalTokens: nextSummary.totalTokens,
-          totalCostUsd: nextSummary.totalCostUsd,
-        });
-        setSummaryError(false);
-
-        if (!announce || !previous) return;
-        const feedback = buildPetSyncFeedback(
-          previous,
-          current,
-          today,
-        );
-        // Dragging is an explicit interaction; never cover it with a broadcast.
-        if (!feedback || dragState.current) return;
-
-        if (feedbackTimer.current !== null) {
-          window.clearTimeout(feedbackTimer.current);
-        }
-        setIsTokenTooltipOpen(false);
-        setSyncFeedback(feedback);
-        feedbackTimer.current = window.setTimeout(() => {
-          feedbackTimer.current = null;
-          setSyncFeedback(null);
-        }, SYNC_FEEDBACK_DURATION_MS);
-      } catch {
-        // A failed celebration refresh must not replace the last good totals.
-        if (!cancelled && usageSnapshot.current === null) setSummaryError(true);
-      }
+    setSummary(null);
+    setSummaryError(false);
+    const load = () => {
+      void fetchRangeTotals(range)
+        .then((next) => {
+          if (cancelled) return;
+          setSummary(next);
+        })
+        .catch(() => { if (!cancelled) setSummaryError(true); });
     };
-
-    const enqueueRefresh = (announce: boolean) => {
-      refreshQueue = refreshQueue.then(() => refreshUsage(announce));
-    };
-
-    enqueueUsageRefresh.current = enqueueRefresh;
-    enqueueRefresh(false);
-    const unsubscribe = window.tud.onDataSynced(() => enqueueRefresh(true));
+    load();
+    const unsubscribe = window.tud.onDataSynced(load);
     return () => {
       cancelled = true;
-      enqueueUsageRefresh.current = () => undefined;
       unsubscribe();
+    };
+  }, [isTokenTooltipOpen, range]);
+
+  useEffect(() => {
+    const clearFeedbackTimer = () => {
       if (feedbackTimer.current !== null) {
         window.clearTimeout(feedbackTimer.current);
         feedbackTimer.current = null;
       }
     };
-  }, [range]);
+
+    const unsubscribe = window.tud.onDataSynced((feedback) => {
+      if (!syncFeedbackEnabledRef.current || !feedback || dragState.current) return;
+      clearFeedbackTimer();
+      setIsTokenTooltipOpen(false);
+      setSyncFeedback(feedback);
+      const durationMs = Math.max(1, syncFeedbackDurationSecRef.current) * 1000;
+      feedbackTimer.current = window.setTimeout(() => {
+        feedbackTimer.current = null;
+        setSyncFeedback(null);
+      }, durationMs);
+    });
+
+    return () => {
+      unsubscribe();
+      clearFeedbackTimer();
+    };
+  }, []);
 
   const setMouseIgnored = (shouldIgnore: boolean) => {
     if (shouldIgnore === ignored.current) return;
@@ -322,13 +299,7 @@ export function DesktopPetView() {
     if (event && event.currentTarget.hasPointerCapture(drag.pointerId)) {
       event.currentTarget.releasePointerCapture(drag.pointerId);
     }
-    if (!cancelled && !drag.moved) {
-      if (usageSnapshot.current === null) {
-        setSummaryError(false);
-        enqueueUsageRefresh.current(false);
-      }
-      setIsTokenTooltipOpen((open) => !open);
-    }
+    if (!cancelled && !drag.moved) setIsTokenTooltipOpen((open) => !open);
   };
 
   useEffect(() => {
@@ -462,14 +433,14 @@ function PetSyncFeedbackContent({ feedback }: { feedback: PetSyncFeedback }) {
           className="desktop-pet-feedback-dot"
         />
         <span className="desktop-pet-feedback-text">
-          +
+          <span className="desktop-pet-feedback-sign">+</span>
           <strong
             className="desktop-pet-feedback-amount"
             title={formatTokensExact(feedback.addedTokens)}
           >
             {formatTokens(feedback.addedTokens)}
-          </strong>{' '}
-          Token
+          </strong>
+          <span className="desktop-pet-feedback-unit">Token</span>
         </span>
       </div>
       {milestones.length > 0 && (

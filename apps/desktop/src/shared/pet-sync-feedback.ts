@@ -17,6 +17,18 @@ export interface PetSyncFeedback {
   activeStreakDays: number;
 }
 
+export function isPetSyncFeedback(value: unknown): value is PetSyncFeedback {
+  if (!value || typeof value !== 'object') return false;
+  const row = value as Record<string, unknown>;
+  return (
+    typeof row.addedTokens === 'number'
+    && Number.isFinite(row.addedTokens)
+    && typeof row.isDailyRecord === 'boolean'
+    && typeof row.activeStreakDays === 'number'
+    && Number.isFinite(row.activeStreakDays)
+  );
+}
+
 function tokensForDate(
   rows: PetUsageSnapshot['dailyRows'],
   date: string,

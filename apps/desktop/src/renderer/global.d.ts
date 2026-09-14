@@ -108,6 +108,8 @@ declare global {
         frameIntervalMs: number;
         autoMoveEnabled: boolean;
         autoMoveIntervalMinutes: number;
+        syncFeedbackEnabled: boolean;
+        syncFeedbackDurationSec: number;
       }>;
       setDesktopPetEnabled: (enabled: boolean) => Promise<boolean>;
       getDesktopPetCatalog: () => Promise<import('../shared/desktop-pet-catalog').DesktopPetCatalog>;
@@ -134,12 +136,16 @@ declare global {
         frameIntervalMs: number;
         autoMoveEnabled: boolean;
         autoMoveIntervalMinutes: number;
+        syncFeedbackEnabled: boolean;
+        syncFeedbackDurationSec: number;
       }>;
       setDesktopPetPreferences: (changes: {
         scale?: number;
         frameIntervalMs?: number;
         autoMoveEnabled?: boolean;
         autoMoveIntervalMinutes?: number;
+        syncFeedbackEnabled?: boolean;
+        syncFeedbackDurationSec?: number;
       }) => Promise<{
         enabled: boolean;
         selectedPetId: string;
@@ -148,6 +154,8 @@ declare global {
         frameIntervalMs: number;
         autoMoveEnabled: boolean;
         autoMoveIntervalMinutes: number;
+        syncFeedbackEnabled: boolean;
+        syncFeedbackDurationSec: number;
       }>;
       setDesktopPetMouseIgnored: (ignored: boolean) => void;
       beginDesktopPetDrag: () => void;
@@ -163,6 +171,8 @@ declare global {
         frameIntervalMs: number;
         autoMoveEnabled: boolean;
         autoMoveIntervalMinutes: number;
+        syncFeedbackEnabled: boolean;
+        syncFeedbackDurationSec: number;
       }) => void) => () => void;
       onMaximized: (callback: (isMaximized: boolean) => void) => () => void;
       api: {
@@ -175,7 +185,11 @@ declare global {
           },
         ) => Promise<{ status: number; body: unknown }>;
       };
-      onDataSynced: (callback: () => void) => () => void;
+      onDataSynced: (
+        callback: (
+          feedback?: import('../shared/pet-sync-feedback').PetSyncFeedback | null,
+        ) => void,
+      ) => () => void;
       onOpenSettings: (
         callback: (detail?: {
           tab?: 'sync' | 'pet' | 'app';
