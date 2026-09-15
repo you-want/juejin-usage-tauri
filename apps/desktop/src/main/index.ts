@@ -2,6 +2,7 @@ import { app, BrowserWindow, clipboard, ipcMain, nativeImage, nativeTheme, power
 import {
   initAutostartOnLaunch,
   loadShowTrayUsage,
+  loadTrayUsageMode,
   loadThemeMode,
   onTrayUsagePrefChanged,
   registerAutostartIpc,
@@ -252,7 +253,10 @@ function scheduleMidnightRefresh(): void {
 async function refreshTrayUsage(): Promise<void> {
   if (process.platform !== 'darwin') return;
   try {
-    const enabled = await loadShowTrayUsage();
+    const [enabled, mode] = await Promise.all([
+      loadShowTrayUsage(),
+      loadTrayUsageMode(),
+    ]);
     if (!enabled) {
       setTrayUsageTitle('');
       return;
@@ -267,7 +271,7 @@ async function refreshTrayUsage(): Promise<void> {
         };
       };
       if (envelope.success && envelope.data) {
-        const text = formatTrayUsage(envelope.data);
+        const text = formatTrayUsage(envelope.data, mode);
         setTrayUsageTitle(text);
       }
     }

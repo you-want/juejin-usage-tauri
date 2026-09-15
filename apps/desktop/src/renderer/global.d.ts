@@ -103,6 +103,9 @@ declare global {
       getShowTrayUsage: () => Promise<boolean>;
       setShowTrayUsage: (enabled: boolean) => Promise<boolean>;
       onTrayUsageChanged: (callback: (enabled: boolean) => void) => () => void;
+      getTrayUsageMode: () => Promise<import('../shared/tray-usage').TrayUsageMode>;
+      setTrayUsageMode: (mode: import('../shared/tray-usage').TrayUsageMode) => Promise<import('../shared/tray-usage').TrayUsageMode>;
+      onTrayUsageModeChanged: (callback: (mode: import('../shared/tray-usage').TrayUsageMode) => void) => () => void;
       getDesktopPet: () => Promise<{
         enabled: boolean;
         selectedPetId: string;

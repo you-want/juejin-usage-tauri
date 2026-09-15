@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { formatCompactTokens, formatTrayUsage } from './tray-usage';
+import { formatCompactTokens, formatTrayUsage, isTrayUsageMode } from './tray-usage';
 
 test('formats compact token counts', () => {
   assert.equal(formatCompactTokens(0), '0');
@@ -15,17 +15,26 @@ test('formats compact token counts', () => {
 
 test('formats tray usage with cost and tokens', () => {
   // Empty or zero
-  assert.equal(formatTrayUsage({}), '$0.00');
-  assert.equal(formatTrayUsage({ todayCostUsd: 0, todayTokens: 0 }), '$0.00');
+  assert.equal(formatTrayUsage({}), '0 Token · $0.00');
+  assert.equal(formatTrayUsage({ todayCostUsd: 0, todayTokens: 0 }), '0 Token · $0.00');
 
   // Normal positive cost
-  assert.equal(formatTrayUsage({ todayCostUsd: 1.25, todayTokens: 45000 }), '$1.25');
-  assert.equal(formatTrayUsage({ todayCostUsd: 12.8, todayTokens: 100000 }), '$12.80');
+  assert.equal(formatTrayUsage({ todayCostUsd: 1.25, todayTokens: 45000 }), '45K Token · $1.25');
+  assert.equal(formatTrayUsage({ todayCostUsd: 12.8, todayTokens: 100000 }), '100K Token · $12.80');
 
   // Sub-cent cost
-  assert.equal(formatTrayUsage({ todayCostUsd: 0.004, todayTokens: 500 }), '<$0.01');
+  assert.equal(formatTrayUsage({ todayCostUsd: 0.004, todayTokens: 500 }), '500 Token · <$0.01');
 
   // Free model (cost 0, but tokens > 0)
-  assert.equal(formatTrayUsage({ todayCostUsd: 0, todayTokens: 45200 }), '45.2K tk');
-  assert.equal(formatTrayUsage({ todayCostUsd: 0, todayTokens: 800 }), '800 tk');
+  assert.equal(formatTrayUsage({ todayCostUsd: 0, todayTokens: 45200 }), '45.2K Token · $0.00');
+  assert.equal(formatTrayUsage({ todayCostUsd: 0, todayTokens: 800 }), '800 Token · $0.00');
+});
+
+test('formats each tray display mode', () => {
+  const summary = { todayTokens: 8500000, todayCostUsd: 5.46 };
+  assert.equal(formatTrayUsage(summary, 'both'), '8.5M Token · $5.46');
+  assert.equal(formatTrayUsage(summary, 'tokens'), '8.5M Token');
+  assert.equal(formatTrayUsage(summary, 'cost'), '$5.46');
+  assert.equal(isTrayUsageMode('both'), true);
+  assert.equal(isTrayUsageMode('other'), false);
 });
