@@ -107,13 +107,22 @@ pub fn start(state: &SidecarState, app: AppHandle) -> Result<(), String> {
         .ok_or_else(|| "could not resolve a sidecar script path".to_string())?;
     if !std::path::Path::new(&script).exists() {
         return Err(format!(
-            "sidecar script not found at {script} (build it with `pnpm build:sidecar`)"
+            "sidecar script not found at {script} (build it with `pnpm build:cli`)"
         ));
     }
 
     let node = node_bin(&app).ok_or_else(|| "no Node runtime resolvable".to_string())?;
     let mut child = Command::new(&node)
         .arg(&script)
+        // Pin the port up-front so the main window (created by Tauri from
+        // tauri.conf.json before `setup` runs) can be addressed by a static
+        // URL. `resolveDesktopHostPort()` in desktop-host.ts still honors
+        // `TUD_SIDECAR_PORT` if the caller wants a different value; only the
+        // Tauri-hosted case hardcodes the DEFAULT_DESKTOP_PORT so
+        // `http://127.0.0.1:{DEFAULT_DESKTOP_PORT}/` always resolves to this
+        // child — the random-port fallback (only hit on bind failure) is a
+        // separate edge case we surface via the `PORT=` line as before.
+        .env("TUD_SIDECAR_PORT", DEFAULT_DESKTOP_PORT.to_string())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()

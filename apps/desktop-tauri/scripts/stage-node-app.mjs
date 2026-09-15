@@ -10,7 +10,11 @@
  * Resulting tree (bundled by `tauri.conf.json > bundle.resources`):
  *   node-app/
  *     node/            a Node binary for the target platform (dev: host node)
- *     app/dist/        the compiled sidecar (index.js + evict-cli-autostart.js)
+ *     app/dist/        index.js (the CLI desktop-host entry, renamed from
+ *                      desktop-host.js) + evict-cli-autostart.js + dashboard/
+ *                      (the dashboard dist the Tauri shell's webview loads
+ *                      directly instead of a separate Electron-style React
+ *                      renderer)
  *     app/node_modules/
  *       @juejin-opensource/jusage-core/   (dist + pricing.json + package.json)
  *       hono/  proper-lockfile/  graceful-fs/  retry/  signal-exit/
@@ -61,27 +65,31 @@ rmSync(outDir, { recursive: true, force: true });
 cpSync(nodeBin, path.join(outDir, 'node', 'node'));
 chmodSync(path.join(outDir, 'node', 'node'), 0o755);
 
-// node-app/app/dist/index.js  (the CLI desktop-host entry, renamed so the
-// Rust sidecar's bundled path `node-app/app/dist/index.js` stays identical).
-// `desktop-host.js` is a standalone entry point: it imports only
-// `@juejin-opensource/jusage-core` + its local `evict-cli-autostart.js`,
-// both of which are staged under `app/node_modules` below (core) or shipped
-// alongside this same dist/ tree (evict-cli-autostart.js, copied here as a
-// sibling since it lives in the same dist/ output dir).
-import { copyFileSync } from 'node:fs';
+// node-app/app/dist  (the whole compiled CLI dist/ — desktop-host.js,
+// evict-cli-autostart.js + their transitive imports like service-linux.js /
+// daemon.js, plus the interactive CLI's own index.js/args.js etc. We ship the
+// full tree rather than a hand-maintained allowlist so a new transitive import
+// can't silently break the staged bundle. The dashboard/ subdir is large but
+// is the actual UI this bundle's host is meant to serve, so it belongs here
+// anyway.)
 const appDistDir = path.join(outDir, 'app', 'dist');
 const cliDistDir = path.dirname(cliDesktopHostDist);
-cpSync(cliDistDir, appDistDir, {
-  recursive: true,
-  // The host only ever runs `node .../index.js` (this file, renamed from
-  // desktop-host.js) — never the interactive CLI's index.js — so stage just
-  // the two files desktop-host.js actually imports, not the whole dist/.
-  filter: (src) =>
-    src === cliDistDir ||
-    src === cliDesktopHostDist ||
-    src.endsWith('/evict-cli-autostart.js'),
-});
+cpSync(cliDistDir, appDistDir, { recursive: true });
+// The host only ever runs `node .../index.js`; rename desktop-host.js →
+// index.js so Rust's bundled-path lookup stays identical to the old sidecar.
+import { copyFileSync } from 'node:fs';
 copyFileSync(cliDesktopHostDist, path.join(appDistDir, 'index.js'));
+
+// node-app/app/dist/dashboard  (the UI the Tauri shell's webview loads
+// directly — the same artifact `packages/cli/scripts/copy-dashboard.mjs`
+// already stages under the CLI's own dist/ tree).
+const cliDashboardDist = path.join(repoRoot, 'packages/cli/dist/dashboard');
+if (!existsSync(cliDashboardDist)) {
+  throw new Error(
+    'CLI dashboard dist missing — run `pnpm build:cli` (builds dashboard + copies it into cli/dist/dashboard) first',
+  );
+}
+cpSync(cliDashboardDist, path.join(appDistDir, 'dashboard'), { recursive: true });
 
 // node-app/app/node_modules/@juejin-opensource/jusage-core  (dist + pricing + pkg)
 const coreMod = path.join(outDir, 'app/node_modules/@juejin-opensource/jusage-core');

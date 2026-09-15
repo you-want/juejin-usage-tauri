@@ -54,7 +54,11 @@ import {
   type SyncResult,
   type TudConfig,
 } from '@juejin-opensource/jusage-core';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { evictCliAutostart } from './evict-cli-autostart.js';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
 
 /** Desktop host default port. CLI owns 8452, so we use 8462 to avoid conflict. */
 const DEFAULT_DESKTOP_PORT = 8462;
@@ -151,6 +155,17 @@ function resolveDesktopHostPort(): number {
   return DEFAULT_DESKTOP_PORT;
 }
 
+/**
+ * The dashboard dist the Tauri shell's webview loads directly (the same
+ * artifact `packages/cli/scripts/copy-dashboard.mjs` stages next to this
+ * file under `dist/dashboard`). This is the "UI 复用 CLI 托管的 dashboard
+ * dist" part of the shell-only design — the shell never ships its own React
+ * renderer copy.
+ */
+function resolveDashboardDir(): string {
+  return join(__dirname, 'dashboard');
+}
+
 export async function boot(): Promise<void> {
   // Same takeover as the desktop client cold start: evict CLI autostart so its
   // KeepAlive cannot revive the CLI, stop the CLI runtime kind, then claim the
@@ -242,7 +257,7 @@ export async function boot(): Promise<void> {
 
   const host = '127.0.0.1';
   const port = resolveDesktopHostPort();
-  const httpServer = createHttpServer({ honoApp: app, staticDir: '', host, port });
+  const httpServer = createHttpServer({ honoApp: app, staticDir: resolveDashboardDir(), host, port });
 
   // Bind; if the default port is taken, ask the OS for one.
   let actualPort: number;

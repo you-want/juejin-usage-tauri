@@ -15,7 +15,7 @@
       {
         "label": "main",
         "title": "Juejin Usage",
-        "url": "index.html",
+        "url": "http://127.0.0.1:8462/",
         "width": 1024,
         "height": 780,
         "minWidth": 800,
