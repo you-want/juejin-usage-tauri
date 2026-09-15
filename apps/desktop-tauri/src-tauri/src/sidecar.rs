@@ -1,7 +1,8 @@
 //! Node sidecar lifecycle (P1 — the data core).
 //!
-//! The Tauri app spawns a Node process running the compiled desktop sidecar
-//! (`packages/desktop-sidecar/dist/index.js`). That sidecar owns the local
+//! The Tauri app spawns a Node process running the compiled CLI desktop-host
+//! entry (`packages/cli/dist/desktop-host.js`, embedded in the CLI package
+//! `@juejin-opensource/jusage`). That process owns the local
 //! Core runtime (owner `kind: 'desktop'`) and serves the loopback local-api
 //! (`/health` + `/functions/tud-*`). This module only manages the process:
 //!
@@ -84,15 +85,15 @@ fn sidecar_script(app: &AppHandle) -> Option<String> {
             return Some(bundled.to_string_lossy().into_owned());
         }
     }
-    // Dev fallback: locate the compiled sidecar relative to the cargo crate dir.
-    // CARGO_MANIFEST_DIR = <repo>/apps/desktop-tauri/src-tauri, so go up three
-    // to the workspace root, then into the sidecar's dist.
+    // Dev fallback: locate the compiled CLI desktop-host entry relative to the
+    // cargo crate dir. CARGO_MANIFEST_DIR = <repo>/apps/desktop-tauri/src-tauri,
+    // so go up three to the workspace root, then into the CLI's dist.
     let crate_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     let repo_root = crate_dir
         .parent() // apps/desktop-tauri
         .and_then(|d| d.parent()) // apps
         .and_then(|a| a.parent()); // <repo>
-    let path = repo_root?.join("packages/desktop-sidecar/dist/index.js");
+    let path = repo_root?.join("packages/cli/dist/desktop-host.js");
     Some(path.to_string_lossy().into_owned())
 }
 

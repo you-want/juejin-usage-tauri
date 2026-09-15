@@ -39,12 +39,16 @@ if (!existsSync(nodeBin)) {
   throw new Error(`node runtime not found: ${nodeBin}`);
 }
 
-// (b) the compiled sidecar entry + its local helper.
-const sidecarDist = path.join(repoRoot, 'packages/desktop-sidecar/dist');
+// (b) the compiled CLI desktop-host entry + core. `desktop-host.js` is the
+// embedded Node runtime for the Tauri app (replaces the former
+// `@juejin-opensource/jusage-sidecar` package); it is staged under the same
+// `app/dist/index.js` path the Rust sidecar loader expects, via a copy+rename
+// below, so `sidecar.rs`'s bundled-path logic stays unchanged.
+const cliDesktopHostDist = path.join(repoRoot, 'packages/cli/dist/desktop-host.js');
 const coreDist = path.join(repoRoot, 'packages/core/dist');
 const corePkg = path.join(repoRoot, 'packages/core/package.json');
-if (!existsSync(path.join(sidecarDist, 'index.js'))) {
-  throw new Error('sidecar not built — run `pnpm build:sidecar` first');
+if (!existsSync(cliDesktopHostDist)) {
+  throw new Error('CLI not built — run `pnpm build:cli` first');
 }
 if (!existsSync(path.join(coreDist, 'index.js'))) {
   throw new Error('core not built — run `pnpm build:packages` (or pnpm build) first');
@@ -57,8 +61,27 @@ rmSync(outDir, { recursive: true, force: true });
 cpSync(nodeBin, path.join(outDir, 'node', 'node'));
 chmodSync(path.join(outDir, 'node', 'node'), 0o755);
 
-// node-app/app/dist  (the sidecar entry)
-cpSync(sidecarDist, path.join(outDir, 'app', 'dist'), { recursive: true });
+// node-app/app/dist/index.js  (the CLI desktop-host entry, renamed so the
+// Rust sidecar's bundled path `node-app/app/dist/index.js` stays identical).
+// `desktop-host.js` is a standalone entry point: it imports only
+// `@juejin-opensource/jusage-core` + its local `evict-cli-autostart.js`,
+// both of which are staged under `app/node_modules` below (core) or shipped
+// alongside this same dist/ tree (evict-cli-autostart.js, copied here as a
+// sibling since it lives in the same dist/ output dir).
+import { copyFileSync } from 'node:fs';
+const appDistDir = path.join(outDir, 'app', 'dist');
+const cliDistDir = path.dirname(cliDesktopHostDist);
+cpSync(cliDistDir, appDistDir, {
+  recursive: true,
+  // The host only ever runs `node .../index.js` (this file, renamed from
+  // desktop-host.js) — never the interactive CLI's index.js — so stage just
+  // the two files desktop-host.js actually imports, not the whole dist/.
+  filter: (src) =>
+    src === cliDistDir ||
+    src === cliDesktopHostDist ||
+    src.endsWith('/evict-cli-autostart.js'),
+});
+copyFileSync(cliDesktopHostDist, path.join(appDistDir, 'index.js'));
 
 // node-app/app/node_modules/@juejin-opensource/jusage-core  (dist + pricing + pkg)
 const coreMod = path.join(outDir, 'app/node_modules/@juejin-opensource/jusage-core');
@@ -88,7 +111,7 @@ for (const [name, version] of runtimeDeps) {
   cpSync(src, path.join(outDir, 'app/node_modules', name), { recursive: true });
 }
 
-console.log(`[stage-node-app] staged sidecar runtime → ${path.relative(repoRoot, outDir)}`);
+console.log(`[stage-node-app] staged Tauri desktop-host runtime → ${path.relative(repoRoot, outDir)}`);
 console.log(`[stage-node-app]   node runtime: ${nodeBin} (host arch)`);
-console.log(`[stage-node-app]   sidecar:      ${sidecarDist}`);
+console.log(`[stage-node-app]   desktop-host: ${cliDesktopHostDist} (→ app/dist/index.js)`);
 console.log(`[stage-node-app]   deps:         ${runtimeDeps.map(([n]) => n).join(', ')}`);

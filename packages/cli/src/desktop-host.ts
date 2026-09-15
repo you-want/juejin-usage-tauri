@@ -1,39 +1,38 @@
 /**
- * jusage-desktop-sidecar — Node sidecar for the Tauri desktop client.
+ * jusage desktop-host — the Tauri desktop client's Node runtime, embedded in
+ * the CLI package (replaces the former `@juejin-opensource/jusage-sidecar`
+ * package).
  *
- * The Tauri app bundles a Node runtime + this script and spawns it as a child
- * process (see apps/desktop-tauri/src-tauri/src/sidecar). It owns the local
- * Core runtime exactly like the Electron main process did:
+ * The Tauri app spawns `node <this file>` exactly like the old sidecar did
+ * (see apps/desktop-tauri/src-tauri/src/sidecar.rs). It owns the local Core
+ * runtime as owner `kind: 'desktop'`:
  *
  *   - evict CLI autostart + evict the CLI runtime kind
- *   - claim the runtime owner as `kind: 'desktop'` (force), so the desktop
- *     client is the sync/upload owner (same semantics as apps/desktop)
+ *   - claim the runtime owner with `force` (same semantics as
+ *     apps/desktop/src/main/local-runtime.ts, minus Electron's utilityProcess
+ *     sync-worker hop — runs in-process)
  *   - wire hooks, pricing refresh, bucket store, aggregate cache,
- *     watchRuntimeSignals (in-process runSync — no separate utilityProcess)
- *   - serve the local-api over loopback HTTP (`/health` + `/functions/tud-*`)
- *
- * The Tauri webview fetches the local-api from this sidecar instead of the
- * Electron in-process IPC bridge.
+ *     watchRuntimeSignals
+ *   - serve the loopback local-api (`/health` + `/functions/tud-*`)
  *
  * stdout contract (Rust reads these lines):
- *   PORT=<port>    emitted once, as the first line, with the bound port
- *   SYNCED         emitted after a data-affecting sync so the host can
- *                  broadcast `tud:data-synced` to the webviews
+ *   PORT=<port>    emitted once, with the bound port
+ *   SYNCED         emitted after a data-affecting sync
  *   RUNTIME_NOTICE=CONFIG_RESET:<true|false>
- *                  emitted at most once, when `loadConfig` had to recover from
- *                  a corrupt config; the host forwards it to the webviews as
- *                  `app:runtime-notice` (`tokenSalvaged` = whether the identity
- *                  was salvaged). Mirrors Electron's config-reset notice.
+ *                  emitted at most once, when `loadConfig` had to recover a
+ *                  corrupt config
  *
- * This module intentionally mirrors `apps/desktop/src/main/local-runtime.ts`
- * `startLocalRuntimeUnlocked`, minus the sync-worker hop.
+ * Hidden subcommand: `jusage desktop-host`. Not shown in `--help`.
  */
 import {
-  createApplyAfterSync,
+  claimRuntimeOwner,
   createAggregateCache,
+  createApplyAfterSync,
   createHttpServer,
   createLocalApiApp,
   createPollBackoff,
+  DEFAULT_PRICING_FIRST_FETCH_TIMEOUT_MS,
+  evictRuntimeKind,
   getHookStatus,
   kickBackfillDrain,
   listenServer,
@@ -41,17 +40,14 @@ import {
   POLL_INTERVAL_MS,
   releaseRuntimeOwner,
   resolveLocalCollectSince,
+  resolvePricingRefreshConfig,
   setupClaudeHook,
   setupCodexHook,
-  stopBackfillDrain,
   startPricingRefresh,
-  resolvePricingRefreshConfig,
-  DEFAULT_PRICING_FIRST_FETCH_TIMEOUT_MS,
-  touchStatsSince,
+  stopBackfillDrain,
   touchRuntimeHeartbeat,
+  touchStatsSince,
   watchRuntimeSignals,
-  evictRuntimeKind,
-  claimRuntimeOwner,
   writeSyncDone,
   BucketStore,
   type AggregateCache,
@@ -60,7 +56,7 @@ import {
 } from '@juejin-opensource/jusage-core';
 import { evictCliAutostart } from './evict-cli-autostart.js';
 
-/** Desktop sidecar default port. CLI owns 8452, so we use 8462 to avoid conflict. */
+/** Desktop host default port. CLI owns 8452, so we use 8462 to avoid conflict. */
 const DEFAULT_DESKTOP_PORT = 8462;
 
 let server: ReturnType<typeof createHttpServer> | null = null;
@@ -89,9 +85,9 @@ function notifySynced(): void {
 }
 
 /**
- * Emit a runtime-notice marker on stdout (host translates it to `app:runtime-notice`).
- * Mirrors Electron's `broadcastConfigResetNotice`: fired once when `loadConfig`
- * recovered from a corrupt config, carrying whether the identity was salvaged.
+ * Emit a runtime-notice marker on stdout (host translates it to
+ * `app:runtime-notice`). Fired once when `loadConfig` recovered a corrupt
+ * config, carrying whether the identity was salvaged.
  */
 function notifyConfigReset(tokenSalvaged: boolean): void {
   process.stdout.write(`RUNTIME_NOTICE=CONFIG_RESET:${tokenSalvaged ? 'true' : 'false'}\n`);
@@ -121,11 +117,17 @@ function startPricingOverlayRefresh(dir: string, config: TudConfig): Promise<voi
       void current.aggregateCache
         .rebuildFromRows(current.bucketStore.getRows())
         .catch((err) => {
-          console.warn('定价覆盖层刷新后重建缓存失败:', err instanceof Error ? err.message : err);
+          console.warn(
+            '定价覆盖层刷新后重建缓存失败:',
+            err instanceof Error ? err.message : err,
+          );
         });
     },
     onError: (err) => {
-      console.warn('定价表远程刷新失败（继续用内置/上次覆盖）:', err instanceof Error ? err.message : err);
+      console.warn(
+        '定价表远程刷新失败（继续用内置/上次覆盖）:',
+        err instanceof Error ? err.message : err,
+      );
     },
   });
   pricingRefreshStop = handle;
@@ -138,17 +140,19 @@ function startPricingOverlayRefresh(dir: string, config: TudConfig): Promise<voi
     });
 }
 
-function resolvePort(): number {
-  // An explicit env override wins; otherwise the desktop default (not the CLI
-  // port). The bound port is always reported via PORT=, so a conflict on the
-  // default falls back to an OS-assigned port below.
+/**
+ * Desktop host port, independent of the CLI's `config.serverPort ?? 8452`
+ * path — otherwise a concurrently running real CLI service would collide.
+ * Mirrors the old sidecar's `resolvePort()` exactly.
+ */
+function resolveDesktopHostPort(): number {
   const envPort = Number(process.env.TUD_SIDECAR_PORT);
   if (Number.isFinite(envPort) && envPort > 0) return envPort;
   return DEFAULT_DESKTOP_PORT;
 }
 
-async function boot(): Promise<void> {
-  // Same takeover as the Electron cold start: evict CLI autostart so its
+export async function boot(): Promise<void> {
+  // Same takeover as the desktop client cold start: evict CLI autostart so its
   // KeepAlive cannot revive the CLI, stop the CLI runtime kind, then claim the
   // runtime as the desktop owner (force).
   await evictCliAutostart();
@@ -159,7 +163,7 @@ async function boot(): Promise<void> {
   await touchStatsSince(dir, config);
 
   // A corrupt-config recovery (identity re-derived / token salvaged) is the
-  // one case the Electron main surfaced to the UI as a `config-reset` notice.
+  // one case the desktop host surfaces to the UI as a `config-reset` notice.
   // Emit it BEFORE the port so the host can show it once the renderer is up.
   if (recoveredFromCorrupt) {
     notifyConfigReset(recoveredFromCorrupt.tokenSalvaged);
@@ -169,15 +173,19 @@ async function boot(): Promise<void> {
   if (claim.role !== 'owner') {
     throw new Error('无法抢占本地 runtime（desktop owner）');
   }
+  // Write a heartbeat now, and re-touch it on every successful poll round
+  // below, so a concurrently running Electron host's watchdog
+  // (apps/desktop/src/main/local-runtime.ts) does not treat this desktop
+  // owner as stale and force-evict the process.
   await touchRuntimeHeartbeat({ kind: 'desktop', pid: process.pid }, dir);
 
   const { hookOk: claudeHookOk } = await setupClaudeHook(dir);
   const { hookOk: codexHookOk } = await setupCodexHook(dir);
   if (!claudeHookOk) {
-    console.warn('[tud-sidecar] Claude Hook 未注册成功，将依赖轮询同步');
+    console.warn('[jusage desktop-host] Claude Hook 未注册成功，将依赖轮询同步');
   }
   if (!codexHookOk) {
-    console.warn('[tud-sidecar] Codex Hook 未注册成功，将依赖轮询同步');
+    console.warn('[jusage desktop-host] Codex Hook 未注册成功，将依赖轮询同步');
   }
 
   const { config: refreshed } = await loadConfig(dir);
@@ -233,7 +241,7 @@ async function boot(): Promise<void> {
   });
 
   const host = '127.0.0.1';
-  const port = resolvePort();
+  const port = resolveDesktopHostPort();
   const httpServer = createHttpServer({ honoApp: app, staticDir: '', host, port });
 
   // Bind; if the default port is taken, ask the OS for one.
@@ -272,8 +280,14 @@ async function boot(): Promise<void> {
       const results = await runSyncFn('poll');
       const wroteAny = results.some((r) => r.writtenBuckets.length > 0);
       nextDelayMs = pollBackoff.noteRound(wroteAny);
+      // Re-touch the heartbeat on every successful round so a concurrently
+      // running Electron host's watchdog does not treat us as stale.
+      await touchRuntimeHeartbeat({ kind: 'desktop', pid: process.pid }, runtime.dir);
     } catch (err) {
-      console.error('[tud-sidecar] poll sync failed:', err instanceof Error ? err.message : err);
+      console.error(
+        '[jusage desktop-host] poll sync failed:',
+        err instanceof Error ? err.message : err,
+      );
     } finally {
       scheduleNextPoll(nextDelayMs);
     }
@@ -282,7 +296,10 @@ async function boot(): Promise<void> {
   kickBackfillDrain(dir, () => runtime!.config);
   void runSync('startup')
     .catch((err) => {
-      console.error('[tud-sidecar] startup sync failed:', err instanceof Error ? err.message : err);
+      console.error(
+        '[jusage desktop-host] startup sync failed:',
+        err instanceof Error ? err.message : err,
+      );
     })
     .finally(scheduleNextPoll);
 }
@@ -328,7 +345,10 @@ async function shutdown(): Promise<void> {
 function onSignal(): void {
   void shutdown()
     .catch((err) => {
-      console.error('[tud-sidecar] shutdown error:', err instanceof Error ? err.message : err);
+      console.error(
+        '[jusage desktop-host] shutdown error:',
+        err instanceof Error ? err.message : err,
+      );
     })
     .finally(() => process.exit(0));
 }
@@ -337,6 +357,6 @@ process.on('SIGINT', onSignal);
 process.on('SIGTERM', onSignal);
 
 boot().catch((err) => {
-  console.error('[tud-sidecar] boot failed:', err instanceof Error ? err.message : err);
+  console.error('[jusage desktop-host] boot failed:', err instanceof Error ? err.message : err);
   process.exit(1);
 });
