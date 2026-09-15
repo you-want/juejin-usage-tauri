@@ -1,6 +1,5 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
-import { tanstackRouter } from "@tanstack/router-plugin/vite";
 import tailwindcss from "@tailwindcss/vite";
 import process from "node:process";
 import { readFileSync } from "node:fs";
@@ -8,10 +7,13 @@ import { fileURLToPath } from "node:url";
 
 const host = process.env.TAURI_DEV_HOST;
 
-// The renderer is copied from apps/desktop and keeps its original directory
-// layout (src/renderer + src/shared). Vite root stays on src/renderer so all
-// the relative `../../shared/*` and `../../../../packages/*` imports keep
-// resolving exactly as they do in the Electron app — no source changes needed.
+// The renderer now only hosts Tauri-shell-specific views: the tray popover
+// (`index.html?view=tray-popover`) and the desktop pet (`pet.html`). The main
+// dashboard window no longer builds from this tree — it loads the
+// CLI-hosted dashboard dist over loopback (`http://127.0.0.1:8462/`), so the
+// dashboard router that used to live here was removed along with the
+// `routes/` + `pages/` dirs, and the `tanstackRouter` codegen plugin no
+// longer has anything to generate.
 const rendererRoot = fileURLToPath(new URL("./src/renderer", import.meta.url));
 
 const pkg = JSON.parse(
@@ -20,16 +22,7 @@ const pkg = JSON.parse(
 
 export default defineConfig(() => ({
   root: rendererRoot,
-  plugins: [
-    tanstackRouter({
-      target: "react",
-      autoCodeSplitting: true,
-      routesDirectory: "routes",
-      generatedRouteTree: "routeTree.gen.ts",
-    }),
-    react(),
-    tailwindcss(),
-  ],
+  plugins: [react(), tailwindcss()],
   define: {
     __APP_VERSION__: JSON.stringify(pkg.version),
   },
@@ -41,7 +34,7 @@ export default defineConfig(() => ({
   build: {
     outDir: fileURLToPath(new URL("./dist", import.meta.url)),
     emptyOutDir: true,
-    // Two entries: index.html (dashboard + tray popover, toggled by ?view=tray-popover)
+    // Two entries: index.html (tray popover, toggled by ?view=tray-popover)
     // and pet.html (standalone desktop-pet window).
     rollupOptions: {
       input: {
