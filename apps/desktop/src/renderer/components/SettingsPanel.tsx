@@ -1052,11 +1052,15 @@ function CliSyncSettings({
 /** 自动更新 + 开机自启 + 设备信息。 */
 function AppSettingsPanel() {
   const cliMode = isCliBackend();
+  const isMac = window.tud?.platform === 'darwin';
   const [config, setConfig] = useState<TudConfigView | null>(null);
   const [openAtLogin, setOpenAtLogin] = useState(true);
   const [autostartLoading, setAutostartLoading] = useState(true);
   const [autostartError, setAutostartError] = useState<string | null>(null);
   const [launchHidden, setLaunchHidden] = useState(true);
+  const [showTrayUsage, setShowTrayUsage] = useState(true);
+  const [trayUsageLoading, setTrayUsageLoading] = useState(true);
+  const [trayUsageError, setTrayUsageError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -1141,11 +1145,58 @@ function AppSettingsPanel() {
     }
   };
 
+  useEffect(() => {
+    let cancelled = false;
+    if (isMac && typeof window.tud?.getShowTrayUsage === 'function') {
+      setTrayUsageLoading(true);
+      void window.tud
+        .getShowTrayUsage()
+        .then((value) => {
+          if (!cancelled) {
+            setShowTrayUsage(value);
+            setTrayUsageError(null);
+          }
+        })
+        .catch((e) => {
+          if (!cancelled) {
+            setTrayUsageError(
+              e instanceof Error ? e.message : '加载托盘用量设置失败',
+            );
+          }
+        })
+        .finally(() => {
+          if (!cancelled) setTrayUsageLoading(false);
+        });
+    } else {
+      setTrayUsageLoading(false);
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [isMac]);
+
+  const onShowTrayUsageChange = async (next: boolean) => {
+    const prev = showTrayUsage;
+    setShowTrayUsage(next);
+    setTrayUsageError(null);
+    try {
+      await window.tud.setShowTrayUsage(next);
+    } catch (e) {
+      setShowTrayUsage(prev);
+      setTrayUsageError(
+        e instanceof Error ? e.message : '更新托盘用量设置失败',
+      );
+    }
+  };
+
   return (
     <div className="flex h-full flex-col gap-5 overflow-y-auto pr-1">
       {error && <StatusBanner tone="error" title={error} />}
       {autostartError && (
         <StatusBanner tone="error" title={autostartError} />
+      )}
+      {trayUsageError && (
+        <StatusBanner tone="error" title={trayUsageError} />
       )}
 
       {cliMode && (
@@ -1188,6 +1239,23 @@ function AppSettingsPanel() {
                 </p>
               )}
             </>
+          )}
+          {isMac && (
+            <Checkbox
+              id="desktop-show-tray-usage"
+              isDisabled={trayUsageLoading}
+              isSelected={showTrayUsage}
+              onChange={(checked) => {
+                void onShowTrayUsageChange(checked);
+              }}
+            >
+              <Checkbox.Content>
+                <Checkbox.Control>
+                  <Checkbox.Indicator />
+                </Checkbox.Control>
+                在菜单栏托盘显示今日用量
+              </Checkbox.Content>
+            </Checkbox>
           )}
         </div>
       )}
