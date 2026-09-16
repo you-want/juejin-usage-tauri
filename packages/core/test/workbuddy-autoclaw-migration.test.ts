@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { statSync } from 'node:fs';
 import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import test from 'node:test';
 
@@ -94,7 +94,7 @@ test('autoclawProjectForPath resolves unix repo roots and ignores state dirs', a
   const repo = await mkdtemp(join(tmpdir(), 'tud-acrepo-'));
   await mkdir(join(repo, '.git'), { recursive: true });
   const filePath = join(repo, 'src', 'Main.java');
-  assert.equal(autoclawProjectForPath(filePath), repo.split('/').pop());
+  assert.equal(autoclawProjectForPath(filePath), basename(repo));
 
   const prev = process.env.AUTOCLAW_STATE_DIR;
   process.env.AUTOCLAW_STATE_DIR = repo;
