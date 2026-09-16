@@ -1,8 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
+import { daysAgoIso } from '../src/config.js';
 import {
   buildReconcileBatches,
+  calibrateWindowSinceIso,
   diffCalibrateRows,
   rollupDayDiffs,
   shanghaiDayBounds,
@@ -77,6 +79,11 @@ test('shanghaiDayBounds uses +08:00 half-open window', () => {
   const { from, to } = shanghaiDayBounds('2026-08-01');
   assert.equal(from, '2026-07-31T16:00:00.000Z');
   assert.equal(to, '2026-08-01T16:00:00.000Z');
+});
+
+test('calibrate window is the rolling 90-day online floor', () => {
+  const now = Date.parse('2026-09-16T01:00:00.000Z');
+  assert.equal(calibrateWindowSinceIso(now), daysAgoIso(90, now));
 });
 
 test('buildReconcileBatches emits empty events to clear online-only days', () => {

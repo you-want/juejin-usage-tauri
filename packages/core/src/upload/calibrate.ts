@@ -19,7 +19,11 @@ import {
   setUploadSlot,
 } from './state.js';
 import { productWindowSinceIso } from './backfill.js';
-import { maxIso } from './window.js';
+
+/** Same rolling 90d floor as online ingest / dashboard max range. */
+export function calibrateWindowSinceIso(nowMs = Date.now()): string {
+  return productWindowSinceIso(nowMs);
+}
 
 const CLIENT_VERSION = 'jusage-1.0.0';
 const MAX_EVENTS_PER_RECONCILE = 500;
@@ -519,9 +523,7 @@ export async function buildCalibratePreview(
   }
   const { apiUrl, token, deviceId } = target;
   const nowIso = new Date().toISOString();
-  const sinceIso =
-    maxIso(config.statsSince, productWindowSinceIso()) ??
-    productWindowSinceIso();
+  const sinceIso = calibrateWindowSinceIso();
 
   const [devices, localRows, remote] = await Promise.all([
     fetchUsageDevices(apiUrl, token),
@@ -666,9 +668,7 @@ export async function applyCalibrateSelectedDates(
   if (!target) {
     throw new Error('云端同步未关联或缺少 apiUrl / token / deviceId');
   }
-  const sinceIso =
-    maxIso(config.statsSince, productWindowSinceIso()) ??
-    productWindowSinceIso();
+  const sinceIso = calibrateWindowSinceIso();
   const localRows = await loadLocalCalibrateEvents(
     dataDir,
     config,

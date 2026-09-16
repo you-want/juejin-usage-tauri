@@ -80,7 +80,7 @@ export function SettingsPanel({
         </Tabs.ListContainer>
 
         <Tabs.Panel
-          className="h-[50vh] overflow-hidden p-4 text-left font-normal"
+          className="flex max-h-[min(78vh,44rem)] min-h-[40vh] flex-col overflow-hidden p-4 text-left font-normal"
           id="sync"
         >
           {resolvedTab === 'sync' &&
@@ -113,10 +113,10 @@ export function SettingsPanel({
               />
             ))}
         </Tabs.Panel>
-        <Tabs.Panel className="h-[50vh] overflow-hidden p-4 text-left" id="app">
+        <Tabs.Panel className="max-h-[min(78vh,44rem)] min-h-[40vh] overflow-y-auto p-4 text-left" id="app">
           {resolvedTab === 'app' && <AppSettingsPanel />}
         </Tabs.Panel>
-        <Tabs.Panel className="h-[50vh] overflow-hidden p-4 text-left" id="about">
+        <Tabs.Panel className="max-h-[min(78vh,44rem)] min-h-[40vh] overflow-hidden p-4 text-left" id="about">
           {resolvedTab === 'about' && (
             <div className="h-full overflow-y-auto pr-1">
               <AboutContent />
@@ -238,8 +238,9 @@ function CliSyncSettings({
   };
 
   return (
-    <div className="flex h-full flex-col gap-3 overflow-hidden">
+    <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden">
       {error && <StatusBanner tone="error" title={error} />}
+      <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
       <Surface className="rounded-xl p-4" variant="secondary">
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0">
@@ -326,8 +327,9 @@ function CliSyncSettings({
         linked={Boolean(userId)}
         onNotify={onNotify}
       />
+      </div>
 
-      <div className="mt-auto flex justify-end gap-2">
+      <div className="mt-auto flex shrink-0 justify-end gap-2">
         {userId ? (
           <Button
             isDisabled={saving}
