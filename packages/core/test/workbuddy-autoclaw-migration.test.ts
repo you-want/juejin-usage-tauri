@@ -5,7 +5,7 @@ import { basename, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import test from 'node:test';
 
-import { autoclawProjectForPath } from '../src/parsers/autoclaw.js';
+import { autoclawProjectForPath, autoclawProjectFromMessage, parseAutoclawIncremental } from '../src/parsers/autoclaw.js';
 import {
   appendBuckets,
   dedupeBuckets,
@@ -105,6 +105,131 @@ test('autoclawProjectForPath resolves unix repo roots and ignores state dirs', a
     else process.env.AUTOCLAW_STATE_DIR = prev;
   }
 });
+
+test('autoclawProjectForPath rejects relative paths', () => {
+  assert.equal(autoclawProjectForPath('src/Main.java'), null);
+  assert.equal(autoclawProjectForPath('./src/Main.java'), null);
+  assert.equal(autoclawProjectForPath('../repo/src/Main.java'), null);
+});
+
+test('autoclawProjectFromMessage picks the dominant repo from unix tool-call paths', async () => {
+  const repo = await mkdtemp(join(tmpdir(), 'tud-acrepo-msg-'));
+  await mkdir(join(repo, '.git'), { recursive: true });
+  const other = await mkdtemp(join(tmpdir(), 'tud-acrepo-other-'));
+  await mkdir(join(other, '.git'), { recursive: true });
+
+  const project = autoclawProjectFromMessage({
+    content: [
+      {
+        type: 'toolCall',
+        name: 'read',
+        arguments: { path: join(repo, 'src', 'A.java') },
+      },
+      {
+        type: 'toolCall',
+        name: 'read',
+        arguments: { path: join(repo, 'src', 'B.java') },
+      },
+      {
+        type: 'toolCall',
+        name: 'read',
+        arguments: { path: join(other, 'src', 'C.java') },
+      },
+    ],
+  });
+
+  assert.equal(project, basename(repo));
+});
+
+test(
+  'autoclawProjectForPath resolves windows repo roots and JSON-escaped drive paths',
+  { skip: process.platform !== 'win32' },
+  async () => {
+    const repo = await mkdtemp(join(tmpdir(), 'tud-acrepo-win-'));
+    await mkdir(join(repo, '.git'), { recursive: true });
+    const filePath = join(repo, 'src', 'Main.java');
+    assert.equal(autoclawProjectForPath(filePath), basename(repo));
+
+    const jsonEscaped = filePath.replace(/\\/g, '\\\\');
+    assert.equal(autoclawProjectForPath(jsonEscaped), basename(repo));
+
+    const prev = process.env.AUTOCLAW_STATE_DIR;
+    process.env.AUTOCLAW_STATE_DIR = repo;
+    try {
+      assert.equal(
+        autoclawProjectForPath(join(repo, 'agents', 'main', 'workspace', 'foo.txt')),
+        null,
+      );
+    } finally {
+      if (prev === undefined) delete process.env.AUTOCLAW_STATE_DIR;
+      else process.env.AUTOCLAW_STATE_DIR = prev;
+    }
+  },
+);
+
+test(
+  'autoclawProjectFromMessage attributes dominant windows repo from tool-call paths',
+  { skip: process.platform !== 'win32' },
+  async () => {
+    const repo = await mkdtemp(join(tmpdir(), 'tud-acrepo-win-msg-'));
+    await mkdir(join(repo, '.git'), { recursive: true });
+
+    const project = autoclawProjectFromMessage({
+      content: [
+        {
+          type: 'toolCall',
+          name: 'read',
+          partialArgs: { path: `${join(repo, 'src', 'A.java').replace(/\\/g, '\\\\')}` },
+        },
+      ],
+    });
+
+    assert.equal(project, basename(repo));
+  },
+);
+
+test(
+  'parseAutoclawIncremental attributes projects from windows tool-call paths',
+  { skip: process.platform !== 'win32' },
+  async () => {
+    const home = await mkdtemp(join(tmpdir(), 'tud-ac-win-sync-'));
+    const repo = await mkdtemp(join(tmpdir(), 'tud-acrepo-win-sync-'));
+    await mkdir(join(repo, '.git'), { recursive: true });
+    const prev = process.env.AUTOCLAW_STATE_DIR;
+    process.env.AUTOCLAW_STATE_DIR = home;
+    try {
+      const sessions = join(home, 'agents', 'main', 'sessions');
+      await mkdir(sessions, { recursive: true });
+      await writeFile(
+        join(sessions, 's-win.jsonl'),
+        JSON.stringify({
+          type: 'message',
+          timestamp: WB_HOUR,
+          message: {
+            role: 'assistant',
+            model: 'glm-5.3-flash',
+            usage: { input: 42, output: 8 },
+            content: [
+              {
+                type: 'toolCall',
+                name: 'read',
+                arguments: { path: join(repo, 'src', 'App.ts') },
+              },
+            ],
+          },
+        }) + '\n',
+      );
+
+      const { result } = await parseAutoclawIncremental({}, SINCE);
+      assert.equal(result.eventsParsed, 1);
+      assert.equal(result.buckets[0]!.project, basename(repo));
+      assert.equal(result.buckets[0]!.total_tokens, 50);
+    } finally {
+      if (prev === undefined) delete process.env.AUTOCLAW_STATE_DIR;
+      else process.env.AUTOCLAW_STATE_DIR = prev;
+    }
+  },
+);
 
 test('syncWorkbuddy skips fullRescan when queue has no legacy unknown rows', async () => {
   const home = await mkdtemp(join(tmpdir(), 'tud-wb-skip-'));
