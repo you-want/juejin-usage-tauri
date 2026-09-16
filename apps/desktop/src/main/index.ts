@@ -226,6 +226,7 @@ function registerShareCardIpc(): void {
 let midnightTimer: NodeJS.Timeout | null = null;
 let disposeTrayUsageSync: (() => void) | null = null;
 let onPowerResumeListener: (() => void) | null = null;
+let trayUsageRefreshGeneration = 0;
 
 function scheduleMidnightRefresh(): void {
   if (process.platform !== 'darwin') return;
@@ -252,16 +253,19 @@ function scheduleMidnightRefresh(): void {
 
 async function refreshTrayUsage(): Promise<void> {
   if (process.platform !== 'darwin') return;
+  const generation = ++trayUsageRefreshGeneration;
   try {
     const [enabled, mode] = await Promise.all([
       loadShowTrayUsage(),
       loadTrayUsageMode(),
     ]);
+    if (generation !== trayUsageRefreshGeneration) return;
     if (!enabled) {
       setTrayUsageTitle('');
       return;
     }
     const res = await localApiRequest('/functions/tud-usage-summary');
+    if (generation !== trayUsageRefreshGeneration) return;
     if (res.status === 200 && res.body && typeof res.body === 'object') {
       const envelope = res.body as {
         success?: boolean;

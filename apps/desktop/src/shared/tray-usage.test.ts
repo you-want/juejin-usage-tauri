@@ -5,6 +5,8 @@ import { formatCompactTokens, formatTrayUsage, isTrayUsageMode } from './tray-us
 test('formats compact token counts', () => {
   assert.equal(formatCompactTokens(0), '0');
   assert.equal(formatCompactTokens(-10), '0');
+  assert.equal(formatCompactTokens(Number.NaN), '0');
+  assert.equal(formatCompactTokens(Number.POSITIVE_INFINITY), '0');
   assert.equal(formatCompactTokens(500), '500');
   assert.equal(formatCompactTokens(1000), '1K');
   assert.equal(formatCompactTokens(1500), '1.5K');
@@ -32,9 +34,15 @@ test('formats tray usage with cost and tokens', () => {
 
 test('formats each tray display mode', () => {
   const summary = { todayTokens: 8500000, todayCostUsd: 5.46 };
+  assert.equal(formatTrayUsage(summary), '8.5M Token · $5.46');
   assert.equal(formatTrayUsage(summary, 'both'), '8.5M Token · $5.46');
   assert.equal(formatTrayUsage(summary, 'tokens'), '8.5M Token');
   assert.equal(formatTrayUsage(summary, 'cost'), '$5.46');
+  assert.equal(formatTrayUsage({ todayTokens: 800, todayCostUsd: 0 }, 'cost'), '$0.00');
+  assert.equal(formatTrayUsage({ todayTokens: 800, todayCostUsd: 0.004 }, 'cost'), '<$0.01');
   assert.equal(isTrayUsageMode('both'), true);
+  assert.equal(isTrayUsageMode('tokens'), true);
+  assert.equal(isTrayUsageMode('cost'), true);
   assert.equal(isTrayUsageMode('other'), false);
+  assert.equal(isTrayUsageMode(null), false);
 });
