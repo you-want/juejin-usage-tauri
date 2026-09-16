@@ -37,6 +37,7 @@ import {
   type CorruptConfigRecovery,
   type SyncResult,
   type TudConfig,
+  localDateNow,
 } from '@juejin-opensource/jusage-core';
 import { evictCliAutostart } from './evict-cli-autostart';
 import {
@@ -47,7 +48,15 @@ import {
   stopSyncWorker,
 } from './sync-worker-host';
 
-export type LocalRuntimeSyncListener = () => void;
+import {
+  buildPetSyncFeedback,
+  type PetSyncFeedback,
+  type PetUsageSnapshot,
+} from '../shared/pet-sync-feedback';
+
+export type LocalRuntimeSyncListener = (
+  feedback: PetSyncFeedback | null,
+) => void;
 
 type LocalApiApp = ReturnType<typeof createLocalApiApp>;
 
@@ -78,6 +87,8 @@ let reArmPoll: ((delayMs?: number) => void) | null = null;
 let lastSyncDoneAt = 0;
 let lastForegroundPokeAt = 0;
 const syncListeners = new Set<LocalRuntimeSyncListener>();
+/** In-memory baseline for pet sync celebrations; never sent over IPC. */
+let petUsageBaseline: PetUsageSnapshot | null = null;
 let lastCorruptRecovery: CorruptConfigRecovery | undefined;
 let quitting = false;
 let ensureInFlight: Promise<{
@@ -114,7 +125,7 @@ async function startPricingOverlayRefresh(
         () => current.aggregateCache.rebuildFromRows(current.bucketStore.getRows()),
       )
         .then(() => {
-          notifySynced();
+          publishDataSynced(false);
         })
         .catch((err) => {
           console.warn(
@@ -151,7 +162,7 @@ async function refreshRuntimeFromDisk(): Promise<void> {
       localCollectSince: resolveLocalCollectSince(config),
       lastSyncAt: config.lastSyncAt,
     });
-    notifySynced();
+    publishDataSynced(true);
   } catch (err) {
     await appendJsonLog(syncLogPath(runtime.dir), {
       event: 'bucket_refresh_error',
@@ -189,14 +200,47 @@ export function pokeSyncOnForeground(): void {
   });
 }
 
-function notifySynced(): void {
+function readPetUsageSnapshot(): PetUsageSnapshot | null {
+  if (!runtime) return null;
+  const slim = runtime.aggregateCache.getSlimDayTokens(
+    runtime.bucketStore.getRows(),
+    resolveLocalCollectSince(runtime.config),
+  );
+  return {
+    totalTokens: slim.totalTokens,
+    dailyRows: slim.days,
+  };
+}
+
+function seedPetUsageBaseline(): void {
+  petUsageBaseline = readPetUsageSnapshot();
+}
+
+/**
+ * Update the pet usage baseline and optionally derive a celebration payload.
+ * Baseline always advances so a later opt-in does not dump accumulated delta.
+ */
+function takePetSyncFeedback(celebrate: boolean): PetSyncFeedback | null {
+  const current = readPetUsageSnapshot();
+  if (!current) return null;
+  const previous = petUsageBaseline;
+  petUsageBaseline = current;
+  if (!celebrate || !previous) return null;
+  return buildPetSyncFeedback(previous, current, localDateNow());
+}
+
+function notifySynced(feedback: PetSyncFeedback | null): void {
   for (const listener of syncListeners) {
     try {
-      listener();
+      listener(feedback);
     } catch {
       // Ignore listener errors so one bad subscriber cannot break sync.
     }
   }
+}
+
+function publishDataSynced(celebrate: boolean): void {
+  notifySynced(takePetSyncFeedback(celebrate));
 }
 
 function buildApp(state: {
@@ -223,7 +267,7 @@ function buildApp(state: {
       invalidateSyncWorkerCursors();
     },
     onSync: async () => {
-      notifySynced();
+      publishDataSynced(true);
     },
   });
 }
@@ -308,10 +352,14 @@ async function startLocalRuntimeUnlocked(): Promise<{
     }),
   };
 
+  seedPetUsageBaseline();
+
   const applyAfterSync = createApplyAfterSync({
     getBucketStore: () => runtime!.bucketStore,
     getAggregateCache: () => runtime?.aggregateCache,
-    onApplied: notifySynced,
+    onApplied: () => {
+      publishDataSynced(true);
+    },
   });
   const timedApplyAfterSync = async (
     results: SyncResult[],
@@ -578,6 +626,7 @@ export async function stopLocalRuntime(): Promise<void> {
   if (quitting) {
     await clearRuntimeHeartbeat(runtime?.dir ?? DEFAULT_DATA_DIR);
   }
+  petUsageBaseline = null;
   runtime = null;
 }
 

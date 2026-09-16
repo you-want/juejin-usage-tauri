@@ -27,6 +27,19 @@ import {
   setPopoverTheme,
 } from './TrayPopover';
 import { registerLocalApiIpc } from './local-api-ipc';
+import { registerCodexSubscriptionIpc } from './codex-subscription-ipc';
+import { registerClaudeSubscriptionIpc } from './claude-subscription-ipc';
+import { registerCursorSubscriptionIpc } from './cursor-subscription-ipc';
+import { registerGrokSubscriptionIpc } from './grok-subscription-ipc';
+import { registerKimiSubscriptionIpc } from './kimi-subscription-ipc';
+import { registerZcodeSubscriptionIpc } from './zcode-subscription-ipc';
+import { registerAntigravitySubscriptionIpc } from './antigravity-subscription-ipc';
+import { registerQoderSubscriptionIpc } from './qoder-subscription-ipc';
+import { registerMiniMaxSubscriptionIpc } from './minimax-subscription-ipc';
+import { registerDeepSeekSubscriptionIpc } from './deepseek-subscription-ipc';
+import { registerOpenCodeSubscriptionIpc } from './opencode-subscription-ipc';
+import { registerTraeSubscriptionIpc } from './trae-subscription-ipc';
+import { registerWorkBuddySubscriptionIpc } from './workbuddy-subscription-ipc';
 import {
   localApiRequest,
   pokeSyncOnForeground,
@@ -41,6 +54,7 @@ import {
   syncDesktopPet,
   unregisterDesktopPetIpc,
 } from './DesktopPet';
+import { registerDesktopPetAssetProtocol } from './DesktopPetCatalog';
 import {
   applyDeepLinkConfig,
   findDeepLinkInArgv,
@@ -77,6 +91,19 @@ const SHARE_CARD_COPY_IMAGE_CHANNEL = 'share-card:copy-image';
 
 const windows = new Set<DesktopWindow>();
 let disposeLocalApiIpc: (() => void) | null = null;
+let disposeCodexSubscriptionIpc: (() => void) | null = null;
+let disposeClaudeSubscriptionIpc: (() => void) | null = null;
+let disposeCursorSubscriptionIpc: (() => void) | null = null;
+let disposeGrokSubscriptionIpc: (() => void) | null = null;
+let disposeKimiSubscriptionIpc: (() => void) | null = null;
+let disposeZcodeSubscriptionIpc: (() => void) | null = null;
+let disposeAntigravitySubscriptionIpc: (() => void) | null = null;
+let disposeQoderSubscriptionIpc: (() => void) | null = null;
+let disposeMiniMaxSubscriptionIpc: (() => void) | null = null;
+let disposeDeepSeekSubscriptionIpc: (() => void) | null = null;
+let disposeOpenCodeSubscriptionIpc: (() => void) | null = null;
+let disposeTraeSubscriptionIpc: (() => void) | null = null;
+let disposeWorkBuddySubscriptionIpc: (() => void) | null = null;
 let currentThemeMode: ThemeMode = 'system';
 let currentTheme: Theme = 'light';
 let pendingDeepLinkUrl: string | null = null;
@@ -408,6 +435,7 @@ void acquireDesktopInstanceLock().then((gotLock) => {
   }
 
   app.whenReady().then(async () => {
+    registerDesktopPetAssetProtocol();
     applyDevDockIcon();
 
     // Restore the persisted theme mode before any window / IPC is registered
@@ -444,6 +472,19 @@ void acquireDesktopInstanceLock().then((gotLock) => {
       triggerSync,
     });
     disposeLocalApiIpc = registerLocalApiIpc();
+    disposeCodexSubscriptionIpc = registerCodexSubscriptionIpc();
+    disposeClaudeSubscriptionIpc = registerClaudeSubscriptionIpc();
+    disposeCursorSubscriptionIpc = registerCursorSubscriptionIpc();
+    disposeGrokSubscriptionIpc = registerGrokSubscriptionIpc();
+    disposeKimiSubscriptionIpc = registerKimiSubscriptionIpc();
+    disposeZcodeSubscriptionIpc = registerZcodeSubscriptionIpc();
+    disposeAntigravitySubscriptionIpc = registerAntigravitySubscriptionIpc();
+    disposeQoderSubscriptionIpc = registerQoderSubscriptionIpc();
+    disposeMiniMaxSubscriptionIpc = registerMiniMaxSubscriptionIpc();
+    disposeDeepSeekSubscriptionIpc = registerDeepSeekSubscriptionIpc();
+    disposeOpenCodeSubscriptionIpc = registerOpenCodeSubscriptionIpc();
+    disposeTraeSubscriptionIpc = registerTraeSubscriptionIpc();
+    disposeWorkBuddySubscriptionIpc = registerWorkBuddySubscriptionIpc();
     try {
       await initAutostartOnLaunch();
     } catch (err) {
@@ -563,6 +604,32 @@ void acquireDesktopInstanceLock().then((gotLock) => {
     disposeTrayPopover();
     disposeLocalApiIpc?.();
     disposeLocalApiIpc = null;
+    disposeCodexSubscriptionIpc?.();
+    disposeCodexSubscriptionIpc = null;
+    disposeClaudeSubscriptionIpc?.();
+    disposeClaudeSubscriptionIpc = null;
+    disposeCursorSubscriptionIpc?.();
+    disposeCursorSubscriptionIpc = null;
+    disposeGrokSubscriptionIpc?.();
+    disposeGrokSubscriptionIpc = null;
+    disposeKimiSubscriptionIpc?.();
+    disposeKimiSubscriptionIpc = null;
+    disposeZcodeSubscriptionIpc?.();
+    disposeZcodeSubscriptionIpc = null;
+    disposeAntigravitySubscriptionIpc?.();
+    disposeAntigravitySubscriptionIpc = null;
+    disposeQoderSubscriptionIpc?.();
+    disposeQoderSubscriptionIpc = null;
+    disposeMiniMaxSubscriptionIpc?.();
+    disposeMiniMaxSubscriptionIpc = null;
+    disposeDeepSeekSubscriptionIpc?.();
+    disposeDeepSeekSubscriptionIpc = null;
+    disposeOpenCodeSubscriptionIpc?.();
+    disposeOpenCodeSubscriptionIpc = null;
+    disposeTraeSubscriptionIpc?.();
+    disposeTraeSubscriptionIpc = null;
+    disposeWorkBuddySubscriptionIpc?.();
+    disposeWorkBuddySubscriptionIpc = null;
     disposeAutoUpdate();
   });
 });

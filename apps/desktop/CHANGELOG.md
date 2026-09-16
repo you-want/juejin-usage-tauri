@@ -1,5 +1,18 @@
 # @juejin-opensource/jusage-desktop
 
+## 0.1.10
+
+### Patch Changes
+
+- 新增 Command Code、QwenWork 用量采集与面板展示。
+- 设置中可添加、自动发现并切换自定义 v2 桌面宠物，支持从共享目录一键拉取安装社区宠物。
+- 桌面宠物同步新增用量后，可选提示本轮 Token、今日新高和连续活跃天数（默认关闭）。
+- macOS 托盘增加本机订阅/额度卡片：Codex、DeepSeek 余额、MiniMax Code、OpenCode Go、TRAE；WorkBuddy 卡片在官方额度接口确认前不会向外发送凭据。ZCode 可从 OpenCode `auth.json` 读取备用凭据。
+- 统一托盘与主面板的卡片汇总、工具筛选和趋势比较口径。
+- 修复 Token 趋势「详细」视图缓存过大时把输入画成 0；修复未勾选复选框在深色模式几乎不可见，以及白底徽章上 DeepSeek Harness 图标变空白。
+- Updated dependencies
+  - @juejin-opensource/jusage-core@0.1.10
+
 ## 0.1.9
 
 ### Patch Changes

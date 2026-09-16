@@ -31,7 +31,6 @@ const sharedRenderPlugins = () => [
  *  - renderer: index.html（面板 + 托盘）与 pet.html（宠物独立入口，不打包 Dashboard）
  *
  * Main 嵌入 jusage-core（读 ~/.ai-usage，内存 local-api）；renderer 经 IPC 取数。
- * 默认 VITE_ENABLE_MOCK_DATA=false；需要样本数据时用 `pnpm dev:mock`。
  *
  * jusage-core / hono 为纯 ESM（exports 仅有 import），Electron main 产物是 CJS，
  * 不能 require 它们 — 打进 main bundle，避免 ERR_PACKAGE_PATH_NOT_EXPORTED。

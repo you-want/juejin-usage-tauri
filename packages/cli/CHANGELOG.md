@@ -1,5 +1,19 @@
 # @juejin-opensource/jusage
 
+## 0.1.10
+
+### Patch Changes
+
+- 新增 Command Code、QwenWork（含国内版/国际版）用量采集；Codex 多账号 / CC Switch 家目录、WorkBuddy 国际版一并计入。
+- 修复 Copilot CLI、OpenCode、WorkBuddy 的项目归属，以及 DeepSeek Harness 带版本会话文件与思考 Token 采集。
+- `jusage sync --source` 对 `all` / 未知数据源有明确契约，不再静默同步 0 条却显示成功；帮助列表补上 `dsh`。
+- 启动前拒绝缺失、非整数或超出范围的 `--port`，不再静默回退或吞掉后续参数。
+- Windows：`jusage service start` 因缺少管理员权限无法注册开机自启时给出明确指引；服务已在运行时补注册失败改为警告，不再中断命令。
+- 修复 Windows 上本地服务占用判定依赖已移除的 `wmic`、环境变量盘符被切断，以及并发写 `config.json` 易失败的问题。
+- 统一面板卡片汇总、工具筛选和趋势比较口径；修复 Token 趋势「详细」视图缓存过大时把输入画成 0。
+- Updated dependencies
+  - @juejin-opensource/jusage-core@0.1.10
+
 ## 0.1.9
 
 ### Patch Changes

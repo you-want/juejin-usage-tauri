@@ -4,6 +4,7 @@ import { CURSOR_POLL_MIN_FETCH_INTERVAL_MS, SYNC_SOURCE_GAP_MS, syncLogPath } fr
 import { measureCpuPhase } from '../debug-log.js';
 import { isSyncSourcePresent } from './source-presence.js';
 import { parseClaudeIncremental } from '../parsers/claude.js';
+import { parseCommandCodeIncremental } from '../parsers/command-code.js';
 import { parseCodexIncremental } from '../parsers/codex.js';
 import { parseCursorIncremental } from '../parsers/cursor.js';
 import { parseQoderIncremental } from '../parsers/qoder.js';
@@ -36,6 +37,7 @@ import { parseKilocodeIncremental } from '../parsers/kilocode.js';
 import { parseGooseIncremental } from '../parsers/goose.js';
 import { parseZedIncremental } from '../parsers/zed.js';
 import { parseWarpIncremental } from '../parsers/warp.js';
+import { parseQwenworkIncremental } from '../parsers/qwenwork.js';
 import {
   appendBuckets,
   loadBucketsForRange,
@@ -635,6 +637,14 @@ export async function syncWarp(dataDir: string, config: TudConfig, opts?: SyncSo
   return syncSourceBuckets(dataDir, config, 'warp', parseWarpIncremental, { sharedCursors: opts?.sharedCursors });
 }
 
+export async function syncQwenwork(dataDir: string, config: TudConfig, opts?: SyncSourceOptions): Promise<SyncResult> {
+  return syncSourceBuckets(dataDir, config, 'qwenwork', parseQwenworkIncremental, { sharedCursors: opts?.sharedCursors });
+}
+
+export async function syncCommandCode(dataDir: string, config: TudConfig, opts?: SyncSourceOptions): Promise<SyncResult> {
+  return syncSourceBuckets(dataDir, config, 'command-code', parseCommandCodeIncremental, { sharedCursors: opts?.sharedCursors });
+}
+
 export async function syncCursor(
   dataDir: string,
   config: TudConfig,
@@ -782,9 +792,42 @@ export const SYNC_SOURCE_IDS = [
   'goose',
   'zed',
   'warp',
+  'qwenwork',
+  'command-code',
 ] as const;
 
 export type SyncSourceId = (typeof SYNC_SOURCE_IDS)[number];
+
+/** Accepted spellings that map onto a canonical source id (see syncOneSource). */
+const SYNC_SOURCE_ALIASES: Record<string, SyncSourceId> = {
+  'roo-code': 'roocode',
+  'qwen-code': 'qwen',
+  'grok-build': 'grok',
+  mimocode: 'mimo',
+  everycode: 'every-code',
+  kilo: 'kilo-cli',
+  'kilo-code': 'kilocode',
+};
+
+/**
+ * Normalize a user-supplied source filter (CLI `--source`, local API body).
+ *
+ * - missing / empty / `all` → `undefined`（全量同步）
+ * - known id or alias（大小写不敏感）→ canonical id
+ * - anything else → `null`; the caller must reject it instead of passing it
+ *   on, otherwise the sync silently runs zero parsers while reporting success.
+ */
+export function normalizeSyncSource(
+  raw: string | undefined | null,
+): SyncSourceId | undefined | null {
+  if (raw == null) return undefined;
+  const value = raw.trim().toLowerCase();
+  if (!value || value === 'all') return undefined;
+  if ((SYNC_SOURCE_IDS as readonly string[]).includes(value)) {
+    return value as SyncSourceId;
+  }
+  return SYNC_SOURCE_ALIASES[value] ?? null;
+}
 
 async function syncOneSource(
   dataDir: string,
@@ -866,6 +909,11 @@ async function syncOneSource(
       return syncZed(dataDir, config, opts);
     case 'warp':
       return syncWarp(dataDir, config, opts);
+    case 'qwenwork':
+      return syncQwenwork(dataDir, config, opts);
+    case 'command-code':
+    case 'commandcode':
+      return syncCommandCode(dataDir, config, opts);
     default:
       return {
         source,
@@ -891,11 +939,15 @@ export async function syncAll(
   config: TudConfig,
   source?: string,
 ): Promise<SyncResult[]> {
-  if (source) {
-    if (source === 'omp' && ompAgentDirCollidesWithPi()) {
+  // CLI / local API validate and normalize before calling in; treat `all`
+  // as a full sweep here too so no direct caller can hit the
+  // unknown-source branch with it.
+  const filter = source === 'all' ? undefined : source;
+  if (filter) {
+    if (filter === 'omp' && ompAgentDirCollidesWithPi()) {
       return [];
     }
-    return [await syncOneSource(dataDir, config, source)];
+    return [await syncOneSource(dataDir, config, filter)];
   }
 
   // One cursors.json load/save per round instead of per channel.

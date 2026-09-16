@@ -3,9 +3,10 @@
  *
  * Recursively scans ~/.workbuddy/projects/ for .jsonl files (including subagents/).
  * Token math differs from CodeBuddy — see normalizeWorkbuddyUsage().
- * Projects are derived from the session cwd recorded on JSONL entries (and the
- * sessions table for the SQLite fallback); legacy cursor state that predates
- * this attribution is re-scanned once so historical rows stop reading 'unknown'.
+ * Projects come from the session cwd in workbuddy.db's sessions table, falling
+ * back to the cwd recorded on JSONL entries when the table has no row; legacy
+ * cursor state that predates this attribution is re-scanned once so historical
+ * rows stop reading 'unknown'.
  * SQLite fallback reads workbuddy.db session_usage when a session has no JSONL detail.
  */
 import { createReadStream, existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
@@ -15,6 +16,7 @@ import { basename, join } from 'node:path';
 import { stat } from 'node:fs/promises';
 
 import type { CursorsFile, QueueBucket, TokenTotals } from '../types.js';
+import { resolveProjectName } from '../project-name.js';
 import { toUtcHalfHourStart } from '../queue/keys.js';
 import {
   accumulateBucket,
@@ -22,7 +24,6 @@ import {
   computeTotalTokens,
   type BucketAccumulator,
 } from './shared.js';
-import { resolveProjectName } from '../project-name.js';
 import { queryDbJson, readSqliteWithSnapshot, sqliteTableExists } from './sqlite.js';
 
 export const WORKBUDDY_COLLECTOR = 'workbuddy';
@@ -168,6 +169,37 @@ export interface ParseWorkbuddyResult {
   fullRescan?: boolean;
 }
 
+/** Empty / non-string cwd (e.g. LEFT JOIN miss) stays 'unknown'. */
+function projectFromCwd(cwd: unknown): string {
+  if (typeof cwd !== 'string' || !cwd.trim()) return 'unknown';
+  return resolveProjectName(cwd.trim());
+}
+
+/**
+ * `sessions.id → cwd` from workbuddy.db; JSONL messages only carry a
+ * sessionId, the working directory lives in this table.
+ */
+function loadWorkbuddySessionCwds(dbPath: string): Map<string, string> {
+  const map = new Map<string, string>();
+  if (!sqliteTableExists(dbPath, 'sessions')) return map;
+  try {
+    const rows = readSqliteWithSnapshot(dbPath, (snap) =>
+      queryDbJson(snap, 'SELECT id, cwd FROM sessions WHERE cwd IS NOT NULL', {
+        timeout: 10_000,
+        maxBuffer: 16 * 1024 * 1024,
+      }),
+    );
+    for (const row of rows) {
+      const id = typeof row.id === 'string' ? row.id.trim() : '';
+      const cwd = typeof row.cwd === 'string' ? row.cwd.trim() : '';
+      if (id && cwd) map.set(id, cwd);
+    }
+  } catch {
+    // Best effort; unresolved sessions stay 'unknown'.
+  }
+  return map;
+}
+
 export async function parseWorkbuddyIncremental(
   cursors: CursorsFile,
   statsSince: string,
@@ -205,6 +237,14 @@ export async function parseWorkbuddyIncremental(
   const workbuddyHome = resolveWorkbuddyHome(env);
   const dbPath = join(workbuddyHome, 'workbuddy.db');
   const dbExists = existsSync(dbPath);
+
+  // Loaded on first use so idle rounds skip the extra sqlite read.
+  let sessionCwds: Map<string, string> | null = null;
+  const getSessionCwd = (sessionId: string): string | undefined => {
+    if (!dbExists) return undefined;
+    if (!sessionCwds) sessionCwds = loadWorkbuddySessionCwds(dbPath);
+    return sessionCwds.get(sessionId);
+  };
 
   let eventsParsed = 0;
   let filesProcessed = 0;
@@ -283,8 +323,8 @@ export async function parseWorkbuddyIncremental(
         normalizeModel(entry.model) ??
         fallbackModel;
 
-      const cwd = typeof entry.cwd === 'string' && entry.cwd.trim() ? entry.cwd.trim() : null;
-      const project = cwd ? resolveProjectName(cwd) : 'unknown';
+      const cwd = getSessionCwd(sessionId) ?? entry.cwd;
+      const project = projectFromCwd(cwd);
 
       accumulateBucket(
         bucketState,
@@ -368,8 +408,7 @@ export async function parseWorkbuddyIncremental(
         }
 
         const model = normalizeModel(rawModel) || fallbackModel;
-        const cwd = typeof row.cwd === 'string' && row.cwd.trim() ? row.cwd.trim() : null;
-        const project = cwd ? resolveProjectName(cwd) : 'unknown';
+        const project = projectFromCwd(row.cwd);
         const delta: TokenTotals = {
           input_tokens: inputDelta,
           cached_input_tokens: 0,
