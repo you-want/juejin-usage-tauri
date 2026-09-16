@@ -3,6 +3,10 @@
  *
  * Recursively scans ~/.workbuddy/projects/ for .jsonl files (including subagents/).
  * Token math differs from CodeBuddy — see normalizeWorkbuddyUsage().
+ * Projects come from the session cwd in workbuddy.db's sessions table, falling
+ * back to the cwd recorded on JSONL entries when the table has no row; legacy
+ * cursor state that predates this attribution is re-scanned once so historical
+ * rows stop reading 'unknown'.
  * SQLite fallback reads workbuddy.db session_usage when a session has no JSONL detail.
  */
 import { createReadStream, existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
@@ -33,6 +37,8 @@ type WorkbuddyExtCursors = CursorsFile & {
       { used: number; updatedAt?: number; model?: string }
     >;
     detailedSessions?: Record<string, boolean>;
+    /** Marker for cursor state written after cwd-based project attribution landed. */
+    cwdProjects?: boolean;
   };
 };
 
@@ -159,6 +165,8 @@ export interface ParseWorkbuddyResult {
   filesProcessed: number;
   skipped?: boolean;
   error?: string;
+  /** True when legacy cursor state was reset so the whole window was re-read. */
+  fullRescan?: boolean;
 }
 
 /** Empty / non-string cwd (e.g. LEFT JOIN miss) stays 'unknown'. */
@@ -195,7 +203,13 @@ function loadWorkbuddySessionCwds(dbPath: string): Map<string, string> {
 export async function parseWorkbuddyIncremental(
   cursors: CursorsFile,
   statsSince: string,
-  opts?: { env?: NodeJS.ProcessEnv; projectFiles?: string[]; defaultModel?: string },
+  opts?: {
+    env?: NodeJS.ProcessEnv;
+    projectFiles?: string[];
+    defaultModel?: string;
+    /** Set by sync when queue still has legacy `unknown` project rows to backfill. */
+    fullRescan?: boolean;
+  },
 ): Promise<{ result: ParseWorkbuddyResult; cursors: CursorsFile }> {
   const env = opts?.env ?? process.env;
   const sinceMs = new Date(statsSince).getTime();
@@ -206,6 +220,15 @@ export async function parseWorkbuddyIncremental(
   if (!ext.workbuddy.fileOffsets) ext.workbuddy.fileOffsets = {};
   if (!ext.workbuddy.sqliteSessions) ext.workbuddy.sqliteSessions = {};
   if (!ext.workbuddy.detailedSessions) ext.workbuddy.detailedSessions = {};
+
+  // Sync decides whether unknown-project rows still need a one-shot backfill.
+  const fullRescan = opts?.fullRescan === true;
+  if (fullRescan) {
+    ext.workbuddy.seenIds = [];
+    ext.workbuddy.fileOffsets = {};
+    ext.workbuddy.sqliteSessions = {};
+    ext.workbuddy.detailedSessions = {};
+  }
 
   const seenIds = new Set(ext.workbuddy.seenIds ?? []);
   const fileOffsets = ext.workbuddy.fileOffsets;
@@ -304,11 +327,14 @@ export async function parseWorkbuddyIncremental(
         normalizeModel(entry.model) ??
         fallbackModel;
 
+      const cwd = getSessionCwd(sessionId) ?? entry.cwd;
+      const project = projectFromCwd(cwd);
+
       accumulateBucket(
         bucketState,
         'workbuddy',
         model,
-        projectFromCwd(getSessionCwd(sessionId)),
+        project,
         hourStart,
         { ...delta, conversation_count: 1 },
         WORKBUDDY_COLLECTOR,
@@ -386,6 +412,7 @@ export async function parseWorkbuddyIncremental(
         }
 
         const model = normalizeModel(rawModel) || fallbackModel;
+        const project = projectFromCwd(row.cwd);
         const delta: TokenTotals = {
           input_tokens: inputDelta,
           cached_input_tokens: 0,
@@ -400,7 +427,7 @@ export async function parseWorkbuddyIncremental(
           bucketState,
           'workbuddy',
           model,
-          projectFromCwd(row.cwd),
+          project,
           hourStart,
           delta,
           WORKBUDDY_COLLECTOR,
@@ -417,6 +444,7 @@ export async function parseWorkbuddyIncremental(
     }
   }
 
+  ext.workbuddy.cwdProjects = true;
   ext.workbuddy.seenIds = Array.from(seenIds).slice(-10_000);
   const sqliteEntries = Object.entries(sqliteSessions);
   if (sqliteEntries.length > 10_000) {
@@ -438,6 +466,7 @@ export async function parseWorkbuddyIncremental(
       buckets: bucketsFromState(bucketState, 'workbuddy'),
       eventsParsed,
       filesProcessed,
+      ...(fullRescan ? { fullRescan: true } : {}),
     },
     cursors,
   };
