@@ -96,13 +96,13 @@ export function BackendConfigModal({
         >
           <Modal.Dialog
             aria-label="设置"
-            className="w-full overflow-hidden sm:w-[640px] sm:max-w-[640px]"
+            className="flex max-h-[90vh] w-full flex-col overflow-hidden sm:w-[640px] sm:max-w-[640px]"
           >
             <Modal.CloseTrigger aria-label="关闭设置" />
             <Modal.Header>
               <Modal.Heading>设置</Modal.Heading>
             </Modal.Header>
-            <Modal.Body className="overflow-hidden p-0">
+            <Modal.Body className="min-h-0 flex-1 overflow-hidden p-0">
               <SettingsPanel activeTab={activeTab} onTabChange={setTab} />
             </Modal.Body>
           </Modal.Dialog>

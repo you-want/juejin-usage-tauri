@@ -36,6 +36,7 @@ import { openJuejinLogin } from '@/lib/juejin-client-link';
 import { DESKTOP_PETS } from '@/pets';
 import type { DesktopPetDefinition } from '../../shared/desktop-pet-catalog';
 import { AboutContent } from '@/components/AboutContent';
+import { DataCalibrateSection } from '@/components/DataCalibrateSection';
 import { JuejinLoginConsentModal } from '@/components/JuejinLoginConsentModal';
 import { PetSelectPreview } from '@/components/PetSelectPreview';
 import { StatusBanner } from '@/components/StatusBanner';
@@ -198,7 +199,7 @@ export function SettingsPanel({
           </Tabs.List>
         </Tabs.ListContainer>
 
-        <Tabs.Panel className="h-[50vh] min-w-0 overflow-hidden p-4 text-left" id="pet">
+        <Tabs.Panel className="max-h-[min(78vh,44rem)] min-h-[40vh] min-w-0 overflow-y-auto p-4 text-left" id="pet">
           {tab === 'pet' && (
             <DesktopPetSettings
               catalogSelectedPetId={catalogSelectedPetId}
@@ -221,7 +222,7 @@ export function SettingsPanel({
           )}
         </Tabs.Panel>
         <Tabs.Panel
-          className="h-[50vh] overflow-hidden p-4 text-left font-normal"
+          className="flex max-h-[min(78vh,44rem)] min-h-[40vh] flex-col overflow-hidden p-4 text-left font-normal"
           id="sync"
         >
           {tab === 'sync' &&
@@ -254,10 +255,10 @@ export function SettingsPanel({
               />
             ))}
         </Tabs.Panel>
-        <Tabs.Panel className="h-[50vh] overflow-hidden p-4 text-left" id="app">
+        <Tabs.Panel className="max-h-[min(78vh,44rem)] min-h-[40vh] overflow-y-auto p-4 text-left" id="app">
           {tab === 'app' && <AppSettingsPanel />}
         </Tabs.Panel>
-        <Tabs.Panel className="h-[50vh] overflow-hidden p-4 text-left" id="about">
+        <Tabs.Panel className="max-h-[min(78vh,44rem)] min-h-[40vh] overflow-hidden p-4 text-left" id="about">
           {tab === 'about' && (
             <div className="h-full overflow-y-auto pr-1">
               <AboutContent />
@@ -912,13 +913,13 @@ function CliSyncSettings({
   };
 
   return (
-    <div className="flex h-full flex-col gap-4 overflow-hidden">
+    <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-hidden">
       {error && <StatusBanner tone="error" title={error} />}
       <p className="shrink-0 text-sm text-muted">
         开启后本地 sync 完成会自动上报掘金
       </p>
-      <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-hidden">
-        <Checkbox
+      <div className="min-h-0 flex-1 space-y-4 overflow-y-auto pr-1">
+      <Checkbox
           id="cli-juejin-enabled"
           isDisabled={saving}
           isSelected={enabled}
@@ -987,7 +988,13 @@ function CliSyncSettings({
           </p>
         )}
 
-        <div className="mt-auto flex justify-end gap-2">
+        <DataCalibrateSection
+          linked={Boolean(userId)}
+          onNotify={onNotify}
+        />
+      </div>
+
+      <div className="mt-auto flex shrink-0 justify-end gap-2">
           {userId ? (
             <Button
               isDisabled={saving}
@@ -1005,8 +1012,8 @@ function CliSyncSettings({
               掘金登录
             </Button>
           )}
-        </div>
       </div>
+
 
       <JuejinLoginConsentModal
         isOpen={consentOpen}
