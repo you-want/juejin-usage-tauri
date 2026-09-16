@@ -3,7 +3,11 @@
   "compilerOptions": {
     "target": "ES2022",
     "useDefineForClassFields": true,
-    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "lib": [
+      "ES2022",
+      "DOM",
+      "DOM.Iterable"
+    ],
     "module": "ESNext",
     "moduleResolution": "bundler",
     "allowImportingTsExtensions": true,
@@ -11,12 +15,32 @@
     "moduleDetection": "force",
     "noEmit": true,
     "jsx": "react-jsx",
-    "types": ["vite/client"],
     "baseUrl": ".",
     "paths": {
-      "@/*": ["src/renderer/*"]
-    }
+      "@/*": [
+        "../../packages/desktop-ui/src/*"
+      ],
+      "@juejin-opensource/jusage-desktop-ui": [
+        "../../packages/desktop-ui/src"
+      ],
+      "@juejin-opensource/jusage-desktop-ui/*": [
+        "../../packages/desktop-ui/src/*"
+      ]
+    },
+    "typeRoots": [
+      "./node_modules/@types",
+      "../../node_modules/@types"
+    ],
+    "skipLibCheck": true,
+    "noImplicitAny": false
   },
-  "include": ["src"],
-  "references": [{ "path": "./tsconfig.node.json" }]
+  "include": [
+    "src",
+    "../../packages/desktop-ui/src"
+  ],
+  "references": [
+    {
+      "path": "./tsconfig.node.json"
+    }
+  ]
 }

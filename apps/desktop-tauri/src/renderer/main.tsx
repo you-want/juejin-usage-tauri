@@ -1,8 +1,8 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
-import { ThemeProvider } from './hooks/useTheme';
-import { dispatchDataSynced } from './lib/shell-events';
-import { TrayPopoverView } from './components/TrayPopoverView';
+import { ThemeProvider } from '@juejin-opensource/jusage-desktop-ui/hooks/useTheme';
+import { dispatchDataSynced } from '@juejin-opensource/jusage-desktop-ui/lib/shell-events';
+import { TrayPopoverView } from '@juejin-opensource/jusage-desktop-ui/components/TrayPopoverView';
 import { initTudBridge } from './bridge';
 import './index.css';
 

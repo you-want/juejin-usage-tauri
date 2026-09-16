@@ -1,5 +1,5 @@
 import { normalizeProjectName } from '@juejin-opensource/jusage-core/project-label';
-import type { DailyUsageRow, HourlyUsageRow, ModelBreakdownRow } from './api.ts';
+import type { DailyUsageRow, HourlyUsageRow, ModelBreakdownRow } from './api';
 
 /** Presentation model shared by server-backed dashboard components. */
 export const DASHBOARD_WEEKDAYS = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'] as const;

@@ -8,16 +8,16 @@ import {
   Select,
   Tabs,
 } from '@heroui/react';
-import { FilterChromeActions } from '@/components/FilterChromeActions';
-import { ProviderIcon } from '@/components/ProviderIcon';
-import type { DashboardToolUsageRow } from '@/lib/dashboard-mock-data';
-import { sourceLabel } from '@/lib/tokens';
-import { type DashboardRange } from '../../shared/dashboard-range';
+import { FilterChromeActions } from '../components/FilterChromeActions';
+import { ProviderIcon } from '../components/ProviderIcon';
+import type { DashboardToolUsageRow } from '../lib/dashboard-mock-data';
+import { sourceLabel } from '../lib/tokens';
+import { type DashboardRange } from '../shared/dashboard-range';
 
 export {
   DASHBOARD_RANGE_DAYS,
   type DashboardRange,
-} from '../../shared/dashboard-range';
+} from '../shared/dashboard-range';
 
 const RANGE_OPTIONS: readonly { id: DashboardRange; label: string }[] = [
   { id: 'today', label: '今天' },

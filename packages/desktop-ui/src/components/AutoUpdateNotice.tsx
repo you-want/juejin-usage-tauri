@@ -1,6 +1,6 @@
 import type { ToastQueue } from '@heroui/react';
 import { useEffect, useRef } from 'react';
-import type { AutoUpdateState } from '../../shared/auto-update';
+import type { AutoUpdateState } from '../shared/auto-update';
 import type { AppToastContent } from './AppToastProvider';
 
 type AutoUpdateNoticeProps = {

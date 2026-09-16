@@ -5,17 +5,17 @@ import {
   fetchUsageDataset,
   fetchUsageDatasetThin,
   type UsageDataset,
-} from '@/lib/api';
+} from '../lib/api';
 import {
   buildDashboardDataFromDataset,
   stabilizeDashboardData,
-} from '@/lib/dashboard-data';
-import { resolveDashboardFetchDays } from '@/lib/dashboard-fetch-days';
+} from '../lib/dashboard-data';
+import { resolveDashboardFetchDays } from '../lib/dashboard-fetch-days';
 import {
   emptyDashboardData,
   type DashboardMockData,
-} from '@/lib/dashboard-mock-data';
-import { fingerprintUsageDataset } from '@/lib/usage-dataset-fingerprint';
+} from '../lib/dashboard-mock-data';
+import { fingerprintUsageDataset } from '../lib/usage-dataset-fingerprint';
 
 export type DashboardDataSource = 'api';
 
@@ -36,7 +36,7 @@ interface RangeCacheEntry {
   error: string | null;
 }
 
-export { resolveDashboardFetchDays } from '@/lib/dashboard-fetch-days';
+export { resolveDashboardFetchDays } from '../lib/dashboard-fetch-days';
 
 /** Foreground poll interval. */
 const POLL_MS = 10_000;

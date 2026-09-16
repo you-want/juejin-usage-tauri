@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import {
   getUpdateToolbarAction,
   type AutoUpdateState,
-} from '../../shared/auto-update';
+} from '../shared/auto-update';
 
 /** Keep frequent download progress updates local to the toolbar button. */
 export function AutoUpdateAction({ className }: { className: string }) {

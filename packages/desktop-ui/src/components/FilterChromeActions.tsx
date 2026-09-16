@@ -6,20 +6,20 @@ import {
   NodesRight,
 } from '@gravity-ui/icons';
 import { Button, Tooltip } from '@heroui/react';
-import { AutoUpdateAction } from '@/components/AutoUpdateAction';
-import { JuejinLoginConsentModal } from '@/components/JuejinLoginConsentModal';
-import { useAppToastQueue } from '@/components/AppToastContext';
-import { ThemeToggle } from '@/components/ThemeToggle';
-import { fetchConfig, isCliBackend, triggerSync } from '@/lib/api';
-import { openJuejinLogin } from '@/lib/juejin-client-link';
+import { AutoUpdateAction } from '../components/AutoUpdateAction';
+import { JuejinLoginConsentModal } from '../components/JuejinLoginConsentModal';
+import { useAppToastQueue } from '../components/AppToastContext';
+import { ThemeToggle } from '../components/ThemeToggle';
+import { fetchConfig, isCliBackend, triggerSync } from '../lib/api';
+import { openJuejinLogin } from '../lib/juejin-client-link';
 import {
   JUEJIN_LINK_CHANGED_EVENT,
   OPEN_SETTINGS_EVENT,
   dispatchDataSynced,
   dispatchOpenSettings,
   shareCurrentPage,
-} from '@/lib/shell-events';
-import { cn } from '@/lib/utils';
+} from '../lib/shell-events';
+import { cn } from '../lib/utils';
 
 const primaryChromeBtn =
   'inline-flex h-7 shrink-0 items-center gap-1 rounded-full bg-[#1e80ff] px-2.5 text-[12px] font-medium text-white outline-none transition-colors hover:bg-[#1171ee] focus-visible:ring-2 focus-visible:ring-[#1e80ff]/40 disabled:pointer-events-none disabled:opacity-40 dark:bg-[#4b9cff] dark:hover:bg-[#3a8ff0]';

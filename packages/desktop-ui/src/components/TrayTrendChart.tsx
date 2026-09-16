@@ -13,12 +13,12 @@ import {
   ChartContainer,
   ChartTooltip,
   type ChartConfig,
-} from '@/components/ChartPrimitives';
+} from '../components/ChartPrimitives';
 import type {
   DashboardDailyUsageRow,
   DashboardHourlyUsageRow,
-} from '@/lib/dashboard-mock-data';
-import { formatTokens, formatUsd } from '@/lib/format';
+} from '../lib/dashboard-mock-data';
+import { formatTokens, formatUsd } from '../lib/format';
 
 const MAX_DAILY_POINTS = 18;
 const CHART_CONFIG = {

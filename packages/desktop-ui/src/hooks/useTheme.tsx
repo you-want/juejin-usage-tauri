@@ -14,7 +14,7 @@ import {
   isThemeMode,
   type Theme,
   type ThemeMode,
-} from '@/lib/theme';
+} from '../lib/theme';
 
 interface ThemeContextValue {
   /** Resolved theme actually rendered (follows the OS when mode is `system`). */

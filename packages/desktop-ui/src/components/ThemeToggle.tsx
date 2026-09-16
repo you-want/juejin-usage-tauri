@@ -1,7 +1,7 @@
 import { MoonIcon, SunIcon, SunMoonIcon } from 'lucide-react';
 import { Button, Tooltip } from '@heroui/react';
-import type { ThemeMode } from '@/lib/theme';
-import { useTheme } from '@/hooks/useTheme';
+import type { ThemeMode } from '../lib/theme';
+import { useTheme } from '../hooks/useTheme';
 
 /** Icon component per mode; rendered lazily so only the active one mounts. */
 const MODE_ICON: Record<ThemeMode, typeof SunMoonIcon> = {

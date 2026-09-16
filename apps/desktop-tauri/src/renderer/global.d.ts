@@ -16,12 +16,12 @@ declare global {
       close: () => void;
       showMainWindow: () => void;
       quit: () => void;
-      getAutoUpdateState: () => Promise<import('../shared/auto-update').AutoUpdateState>;
-      checkForUpdates: () => Promise<import('../shared/auto-update').AutoUpdateState>;
-      installDownloadedUpdate: () => Promise<import('../shared/auto-update').AutoUpdateState>;
+      getAutoUpdateState: () => Promise<import('@juejin-opensource/jusage-desktop-ui/shared/auto-update').AutoUpdateState>;
+      checkForUpdates: () => Promise<import('@juejin-opensource/jusage-desktop-ui/shared/auto-update').AutoUpdateState>;
+      installDownloadedUpdate: () => Promise<import('@juejin-opensource/jusage-desktop-ui/shared/auto-update').AutoUpdateState>;
       acknowledgeUpdateCompleted: () => Promise<void>;
       onAutoUpdateStateChanged: (
-        callback: (state: import('../shared/auto-update').AutoUpdateState) => void,
+        callback: (state: import('@juejin-opensource/jusage-desktop-ui/shared/auto-update').AutoUpdateState) => void,
       ) => () => void;
       copyImageToClipboard: (dataUrl: string) => Promise<boolean>;
       openExternal: (
@@ -29,23 +29,23 @@ declare global {
       ) => Promise<{ ok: boolean; message?: string }>;
       resizeTrayPopover: (height: number) => void;
       getDashboardRange: () => Promise<
-        import('../shared/dashboard-range').DashboardRange
+        import('@juejin-opensource/jusage-desktop-ui/shared/dashboard-range').DashboardRange
       >;
       setDashboardRange: (
-        range: import('../shared/dashboard-range').DashboardRange,
-      ) => Promise<import('../shared/dashboard-range').DashboardRange>;
+        range: import('@juejin-opensource/jusage-desktop-ui/shared/dashboard-range').DashboardRange,
+      ) => Promise<import('@juejin-opensource/jusage-desktop-ui/shared/dashboard-range').DashboardRange>;
       onDashboardRange: (
-        callback: (range: import('../shared/dashboard-range').DashboardRange) => void,
+        callback: (range: import('@juejin-opensource/jusage-desktop-ui/shared/dashboard-range').DashboardRange) => void,
       ) => () => void;
       getTheme: () => Promise<{
-        mode: import('../shared/theme').ThemeMode;
-        resolved: import('../shared/theme').Theme;
+        mode: import('@juejin-opensource/jusage-desktop-ui/shared/theme').ThemeMode;
+        resolved: import('@juejin-opensource/jusage-desktop-ui/shared/theme').Theme;
       }>;
-      setThemeMode: (mode: import('../shared/theme').ThemeMode) => void;
+      setThemeMode: (mode: import('@juejin-opensource/jusage-desktop-ui/shared/theme').ThemeMode) => void;
       onThemeChanged: (
         callback: (state: {
-          mode: import('../shared/theme').ThemeMode;
-          resolved: import('../shared/theme').Theme;
+          mode: import('@juejin-opensource/jusage-desktop-ui/shared/theme').ThemeMode;
+          resolved: import('@juejin-opensource/jusage-desktop-ui/shared/theme').Theme;
         }) => void,
       ) => () => void;
       getOpenAtLogin: () => Promise<boolean>;

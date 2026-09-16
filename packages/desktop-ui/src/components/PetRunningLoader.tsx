@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
-import { DESKTOP_PETS, getDesktopPet, loadPetSpritesheet } from '@/pets';
+import { DESKTOP_PETS, getDesktopPet, loadPetSpritesheet } from '../pets';
 import {
   DESKTOP_PET_SOURCE_HEIGHT,
   DESKTOP_PET_SOURCE_WIDTH,
-} from '../../shared/desktop-pet-layout';
+} from '../shared/desktop-pet-layout';
 import './PetRunningLoader.css';
 
 const CELL_WIDTH = DESKTOP_PET_SOURCE_WIDTH;

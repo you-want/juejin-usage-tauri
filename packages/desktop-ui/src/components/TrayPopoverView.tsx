@@ -21,13 +21,13 @@ import {
   type DashboardRange,
 } from './DashboardFilter';
 import { DashboardRangeSyncOverlay } from './DashboardRangeSyncOverlay';
-import { useAnimatedNumber } from '@/hooks/useAnimatedNumber';
-import { useDashboardData } from '@/hooks/useDashboardData';
-import { fetchSyncStatus } from '@/lib/api';
-import { formatTokens, formatTokensExact, formatUsd } from '@/lib/format';
-import { scheduleAfterPaint } from '@/lib/schedule-after-paint';
-import { DATA_SYNCED_EVENT } from '@/lib/shell-events';
-import { sourceColor, sourceLabel } from '@/lib/tokens';
+import { useAnimatedNumber } from '../hooks/useAnimatedNumber';
+import { useDashboardData } from '../hooks/useDashboardData';
+import { fetchSyncStatus } from '../lib/api';
+import { formatTokens, formatTokensExact, formatUsd } from '../lib/format';
+import { scheduleAfterPaint } from '../lib/schedule-after-paint';
+import { DATA_SYNCED_EVENT } from '../lib/shell-events';
+import { sourceColor, sourceLabel } from '../lib/tokens';
 import { Check } from '@gravity-ui/icons';
 import { ThemeToggle } from './ThemeToggle';
 import { TrayTrendChart } from './TrayTrendChart';

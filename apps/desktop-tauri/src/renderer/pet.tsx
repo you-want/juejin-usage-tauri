@@ -1,6 +1,6 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
-import { DesktopPetView } from './components/DesktopPetView';
+import { DesktopPetView } from '@juejin-opensource/jusage-desktop-ui/components/DesktopPetView';
 import { initTudBridge } from './bridge';
 import './pet.css';
 
@@ -9,6 +9,6 @@ initTudBridge();
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <DesktopPetView />
+    <DesktopPetView onContextMenuReport={(x: number, y: number) => window.tud.showPetContextMenu?.(x, y)} />
   </StrictMode>,
 );

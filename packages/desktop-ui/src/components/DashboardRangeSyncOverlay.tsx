@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { PetRunningLoader } from '@/components/PetRunningLoader';
+import { PetRunningLoader } from '../components/PetRunningLoader';
 
 const LOADING_LINES = [
   '小伙伴跑腿去了…',

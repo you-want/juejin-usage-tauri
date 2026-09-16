@@ -7,7 +7,7 @@ import type {
   ModelBreakdownRow,
   ProjectBreakdownRow,
   UsageDataset,
-} from './api.ts';
+} from './api';
 import {
   aggregateUsage,
   buildMetricChanges,
@@ -24,13 +24,13 @@ import {
   type DashboardMockData,
   type DashboardUsageSummary,
   emptyDashboardData,
-} from './dashboard-mock-data.ts';
+} from './dashboard-mock-data';
 import {
   localDateDaysAgo,
   localDateNow,
   localHourNow,
-} from './stats-timezone.ts';
-import { buildSummaryFromRange } from './time-range.ts';
+} from './stats-timezone';
+import { buildSummaryFromRange } from './time-range';
 
 const CHART_COLORS = [
   'var(--chart-1)',

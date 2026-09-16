@@ -6,28 +6,28 @@ import {
   type MouseEvent,
   type PointerEvent,
 } from 'react';
-import { useAnimatedNumber } from '@/hooks/useAnimatedNumber';
-import { fetchDaily } from '@/lib/api';
-import { formatTokens, formatTokensExact, formatUsd } from '@/lib/format';
-import { getDesktopPet, loadPetSpritesheet } from '@/pets';
+import { useAnimatedNumber } from '../hooks/useAnimatedNumber';
+import { fetchDaily } from '../lib/api';
+import { formatTokens, formatTokensExact, formatUsd } from '../lib/format';
+import { getDesktopPet, loadPetSpritesheet } from '../pets';
 import {
   DASHBOARD_RANGE_DAYS,
   DASHBOARD_RANGE_LABELS,
   DEFAULT_DASHBOARD_RANGE,
   type DashboardRange,
-} from '../../shared/dashboard-range';
+} from '../shared/dashboard-range';
 import {
   DESKTOP_PET_SOURCE_HEIGHT,
   DESKTOP_PET_SOURCE_WIDTH,
   getDesktopPetLayout,
-} from '../../shared/desktop-pet-layout';
+} from '../shared/desktop-pet-layout';
 import {
   PET_SPRITESHEET_HEIGHT,
   PET_SPRITESHEET_WIDTH,
   paintPetSpriteFrame,
   petSpriteCell,
   type PetAnimation,
-} from '../../shared/desktop-pet-sprite';
+} from '../shared/desktop-pet-sprite';
 
 const DISPLAY_SCALE = 0.5;
 const DRAG_ANIMATION_SPEED_MULTIPLIER = 0.55;
@@ -47,8 +47,21 @@ async function fetchRangeTotals(range: DashboardRange): Promise<{
   return { totalTokens, totalCostUsd };
 }
 
-/** Transparent pet view with manual drag support so click can open its token bubble. */
-export function DesktopPetView() {
+/**
+ * Transparent pet view with manual drag support so click can open its token
+ * bubble.
+ *
+ * `onContextMenuReport` (Tauri-only): Tauri's webview has no auto
+ * context-menu event like Electron's main process; the shell passes
+ * `window.tud.showPetContextMenu` so a right-click is surfaced to Rust, which
+ * pops the native menu at the cursor. Electron leaves this undefined and
+ * relies on its own main-process event dispatch instead.
+ */
+export function DesktopPetView({
+  onContextMenuReport,
+}: {
+  onContextMenuReport?: (x: number, y: number) => void;
+} = {}) {
   const [animation, setAnimation] = useState<PetAnimation>('idle');
   const [selectedPetId, setSelectedPetId] = useState('hawking');
   const [scale, setScale] = useState(DISPLAY_SCALE);
@@ -273,9 +286,11 @@ export function DesktopPetView() {
       onContextMenu={(event) => {
         // Tauri's webview has no auto context-menu event like Electron's main
         // process; surface the right-click to Rust, which pops the native menu
-        // at the cursor. Suppress the Chromium default.
+        // at the cursor. Electron (no `onContextMenuReport` passed) keeps its
+        // own main-process dispatch and does nothing here.
+        if (!onContextMenuReport) return;
         event.preventDefault();
-        window.tud.showPetContextMenu?.(event.screenX, event.screenY);
+        onContextMenuReport(event.screenX, event.screenY);
         setIsTokenTooltipOpen(false);
       }}
     >

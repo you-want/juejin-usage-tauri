@@ -20,12 +20,12 @@ import {
   isThemeMode,
   type Theme,
   type ThemeMode,
-} from "../shared/theme";
+} from "@juejin-opensource/jusage-desktop-ui/shared/theme";
 import {
   isDashboardRange,
   type DashboardRange,
-} from "../shared/dashboard-range";
-import { type AutoUpdateState } from "../shared/auto-update";
+} from "@juejin-opensource/jusage-desktop-ui/shared/dashboard-range";
+import { type AutoUpdateState } from "@juejin-opensource/jusage-desktop-ui/shared/auto-update";
 
 type PetAnimation = "idle" | "running-left" | "running-right";
 
