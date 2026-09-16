@@ -239,8 +239,27 @@ function notifySynced(feedback: PetSyncFeedback | null): void {
   }
 }
 
+/** Last Asia/Shanghai calendar day we published a sync event. */
+let lastPublishedCalendarDay = '';
+
 function publishDataSynced(celebrate: boolean): void {
+  lastPublishedCalendarDay = localDateNow();
   notifySynced(takePetSyncFeedback(celebrate));
+}
+
+/**
+ * Empty poll rounds skip onApplied, so the tray would keep yesterday's
+ * numbers overnight. Reuse the existing poll/sync cadence: when the
+ * stats calendar day rolls, notify even if nothing was written.
+ */
+function publishDayRolloverIfNeeded(): void {
+  const day = localDateNow();
+  if (!lastPublishedCalendarDay) {
+    lastPublishedCalendarDay = day;
+    return;
+  }
+  if (day === lastPublishedCalendarDay) return;
+  publishDataSynced(false);
 }
 
 function buildApp(state: {
@@ -375,6 +394,7 @@ async function startLocalRuntimeUnlocked(): Promise<{
       },
       () => applyAfterSync(results, opts),
     );
+    publishDayRolloverIfNeeded();
   };
 
   const workerOk = await startSyncWorker(dir);
@@ -627,6 +647,7 @@ export async function stopLocalRuntime(): Promise<void> {
     await clearRuntimeHeartbeat(runtime?.dir ?? DEFAULT_DATA_DIR);
   }
   petUsageBaseline = null;
+  lastPublishedCalendarDay = '';
   runtime = null;
 }
 

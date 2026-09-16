@@ -223,33 +223,9 @@ function registerShareCardIpc(): void {
   });
 }
 
-let midnightTimer: NodeJS.Timeout | null = null;
 let disposeTrayUsageSync: (() => void) | null = null;
 let onPowerResumeListener: (() => void) | null = null;
 let trayUsageRefreshGeneration = 0;
-
-function scheduleMidnightRefresh(): void {
-  if (process.platform !== 'darwin') return;
-  if (midnightTimer) {
-    clearTimeout(midnightTimer);
-    midnightTimer = null;
-  }
-  const now = new Date();
-  const nextMidnight = new Date(
-    now.getFullYear(),
-    now.getMonth(),
-    now.getDate() + 1,
-    0,
-    0,
-    5,
-  );
-  const msUntilMidnight = Math.max(1000, nextMidnight.getTime() - now.getTime());
-  midnightTimer = setTimeout(() => {
-    void refreshTrayUsage();
-    scheduleMidnightRefresh();
-  }, msUntilMidnight);
-  if (midnightTimer.unref) midnightTimer.unref();
-}
 
 async function refreshTrayUsage(): Promise<void> {
   if (process.platform !== 'darwin') return;
@@ -600,7 +576,6 @@ void acquireDesktopInstanceLock().then((gotLock) => {
 
     if (process.platform === 'darwin') {
       void refreshTrayUsage();
-      scheduleMidnightRefresh();
       onTrayUsagePrefChanged(() => {
         void refreshTrayUsage();
       });
@@ -609,7 +584,6 @@ void acquireDesktopInstanceLock().then((gotLock) => {
       });
       onPowerResumeListener = () => {
         void refreshTrayUsage();
-        scheduleMidnightRefresh();
       };
       powerMonitor.on('resume', onPowerResumeListener);
     }
@@ -685,10 +659,6 @@ void acquireDesktopInstanceLock().then((gotLock) => {
     unregisterDesktopPetIpc();
     disposeDesktopPet();
     disposeTrayPopover();
-    if (midnightTimer) {
-      clearTimeout(midnightTimer);
-      midnightTimer = null;
-    }
     disposeTrayUsageSync?.();
     disposeTrayUsageSync = null;
     if (onPowerResumeListener) {
