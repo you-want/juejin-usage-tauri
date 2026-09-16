@@ -42,6 +42,7 @@ import {
   appendBuckets,
   loadBucketsForRange,
   loadCursors,
+  loadRecentBuckets,
   saveCursors,
   syncMutatedCursors,
 } from '../queue/index.js';
@@ -486,19 +487,56 @@ export async function syncCodebuddy(dataDir: string, config: TudConfig, opts?: S
   return syncSourceBuckets(dataDir, config, 'codebuddy', parseCodebuddyIncremental, { sharedCursors: opts?.sharedCursors });
 }
 
+function workbuddyUnknownRowsNeedMigration(
+  rows: QueueBucket[],
+  collectSince: string,
+): boolean {
+  const sinceMs = new Date(collectSince).getTime();
+  return rows.some(
+    (row) =>
+      row.source === 'workbuddy' &&
+      row.project === 'unknown' &&
+      row.total_tokens > 0 &&
+      new Date(row.hour_start).getTime() >= sinceMs,
+  );
+}
+
 /**
- * WorkBuddy sync carries a one-shot migration: legacy parser state attributed
- * every event to project 'unknown', current state derives projects from the
- * session cwd. When the parser re-reads its sources for that migration
- * (`fullRescan`), its buckets are a full snapshot of the collect window, so
- * rows replace instead of merge and stale 'unknown'-project rows are zeroed.
+ * WorkBuddy sync carries a one-shot migration when the local queue still has
+ * legacy `unknown` project rows. Users who already picked up cwd attribution
+ * without stale unknown rows skip the rescan; everyone else gets the marker so
+ * we do not re-check every round.
  */
 export async function syncWorkbuddy(dataDir: string, config: TudConfig, opts?: SyncSourceOptions): Promise<SyncResult> {
   const collectSince = resolveLocalCollectSince(config);
   const shared = opts?.sharedCursors;
   let cursors = shared ?? (await loadCursors(dataDir));
   const statefulBefore = statefulCursorSlots(cursors);
-  const { result, cursors: nextCursors } = await parseWorkbuddyIncremental(cursors, collectSince);
+  const wbExt = cursors as CursorsFile & {
+    workbuddy?: { cwdProjects?: boolean };
+  };
+  let cursorMarkerJustSet = false;
+  let fullRescan = false;
+  if (wbExt.workbuddy?.cwdProjects !== true) {
+    const existingRows = await loadRecentBuckets(dataDir, collectSince);
+    fullRescan = workbuddyUnknownRowsNeedMigration(existingRows, collectSince);
+    if (!fullRescan) {
+      if (!wbExt.workbuddy) {
+        wbExt.workbuddy = {
+          seenIds: [],
+          fileOffsets: {},
+          sqliteSessions: {},
+          detailedSessions: {},
+        };
+      }
+      wbExt.workbuddy.cwdProjects = true;
+      cursorMarkerJustSet = true;
+    }
+  }
+
+  const { result, cursors: nextCursors } = await parseWorkbuddyIncremental(cursors, collectSince, {
+    fullRescan,
+  });
   cursors = nextCursors;
 
   if (result.skipped) {
@@ -587,7 +625,7 @@ export async function syncWorkbuddy(dataDir: string, config: TudConfig, opts?: S
   if (toAppend.length > 0) {
     await appendBuckets(dataDir, toAppend);
     await saveCursors(dataDir, cursors);
-  } else if (!shared) {
+  } else if (!shared || cursorMarkerJustSet) {
     await saveCursors(dataDir, cursors);
   }
   await setLastSyncAt(dataDir, config);

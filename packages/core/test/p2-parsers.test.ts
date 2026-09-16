@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { statSync } from 'node:fs';
 import { appendFile, mkdtemp, mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -217,6 +218,7 @@ test('parseWorkbuddyIncremental derives project from entry cwd and rescans legac
     const { result, cursors } = await parseWorkbuddyIncremental(legacyCursors, SINCE, {
       projectFiles: [filePath],
       defaultModel: 'auto',
+      fullRescan: true,
     });
     assert.equal(result.fullRescan, true);
     assert.equal(result.eventsParsed, 1);
@@ -234,6 +236,51 @@ test('parseWorkbuddyIncremental derives project from entry cwd and rescans legac
     });
     assert.notEqual(second.result.fullRescan, true);
     assert.equal(second.result.eventsParsed, 0);
+  } finally {
+    if (prev === undefined) delete process.env.WORKBUDDY_HOME;
+    else process.env.WORKBUDDY_HOME = prev;
+  }
+});
+
+test('parseWorkbuddyIncremental skips legacy cursor reset unless fullRescan requested', async () => {
+  const home = await mkdtemp(join(tmpdir(), 'tud-wb3-'));
+  const prev = process.env.WORKBUDDY_HOME;
+  process.env.WORKBUDDY_HOME = home;
+  try {
+    const projects = join(home, 'projects');
+    await mkdir(projects, { recursive: true });
+    const filePath = join(projects, 'sess-c.jsonl');
+    const line =
+      JSON.stringify({
+        sessionId: 'sess-c',
+        id: 'm1',
+        cwd: '/Users/me/wb-demo',
+        timestamp: Date.parse('2026-07-24T11:00:00.000Z'),
+        providerData: {
+          model: 'wb-model',
+          rawUsage: { prompt_tokens: 90, completion_tokens: 10 },
+        },
+      }) + '\n';
+    await writeFile(filePath, line);
+    const consumed = statSync(filePath);
+
+    const legacyCursors = {
+      workbuddy: {
+        seenIds: ['m1'],
+        fileOffsets: {
+          [filePath]: { size: consumed.size, mtimeMs: consumed.mtimeMs, ino: consumed.ino },
+        },
+        sqliteSessions: {},
+        detailedSessions: { 'sess-c': true },
+      },
+    } as CursorsFile;
+
+    const { result } = await parseWorkbuddyIncremental(legacyCursors, SINCE, {
+      projectFiles: [filePath],
+      defaultModel: 'auto',
+    });
+    assert.notEqual(result.fullRescan, true);
+    assert.equal(result.eventsParsed, 0);
   } finally {
     if (prev === undefined) delete process.env.WORKBUDDY_HOME;
     else process.env.WORKBUDDY_HOME = prev;

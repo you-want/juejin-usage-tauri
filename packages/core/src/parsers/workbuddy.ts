@@ -203,7 +203,13 @@ function loadWorkbuddySessionCwds(dbPath: string): Map<string, string> {
 export async function parseWorkbuddyIncremental(
   cursors: CursorsFile,
   statsSince: string,
-  opts?: { env?: NodeJS.ProcessEnv; projectFiles?: string[]; defaultModel?: string },
+  opts?: {
+    env?: NodeJS.ProcessEnv;
+    projectFiles?: string[];
+    defaultModel?: string;
+    /** Set by sync when queue still has legacy `unknown` project rows to backfill. */
+    fullRescan?: boolean;
+  },
 ): Promise<{ result: ParseWorkbuddyResult; cursors: CursorsFile }> {
   const env = opts?.env ?? process.env;
   const sinceMs = new Date(statsSince).getTime();
@@ -215,10 +221,8 @@ export async function parseWorkbuddyIncremental(
   if (!ext.workbuddy.sqliteSessions) ext.workbuddy.sqliteSessions = {};
   if (!ext.workbuddy.detailedSessions) ext.workbuddy.detailedSessions = {};
 
-  // Cursor state older than cwd-based project attribution bucketed everything
-  // under 'unknown'. Drop it once so this pass re-reads the full window and the
-  // sync layer can replace/zero the stale rows.
-  const fullRescan = ext.workbuddy.cwdProjects !== true;
+  // Sync decides whether unknown-project rows still need a one-shot backfill.
+  const fullRescan = opts?.fullRescan === true;
   if (fullRescan) {
     ext.workbuddy.seenIds = [];
     ext.workbuddy.fileOffsets = {};

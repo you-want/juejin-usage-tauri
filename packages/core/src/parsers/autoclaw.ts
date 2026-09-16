@@ -15,7 +15,7 @@
  */
 import { createReadStream, existsSync, readdirSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { basename, dirname, join } from 'node:path';
+import { basename, dirname, isAbsolute, join, normalize, relative } from 'node:path';
 import { createInterface } from 'node:readline';
 import { stat } from 'node:fs/promises';
 
@@ -177,25 +177,22 @@ function stateRootsForExclusion(): string[] {
   return exclusionRootsList;
 }
 
+function isPathWithinRoot(target: string, root: string): boolean {
+  const rel = relative(normalize(root), normalize(target));
+  return rel === '' || (!rel.startsWith('..') && !isAbsolute(rel));
+}
+
 /** Nearest enclosing repo root's basename for an absolute path, else null. */
 export function autoclawProjectForPath(rawPath: string): string | null {
   // partialArgs carries JSON-escaped paths (double backslashes); collapse them
-  // so root-exclusion prefix checks and walk-ups see the real separators.
-  const normalized = rawPath.replace(/\//g, '\\').replace(/\\+/g, '\\').replace(/[\\/]+$/, '');
-  // Drive path (C:\a\b), UNC (\\server\share\…), or unix absolute with at
-  // least one directory. Bogus matches (URL fragments, ids) die on the
-  // existence checks below, so the guard only has to reject relative paths.
-  const isAbsolute =
-    /^[A-Za-z]:\\./.test(normalized) ||
-    /^\\\\.+\\.+/.test(normalized) ||
-    /^\\[^\\]+\\.+/.test(normalized);
-  if (!isAbsolute) return null;
+  // so isAbsolute() and repo-marker walks see the real separators.
+  const collapsed = rawPath.replace(/\\\\/g, '\\').trim().replace(/[\\/]+$/, '');
+  if (!collapsed || !isAbsolute(collapsed)) return null;
 
-  const forStateRoots = stateRootsForExclusion().map((r) => r.replace(/\//g, '\\').toLowerCase());
-  const lower = normalized.toLowerCase();
-  if (forStateRoots.some((root) => lower === root || lower.startsWith(root + '\\'))) return null;
+  const normalized = normalize(collapsed);
+  if (stateRootsForExclusion().some((root) => isPathWithinRoot(normalized, root))) return null;
 
-  const cacheKey = dirname(lower);
+  const cacheKey = dirname(normalized);
   if (dirProjectCache.has(cacheKey)) return dirProjectCache.get(cacheKey) ?? null;
 
   let current = normalized;
@@ -206,7 +203,7 @@ export function autoclawProjectForPath(rawPath: string): string | null {
       break;
     }
     const parent = dirname(current);
-    if (!parent || parent === current || !/[\\/]/.test(parent.slice(1))) break;
+    if (!parent || parent === current) break;
     current = parent;
   }
 
