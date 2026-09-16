@@ -1,6 +1,7 @@
 import type { CSSProperties, ReactNode } from 'react';
 import antigravityIcon from '@lobehub/icons-static-svg/icons/antigravity-color.svg';
 import ampIcon from '@lobehub/icons-static-svg/icons/amp-color.svg';
+import autoClawIcon from '@/assets/brand-logos/autoclaw.svg';
 import claudeCodeIcon from '@lobehub/icons-static-svg/icons/claudecode-color.svg';
 import clineIcon from '@lobehub/icons-static-svg/icons/cline.svg';
 import codeBuddyIcon from '@lobehub/icons-static-svg/icons/codebuddy-color.svg';
@@ -37,7 +38,7 @@ interface ProviderIconAsset {
 const PROVIDER_ICON_MAP: Record<string, ProviderIconAsset> = {
   amp: { src: ampIcon },
   antigravity: { src: antigravityIcon },
-  autoclaw: { src: openClawIcon },
+  autoclaw: { src: autoClawIcon },
   'claude-code': { src: claudeCodeIcon },
   'command-code': { monochrome: true, src: commandCodeIcon },
   cline: { monochrome: true, src: clineIcon },
