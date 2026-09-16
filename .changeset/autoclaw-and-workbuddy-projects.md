@@ -1,5 +1,6 @@
 ---
 '@juejin-opensource/jusage': patch
+'@juejin-opensource/jusage-core': patch
 ---
 
 - 新增 AutoClaw 用量统计：读取 `~/.openclaw-autoclaw*`（或 `AUTOCLAW_STATE_DIR`）下的 `agents/*/sessions` 会话，与 OpenClaw 同格式；此前设置了 `OPENCLAW_STATE_DIR` 的用户，其 AutoClaw 数据完全无法被统计。
