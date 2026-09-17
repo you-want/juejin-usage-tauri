@@ -1,5 +1,17 @@
 # @juejin-opensource/jusage
 
+## 0.1.11
+
+### Patch Changes
+
+- 新增 `jusage doctor` 诊断指令，用于一站式排查运行环境、数据目录权限、本地数据源探测、进程锁和云端连通性，并在异常时给出解决指引。
+- 新增 AutoClaw 用量采集与项目归属；修复 WorkBuddy 项目全部显示为「未知项目」，升级后会自动重扫一次历史数据。
+- 内置面板设置中可校验本机与线上近 90 天用量，并以本地为准覆盖当前设备的差异。
+- 修复 Cursor App 与 Cursor CLI 登录了不同账号时，本地用量停止更新的问题。
+- 内置面板：AutoClaw 改用官方品牌图标。
+- Updated dependencies
+  - @juejin-opensource/jusage-core@0.1.11
+
 ## 0.1.10
 
 ### Patch Changes

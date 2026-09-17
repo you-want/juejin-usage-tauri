@@ -1,5 +1,17 @@
 # @juejin-opensource/jusage-core
 
+## 0.1.11
+
+### Patch Changes
+
+- 新增 AutoClaw 用量采集：读取 `~/.openclaw-autoclaw*`（或 `AUTOCLAW_STATE_DIR`）下的会话，与 OpenClaw 同格式；此前只设了 `OPENCLAW_STATE_DIR` 的用户，AutoClaw 数据无法被统计。
+- AutoClaw 项目归属改为从消息里的绝对路径向上找仓库根；没有路径时沿用上一项目，最后回退到 agent 显示名。
+- 修复 WorkBuddy 项目全部显示为「未知项目」：改为从会话工作目录归属项目（优先 git 仓库根目录名）；升级后会自动重扫一次历史 WorkBuddy / AutoClaw 数据。
+- 新增 `jusage doctor` 诊断：排查运行环境、数据目录权限、本地数据源探测、进程锁和云端连通性，异常时给出解决指引。
+- 设置中可校验本机与线上近 90 天用量是否一致，并以本地为准覆盖当前设备的差异。
+- 修复 Cursor App 与 Cursor CLI 登录了不同账号时，本地用量和额度卡停止更新的问题。
+- 内置定价表同步近期 Qwen 3.8 Flash、DeepSeek Flash 等官方渠道价格。
+
 ## 0.1.10
 
 ### Patch Changes

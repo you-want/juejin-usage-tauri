@@ -1,5 +1,15 @@
 # @juejin-opensource/jusage-dashboard
 
+## 0.1.11
+
+### Patch Changes
+
+- AutoClaw 在「工具与模型用量」等统计图标处改用官方品牌图标，此前借用的是 OpenClaw 图标。
+- 设置中新增数据校验：对比本机与线上近 90 天用量，仅校准当前设备，可以本地为准覆盖线上差异。
+- 线上用量页支持按设备筛选，多设备账号可只看指定设备的用量。
+- Updated dependencies
+  - @juejin-opensource/jusage-core@0.1.11
+
 ## 0.1.10
 
 ### Patch Changes
