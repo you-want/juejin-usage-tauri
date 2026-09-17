@@ -545,7 +545,12 @@ async function ensurePetWindow(): Promise<BrowserWindow> {
   if (process.platform === 'darwin') {
     window.setWindowButtonVisibility(false);
     // Follow the user across macOS Spaces; alwaysOnTop alone only stacks within one Space.
-    window.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+    // skipTransformProcessType: Electron otherwise switches the app to accessory,
+    // which hides the Dock and the main window.
+    window.setVisibleOnAllWorkspaces(true, {
+      visibleOnFullScreen: true,
+      skipTransformProcessType: true,
+    });
   }
   suppressPetWindowTitle(window);
   window.setAlwaysOnTop(true, 'floating');
