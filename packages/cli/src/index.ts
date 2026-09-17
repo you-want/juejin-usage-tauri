@@ -449,21 +449,7 @@ async function cmdStatus(): Promise<void> {
 }
 
 async function cmdDoctor(port?: number): Promise<void> {
-  let dir: string | undefined;
-  let config: TudConfig | undefined;
-  try {
-    const loaded = await loadConfig();
-    dir = loaded.dir;
-    config = loaded.config;
-  } catch {
-    // If loadConfig fails (e.g. locked or permission denied), doctor continues to diagnose and report it.
-  }
-
-  const report = await runDoctorDiagnostics({
-    dataDir: dir,
-    config,
-    port,
-  });
+  const report = await runDoctorDiagnostics({ port });
   printDoctorReport(report);
 }
 

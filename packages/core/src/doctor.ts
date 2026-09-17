@@ -1,12 +1,27 @@
 import { access, constants, readFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
-import { join } from 'node:path';
 import { createConnection } from 'node:net';
 
-import { loadConfig } from './config.js';
-import { DEFAULT_DATA_DIR, DEFAULT_PORT } from './paths.js';
-import { isPidAlive, pidFilePath, readRuntimeOwner, runtimeKindLabel } from './runtime-pid.js';
+import {
+  DEFAULT_JUEJIN_API_URL,
+  loadConfig,
+  resolveLinkedUserId,
+} from './config.js';
+import {
+  DEFAULT_DATA_DIR,
+  DEFAULT_PORT,
+  cursorsPath,
+  logsDir as resolveLogsDir,
+} from './paths.js';
+import {
+  clearPid,
+  isStillSameRuntimeProcess,
+  pidFilePath,
+  readRuntimeOwner,
+  runtimeKindLabel,
+} from './runtime-pid.js';
 import { getHookStatus } from './server/state.js';
+import { SYNC_SOURCE_IDS } from './sync/index.js';
 import { isSyncSourcePresent } from './sync/source-presence.js';
 import { TOOL_CATALOG } from './tool-catalog.js';
 import type { TudConfig } from './types.js';
@@ -61,6 +76,54 @@ export interface RunDoctorOptions {
   skipNetworkProbe?: boolean;
 }
 
+/** Sync channel id → TOOL_CATALOG key when the two registries disagree. */
+const SYNC_ID_TO_CATALOG_KEY: Record<string, string> = {
+  claude: 'claude-code',
+  qwen: 'qwen-code',
+};
+
+/** Display names for sync sources that are not in TOOL_CATALOG. */
+const SYNC_ID_DISPLAY_FALLBACK: Record<string, string> = {
+  qwenwork: 'QwenWork',
+  'command-code': 'Command Code',
+};
+
+function collectorDisplayName(sourceId: string): string {
+  const catalogKey = SYNC_ID_TO_CATALOG_KEY[sourceId] ?? sourceId;
+  const tool = TOOL_CATALOG.find((item) => item.key === catalogKey);
+  return tool?.displayName ?? SYNC_ID_DISPLAY_FALLBACK[sourceId] ?? sourceId;
+}
+
+function formatDeleteCommand(target: string): string {
+  if (process.platform === 'win32') {
+    return `Remove-Item -Force "${target}"`;
+  }
+  return `rm "${target}"`;
+}
+
+function formatWritableHint(target: string): string {
+  if (process.platform === 'win32') {
+    return `请检查该路径是否可写: ${target}`;
+  }
+  return `请检查读写权限: chmod -R u+rw "${target}"`;
+}
+
+function fallbackConfig(dataDir: string): TudConfig {
+  return {
+    deviceId: 'unknown',
+    hostname: 'localhost',
+    dataDir,
+    statsSince: new Date().toISOString(),
+    juejin: {
+      enabled: false,
+      apiUrl: DEFAULT_JUEJIN_API_URL,
+      authMode: 'manual',
+      token: null,
+    },
+    serverPort: DEFAULT_PORT,
+  };
+}
+
 /** Check TCP port accessibility */
 function checkPortOpen(port: number, host = '127.0.0.1', timeoutMs = 500): Promise<boolean> {
   return new Promise((resolve) => {
@@ -81,10 +144,13 @@ function checkPortOpen(port: number, host = '127.0.0.1', timeoutMs = 500): Promi
 }
 
 /** Probe network endpoint reachability and latency */
-async function probeUrl(url: string, timeoutMs = 3000): Promise<{ reachable: boolean; latencyMs?: number; error?: string }> {
+async function probeUrl(
+  url: string,
+  timeoutMs = 3000,
+): Promise<{ reachable: boolean; latencyMs?: number; error?: string }> {
   const start = Date.now();
   try {
-    const res = await fetch(url, {
+    await fetch(url, {
       method: 'HEAD',
       signal: AbortSignal.timeout(timeoutMs),
     }).catch(async () => {
@@ -95,8 +161,8 @@ async function probeUrl(url: string, timeoutMs = 3000): Promise<{ reachable: boo
       });
     });
     const latencyMs = Date.now() - start;
-    // Any HTTP response (including 401, 403, 404) means network and DNS are reachable
-    return { reachable: res.status < 500 || res.status === 502 || res.status === 503, latencyMs };
+    // Any completed HTTP response means DNS and the host are reachable.
+    return { reachable: true, latencyMs };
   } catch (err) {
     return {
       reachable: false,
@@ -111,10 +177,17 @@ function resolveCategoryStatus(items: DoctorCheckItem[]): DoctorStatus {
   return 'ok';
 }
 
-export async function runDoctorDiagnostics(options: RunDoctorOptions = {}): Promise<DoctorReport> {
+function rememberSuggestion(suggestions: string[], item: DoctorCheckItem): void {
+  if (item.suggestion) suggestions.push(item.suggestion);
+}
+
+export async function runDoctorDiagnostics(
+  options: RunDoctorOptions = {},
+): Promise<DoctorReport> {
   const dataDir = options.dataDir ?? DEFAULT_DATA_DIR;
   let config: TudConfig;
   let configError: string | null = null;
+  let recoveredBackupPath: string | null = null;
 
   try {
     if (options.config) {
@@ -122,24 +195,16 @@ export async function runDoctorDiagnostics(options: RunDoctorOptions = {}): Prom
     } else {
       const loaded = await loadConfig(dataDir);
       config = loaded.config;
+      if (loaded.recoveredFromCorrupt) {
+        recoveredBackupPath = loaded.recoveredFromCorrupt.backupPath;
+      }
     }
   } catch (err) {
     configError = err instanceof Error ? err.message : String(err);
-    config = {
-      deviceId: 'unknown',
-      hostname: 'localhost',
-      dataDir,
-      statsSince: new Date().toISOString(),
-      juejin: {
-        enabled: false,
-        apiUrl: 'https://juejin.cn',
-        authMode: 'manual',
-        token: null,
-      },
-    };
+    config = fallbackConfig(dataDir);
   }
 
-  const port = options.port ?? DEFAULT_PORT;
+  const port = options.port ?? config.serverPort ?? DEFAULT_PORT;
   const categories: DoctorCategory[] = [];
   const suggestions: string[] = [];
 
@@ -167,7 +232,7 @@ export async function runDoctorDiagnostics(options: RunDoctorOptions = {}): Prom
       suggestion: '请升级 Node.js 到 20 或更高版本以保证功能正常运行。',
     };
     runtimeItems.push(item);
-    suggestions.push(item.suggestion!);
+    rememberSuggestion(suggestions, item);
   }
 
   // OS & Platform
@@ -178,42 +243,45 @@ export async function runDoctorDiagnostics(options: RunDoctorOptions = {}): Prom
     message: `${process.platform} (${process.arch})`,
   });
 
-  // PID Lock & Running owner
-  const owner = await readRuntimeOwner(dataDir);
+  // PID lock: same liveness rules as runtime. Stale/unreadable files are
+  // removed here (getRunningOwner would also clear them on next start).
   const pidFile = pidFilePath(dataDir);
   const pidExists = existsSync(pidFile);
+  const owner = await readRuntimeOwner(dataDir);
 
-  if (owner) {
-    const alive = isPidAlive(owner.pid);
-    if (alive) {
-      runtimeItems.push({
-        id: 'runtime-pid',
-        name: '服务进程锁',
-        status: 'ok',
-        message: `${runtimeKindLabel(owner.kind)} 正在运行 (PID: ${owner.pid}, 角色: owner)`,
-      });
-    } else {
+  if (owner && isStillSameRuntimeProcess(owner)) {
+    runtimeItems.push({
+      id: 'runtime-pid',
+      name: '服务进程锁',
+      status: 'ok',
+      message: `${runtimeKindLabel(owner.kind)} 正在运行 (PID: ${owner.pid}, 角色: owner)`,
+    });
+  } else if (pidExists) {
+    await clearPid(dataDir);
+    if (existsSync(pidFile)) {
       const item: DoctorCheckItem = {
         id: 'runtime-pid',
         name: '服务进程锁',
         status: 'warn',
-        message: `检测到失效的锁文件 (PID: ${owner.pid} 已无响应)`,
+        message: owner
+          ? `检测到失效的锁文件 (PID: ${owner.pid} 已无响应)，但自动清理失败`
+          : '存在未识别格式的 tud.pid 文件，但自动清理失败',
         detail: `锁文件路径: ${pidFile}`,
-        suggestion: `若遇到服务无法启动或无法抢占，请尝试删除陈旧的锁文件: rm "${pidFile}"`,
+        suggestion: `请手动删除陈旧的锁文件: ${formatDeleteCommand(pidFile)}`,
       };
       runtimeItems.push(item);
-      suggestions.push(item.suggestion!);
+      rememberSuggestion(suggestions, item);
+    } else {
+      runtimeItems.push({
+        id: 'runtime-pid',
+        name: '服务进程锁',
+        status: 'info',
+        message: owner
+          ? `已清理失效的锁文件 (原 PID: ${owner.pid})`
+          : '已清理无法识别的 tud.pid 文件',
+        detail: `原路径: ${pidFile}`,
+      });
     }
-  } else if (pidExists) {
-    const item: DoctorCheckItem = {
-      id: 'runtime-pid',
-      name: '服务进程锁',
-      status: 'warn',
-      message: '存在未识别格式的 tud.pid 文件',
-      suggestion: `建议清理异常的锁文件: rm "${pidFile}"`,
-    };
-    runtimeItems.push(item);
-    suggestions.push(item.suggestion!);
   } else {
     runtimeItems.push({
       id: 'runtime-pid',
@@ -269,10 +337,10 @@ export async function runDoctorDiagnostics(options: RunDoctorOptions = {}): Prom
       status: 'error',
       message: `${dataDir} 访问受限`,
       detail: err instanceof Error ? err.message : String(err),
-      suggestion: `请检查数据目录读写权限: chmod -R u+rw "${dataDir}"`,
+      suggestion: formatWritableHint(dataDir),
     };
     storageItems.push(item);
-    suggestions.push(item.suggestion!);
+    rememberSuggestion(suggestions, item);
   }
 
   // Config file
@@ -281,12 +349,23 @@ export async function runDoctorDiagnostics(options: RunDoctorOptions = {}): Prom
       id: 'storage-config',
       name: '配置文件',
       status: 'error',
-      message: 'tud.config.json 解析失败',
+      message: 'config.json 无法加载',
       detail: configError,
-      suggestion: '配置文件可能损坏，可尝试修复 JSON 格式或备份后重新初始化。',
+      suggestion: '请检查数据目录权限，或备份后删除损坏的 config.json 后重新启动。',
     };
     storageItems.push(item);
-    suggestions.push(item.suggestion!);
+    rememberSuggestion(suggestions, item);
+  } else if (recoveredBackupPath) {
+    const item: DoctorCheckItem = {
+      id: 'storage-config',
+      name: '配置文件',
+      status: 'warn',
+      message: 'config.json 曾损坏，已自动恢复',
+      detail: `备份文件: ${recoveredBackupPath}`,
+      suggestion: '请确认登录状态是否仍有效；确认无误后可删除备份文件。',
+    };
+    storageItems.push(item);
+    rememberSuggestion(suggestions, item);
   } else {
     storageItems.push({
       id: 'storage-config',
@@ -297,7 +376,7 @@ export async function runDoctorDiagnostics(options: RunDoctorOptions = {}): Prom
   }
 
   // Logs directory
-  const logsDir = join(dataDir, 'logs');
+  const logsDir = resolveLogsDir(dataDir);
   try {
     if (existsSync(logsDir)) {
       await access(logsDir, constants.R_OK | constants.W_OK);
@@ -322,18 +401,17 @@ export async function runDoctorDiagnostics(options: RunDoctorOptions = {}): Prom
       status: 'warn',
       message: `${logsDir} 权限异常`,
       detail: err instanceof Error ? err.message : String(err),
-      suggestion: `请确保日志目录有可写权限: chmod -R u+w "${logsDir}"`,
+      suggestion: formatWritableHint(logsDir),
     };
     storageItems.push(item);
-    suggestions.push(item.suggestion!);
+    rememberSuggestion(suggestions, item);
   }
 
-  // Queue cursors file
-  const cursorsPath = join(dataDir, 'queue', 'cursors.json');
-  if (existsSync(cursorsPath)) {
+  const cursorsFile = cursorsPath(dataDir);
+  if (existsSync(cursorsFile)) {
     try {
-      const content = await readFile(cursorsPath, 'utf-8');
-      const cursors = JSON.parse(content);
+      const content = await readFile(cursorsFile, 'utf-8');
+      const cursors = JSON.parse(content) as Record<string, unknown>;
       const trackedSources = Object.keys(cursors).length;
       storageItems.push({
         id: 'storage-cursors',
@@ -346,11 +424,11 @@ export async function runDoctorDiagnostics(options: RunDoctorOptions = {}): Prom
         id: 'storage-cursors',
         name: '同步游标',
         status: 'warn',
-        message: 'queue/cursors.json 解析失败',
+        message: 'cursors.json 解析失败',
         suggestion: '游标文件格式异常，可运行 jusage sync 进行自动修复。',
       };
       storageItems.push(item);
-      suggestions.push(item.suggestion!);
+      rememberSuggestion(suggestions, item);
     }
   } else {
     storageItems.push({
@@ -379,17 +457,17 @@ export async function runDoctorDiagnostics(options: RunDoctorOptions = {}): Prom
   }
 
   const collectorItems: DoctorCollectorItem[] = [];
-  for (const tool of TOOL_CATALOG) {
-    const present = isSyncSourcePresent(tool.key);
+  for (const sourceId of SYNC_SOURCE_IDS) {
+    const present = isSyncSourcePresent(sourceId);
     let hook: 'active' | 'inactive' | undefined;
-    if (tool.key === 'claude') {
+    if (sourceId === 'claude') {
       hook = hookStatus.claude ? 'active' : 'inactive';
-    } else if (tool.key === 'codex') {
+    } else if (sourceId === 'codex') {
       hook = hookStatus.codex ? 'active' : 'inactive';
     }
     collectorItems.push({
-      key: tool.key,
-      displayName: tool.displayName,
+      key: sourceId,
+      displayName: collectorDisplayName(sourceId),
       present,
       hookStatus: hook,
     });
@@ -418,7 +496,7 @@ export async function runDoctorDiagnostics(options: RunDoctorOptions = {}): Prom
         '请确认是否已使用过支持的 AI 工具（如 Cursor、Claude Code、Codex、Trae 等）并产生过对话用量。',
     };
     toolCheckItems.push(item);
-    suggestions.push(item.suggestion!);
+    rememberSuggestion(suggestions, item);
   }
 
   categories.push({
@@ -433,7 +511,6 @@ export async function runDoctorDiagnostics(options: RunDoctorOptions = {}): Prom
   // ==========================================
   const networkItems: DoctorCheckItem[] = [];
 
-  // Cloud sync status
   if (config.juejin.enabled) {
     networkItems.push({
       id: 'cloud-enabled',
@@ -450,8 +527,8 @@ export async function runDoctorDiagnostics(options: RunDoctorOptions = {}): Prom
     });
   }
 
-  // Token status
-  if (config.juejin.token) {
+  const linkedUserId = resolveLinkedUserId(config.deviceId, config.juejin.token);
+  if (linkedUserId) {
     networkItems.push({
       id: 'cloud-token',
       name: '上报 Token',
@@ -467,7 +544,7 @@ export async function runDoctorDiagnostics(options: RunDoctorOptions = {}): Prom
       suggestion: '可在桌面端「设置」中登录绑定掘金账号，或在配置文件中填入 token。',
     };
     networkItems.push(item);
-    suggestions.push(item.suggestion!);
+    rememberSuggestion(suggestions, item);
   } else {
     networkItems.push({
       id: 'cloud-token',
@@ -477,7 +554,6 @@ export async function runDoctorDiagnostics(options: RunDoctorOptions = {}): Prom
     });
   }
 
-  // Network probe
   if (!options.skipNetworkProbe && config.juejin.apiUrl) {
     const probe = await probeUrl(config.juejin.apiUrl);
     if (probe.reachable) {
@@ -498,7 +574,7 @@ export async function runDoctorDiagnostics(options: RunDoctorOptions = {}): Prom
         suggestion: '请检查网络连接、DNS 解析或代理设置，确认是否可正常访问掘金云端服务。',
       };
       networkItems.push(item);
-      suggestions.push(item.suggestion!);
+      rememberSuggestion(suggestions, item);
     }
   }
 
@@ -509,7 +585,6 @@ export async function runDoctorDiagnostics(options: RunDoctorOptions = {}): Prom
     items: networkItems,
   });
 
-  // Calculate overall summary
   let okCount = 0;
   let warnCount = 0;
   let errorCount = 0;
