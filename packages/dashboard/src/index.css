@@ -205,13 +205,4 @@
     border-color: var(--muted);
     border-width: 1px;
   }
-
-  /* Settings modal: active tab panel consumes remaining height under the tab list. */
-  .settings-panel-tabs [role='tabpanel']:not([hidden]) {
-    display: flex;
-    min-height: 0;
-    flex: 1 1 0%;
-    flex-direction: column;
-    overflow: hidden;
-  }
 }

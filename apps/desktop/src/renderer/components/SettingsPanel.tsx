@@ -62,11 +62,15 @@ const TAB_ITEMS: { id: DesktopSettingsTabId; label: string }[] = [
 const CUSTOM_PET_DOCS_URL =
   'https://gitee.com/juejin-cn/juejin-usage/blob/main/README.md#%E6%A1%8C%E9%9D%A2%E5%AE%A0%E7%89%A9%E5%8F%AF%E9%80%89';
 
-/** Fill modal body below tab list; avoid vh caps that ignore header + tab chrome. */
-const SETTINGS_TAB_PANEL_CLASS =
-  'flex min-h-0 flex-1 flex-col overflow-hidden p-4 text-left';
-const SETTINGS_TAB_SCROLL_CLASS =
-  'min-h-0 flex-1 overflow-y-auto overscroll-contain pb-6 pr-1';
+/**
+ * Dialog is `max-h-[90vh]`. Header + tab list take ~9rem, so a 78vh panel
+ * overflows the body and gets clipped. Bound the panel to the leftover space
+ * so `overflow-y-auto` both scrolls and stays fully visible.
+ */
+const SETTINGS_SCROLL_PANEL =
+  'max-h-[calc(90vh-9rem)] overflow-y-auto p-4 pb-8 text-left';
+const SETTINGS_FIXED_FOOTER_PANEL =
+  'flex max-h-[calc(90vh-9rem)] min-h-0 flex-col overflow-hidden p-4 text-left';
 
 export function SettingsPanel({
   activeTab,
@@ -187,11 +191,11 @@ export function SettingsPanel({
     <div className="flex min-h-0 w-full flex-1 flex-col">
       <Toast.Provider placement="top end" queue={toastQueue} />
       <Tabs
-        className="settings-panel-tabs flex min-h-0 w-full flex-1 flex-col text-center"
+        className="flex min-h-0 w-full flex-1 flex-col text-center"
         selectedKey={tab}
         onSelectionChange={(key) => setTab(String(key) as DesktopSettingsTabId)}
       >
-        <Tabs.ListContainer className="m-3 mr-14 w-fit shrink-0">
+        <Tabs.ListContainer className="m-3 mr-14 w-fit">
           <Tabs.List aria-label="设置分类" className="w-fit">
             {TAB_ITEMS.map((item) => (
               <Tabs.Tab
@@ -206,10 +210,9 @@ export function SettingsPanel({
           </Tabs.List>
         </Tabs.ListContainer>
 
-        <Tabs.Panel className={SETTINGS_TAB_PANEL_CLASS} id="pet">
+        <Tabs.Panel className={`${SETTINGS_SCROLL_PANEL} min-w-0`} id="pet">
           {tab === 'pet' && (
-            <div className="flex min-h-0 flex-1 flex-col">
-              <DesktopPetSettings
+            <DesktopPetSettings
               catalogSelectedPetId={catalogSelectedPetId}
               catalogError={petCatalogError}
               installingPetId={installingPetId}
@@ -227,13 +230,9 @@ export function SettingsPanel({
                 });
               }}
             />
-            </div>
           )}
         </Tabs.Panel>
-        <Tabs.Panel
-          className={`${SETTINGS_TAB_PANEL_CLASS} font-normal`}
-          id="sync"
-        >
+        <Tabs.Panel className={`${SETTINGS_FIXED_FOOTER_PANEL} font-normal`} id="sync">
           {tab === 'sync' &&
             (cliMode ? (
               <CliSyncSettings
@@ -264,19 +263,11 @@ export function SettingsPanel({
               />
             ))}
         </Tabs.Panel>
-        <Tabs.Panel className={SETTINGS_TAB_PANEL_CLASS} id="app">
-          {tab === 'app' && (
-            <div className={SETTINGS_TAB_SCROLL_CLASS}>
-              <AppSettingsPanel />
-            </div>
-          )}
+        <Tabs.Panel className={SETTINGS_SCROLL_PANEL} id="app">
+          {tab === 'app' && <AppSettingsPanel />}
         </Tabs.Panel>
-        <Tabs.Panel className={SETTINGS_TAB_PANEL_CLASS} id="about">
-          {tab === 'about' && (
-            <div className={SETTINGS_TAB_SCROLL_CLASS}>
-              <AboutContent />
-            </div>
-          )}
+        <Tabs.Panel className={SETTINGS_SCROLL_PANEL} id="about">
+          {tab === 'about' && <AboutContent />}
         </Tabs.Panel>
       </Tabs>
     </div>
@@ -508,11 +499,11 @@ function DesktopPetSettings({
   };
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-hidden">
+    <div className="flex flex-col gap-4">
       {(error ?? catalogError) && (
         <StatusBanner tone="error" title={error ?? catalogError ?? ''} />
       )}
-      <div className={SETTINGS_TAB_SCROLL_CLASS}>
+      <div className="min-w-0">
         <p className="mb-3 text-sm text-muted">
           显示悬浮宠物。拖动可移动位置，右键可打开菜单。
         </p>
@@ -531,7 +522,7 @@ function DesktopPetSettings({
             显示桌面宠物
           </Checkbox.Content>
         </Checkbox>
-        <div className="mt-5 flex flex-col gap-5 px-4">
+        <div className="mt-5 flex flex-col gap-5 px-4 pb-1">
           <Select
             aria-label="选择桌面宠物"
             isDisabled={petControlsDisabled}
@@ -931,7 +922,7 @@ function CliSyncSettings({
       <p className="shrink-0 text-sm text-muted">
         开启后本地 sync 完成会自动上报掘金
       </p>
-      <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain pb-6 pr-1">
+      <div className="min-h-0 flex-1 space-y-4 overflow-y-auto pr-1">
       <Checkbox
           id="cli-juejin-enabled"
           isDisabled={saving}

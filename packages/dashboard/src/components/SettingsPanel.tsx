@@ -37,11 +37,11 @@ const TAB_ITEMS: { id: SettingsTabId; label: string }[] = [
   { id: 'about', label: '关于' },
 ];
 
-/** Fill modal body below tab list; avoid vh caps that ignore header + tab chrome. */
-const SETTINGS_TAB_PANEL_CLASS =
-  'flex min-h-0 flex-1 flex-col overflow-hidden p-4 text-left';
-const SETTINGS_TAB_SCROLL_CLASS =
-  'min-h-0 flex-1 overflow-y-auto overscroll-contain pb-6 pr-1';
+/** See desktop SettingsPanel: panel height must fit under dialog chrome. */
+const SETTINGS_SCROLL_PANEL =
+  'max-h-[calc(90vh-9rem)] overflow-y-auto p-4 pb-8 text-left';
+const SETTINGS_FIXED_FOOTER_PANEL =
+  'flex max-h-[calc(90vh-9rem)] min-h-0 flex-col overflow-hidden p-4 text-left';
 
 export function SettingsPanel({
   activeTab,
@@ -66,11 +66,11 @@ export function SettingsPanel({
     <div className="flex min-h-0 w-full flex-1 flex-col">
       <Toast.Provider placement="top end" queue={toastQueue} />
       <Tabs
-        className="settings-panel-tabs flex min-h-0 w-full flex-1 flex-col text-center"
+        className="flex min-h-0 w-full flex-1 flex-col text-center"
         selectedKey={resolvedTab}
         onSelectionChange={(key) => setTab(String(key) as SettingsTabId)}
       >
-        <Tabs.ListContainer className="m-3 mr-14 w-fit shrink-0">
+        <Tabs.ListContainer className="m-3 mr-14 w-fit">
           <Tabs.List aria-label="设置分类" className="w-fit">
             {TAB_ITEMS.map((item) => (
               <Tabs.Tab
@@ -85,10 +85,7 @@ export function SettingsPanel({
           </Tabs.List>
         </Tabs.ListContainer>
 
-        <Tabs.Panel
-          className={`${SETTINGS_TAB_PANEL_CLASS} font-normal`}
-          id="sync"
-        >
+        <Tabs.Panel className={`${SETTINGS_FIXED_FOOTER_PANEL} font-normal`} id="sync">
           {resolvedTab === 'sync' &&
             (cliMode ? (
               <CliSyncSettings
@@ -119,19 +116,11 @@ export function SettingsPanel({
               />
             ))}
         </Tabs.Panel>
-        <Tabs.Panel className={SETTINGS_TAB_PANEL_CLASS} id="app">
-          {resolvedTab === 'app' && (
-            <div className={SETTINGS_TAB_SCROLL_CLASS}>
-              <AppSettingsPanel />
-            </div>
-          )}
+        <Tabs.Panel className={SETTINGS_SCROLL_PANEL} id="app">
+          {resolvedTab === 'app' && <AppSettingsPanel />}
         </Tabs.Panel>
-        <Tabs.Panel className={SETTINGS_TAB_PANEL_CLASS} id="about">
-          {resolvedTab === 'about' && (
-            <div className={SETTINGS_TAB_SCROLL_CLASS}>
-              <AboutContent />
-            </div>
-          )}
+        <Tabs.Panel className={SETTINGS_SCROLL_PANEL} id="about">
+          {resolvedTab === 'about' && <AboutContent />}
         </Tabs.Panel>
       </Tabs>
     </div>
@@ -250,7 +239,7 @@ function CliSyncSettings({
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden">
       {error && <StatusBanner tone="error" title={error} />}
-      <div className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain pb-6 pr-1">
+      <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
       <Surface className="rounded-xl p-4" variant="secondary">
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0">
