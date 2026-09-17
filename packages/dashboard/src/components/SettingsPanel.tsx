@@ -57,10 +57,10 @@ export function SettingsPanel({
     tab === 'pet' ? 'sync' : tab;
 
   return (
-    <div className="w-full">
+    <div className="flex min-h-0 w-full flex-1 flex-col">
       <Toast.Provider placement="top end" queue={toastQueue} />
       <Tabs
-        className="w-full text-center"
+        className="flex min-h-0 w-full flex-1 flex-col text-center"
         selectedKey={resolvedTab}
         onSelectionChange={(key) => setTab(String(key) as SettingsTabId)}
       >
@@ -116,9 +116,12 @@ export function SettingsPanel({
         <Tabs.Panel className="max-h-[min(78vh,44rem)] min-h-[40vh] overflow-y-auto p-4 text-left" id="app">
           {resolvedTab === 'app' && <AppSettingsPanel />}
         </Tabs.Panel>
-        <Tabs.Panel className="max-h-[min(78vh,44rem)] min-h-[40vh] overflow-hidden p-4 text-left" id="about">
+        <Tabs.Panel
+          className="flex max-h-[min(78vh,44rem)] min-h-[40vh] flex-col overflow-hidden p-4 text-left"
+          id="about"
+        >
           {resolvedTab === 'about' && (
-            <div className="h-full overflow-y-auto pr-1">
+            <div className="min-h-0 flex-1 overflow-y-auto pr-1">
               <AboutContent />
             </div>
           )}
