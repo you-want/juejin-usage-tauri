@@ -23,6 +23,7 @@ import {
   updateStatusMessage,
   type AutoUpdateState,
 } from '../../shared/auto-update';
+import { isTrayUsageMode, type TrayUsageMode } from '../../shared/tray-usage';
 import {
   fetchConfig,
   getApiBearer,
@@ -36,6 +37,7 @@ import { openJuejinLogin } from '@/lib/juejin-client-link';
 import { DESKTOP_PETS } from '@/pets';
 import type { DesktopPetDefinition } from '../../shared/desktop-pet-catalog';
 import { AboutContent } from '@/components/AboutContent';
+import { DataCalibrateSection } from '@/components/DataCalibrateSection';
 import { JuejinLoginConsentModal } from '@/components/JuejinLoginConsentModal';
 import { PetSelectPreview } from '@/components/PetSelectPreview';
 import { StatusBanner } from '@/components/StatusBanner';
@@ -198,7 +200,7 @@ export function SettingsPanel({
           </Tabs.List>
         </Tabs.ListContainer>
 
-        <Tabs.Panel className="h-[50vh] min-w-0 overflow-hidden p-4 text-left" id="pet">
+        <Tabs.Panel className="max-h-[min(78vh,44rem)] min-h-[40vh] min-w-0 overflow-y-auto p-4 text-left" id="pet">
           {tab === 'pet' && (
             <DesktopPetSettings
               catalogSelectedPetId={catalogSelectedPetId}
@@ -221,7 +223,7 @@ export function SettingsPanel({
           )}
         </Tabs.Panel>
         <Tabs.Panel
-          className="h-[50vh] overflow-hidden p-4 text-left font-normal"
+          className="flex max-h-[min(78vh,44rem)] min-h-[40vh] flex-col overflow-hidden p-4 text-left font-normal"
           id="sync"
         >
           {tab === 'sync' &&
@@ -254,10 +256,10 @@ export function SettingsPanel({
               />
             ))}
         </Tabs.Panel>
-        <Tabs.Panel className="h-[50vh] overflow-hidden p-4 text-left" id="app">
+        <Tabs.Panel className="max-h-[min(78vh,44rem)] min-h-[40vh] overflow-y-auto p-4 text-left" id="app">
           {tab === 'app' && <AppSettingsPanel />}
         </Tabs.Panel>
-        <Tabs.Panel className="h-[50vh] overflow-hidden p-4 text-left" id="about">
+        <Tabs.Panel className="max-h-[min(78vh,44rem)] min-h-[40vh] overflow-hidden p-4 text-left" id="about">
           {tab === 'about' && (
             <div className="h-full overflow-y-auto pr-1">
               <AboutContent />
@@ -912,13 +914,13 @@ function CliSyncSettings({
   };
 
   return (
-    <div className="flex h-full flex-col gap-4 overflow-hidden">
+    <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-hidden">
       {error && <StatusBanner tone="error" title={error} />}
       <p className="shrink-0 text-sm text-muted">
         开启后本地 sync 完成会自动上报掘金
       </p>
-      <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-hidden">
-        <Checkbox
+      <div className="min-h-0 flex-1 space-y-4 overflow-y-auto pr-1">
+      <Checkbox
           id="cli-juejin-enabled"
           isDisabled={saving}
           isSelected={enabled}
@@ -987,7 +989,13 @@ function CliSyncSettings({
           </p>
         )}
 
-        <div className="mt-auto flex justify-end gap-2">
+        <DataCalibrateSection
+          linked={Boolean(userId)}
+          onNotify={onNotify}
+        />
+      </div>
+
+      <div className="mt-auto flex shrink-0 justify-end gap-2">
           {userId ? (
             <Button
               isDisabled={saving}
@@ -1005,8 +1013,8 @@ function CliSyncSettings({
               掘金登录
             </Button>
           )}
-        </div>
       </div>
+
 
       <JuejinLoginConsentModal
         isOpen={consentOpen}
@@ -1052,11 +1060,16 @@ function CliSyncSettings({
 /** 自动更新 + 开机自启 + 设备信息。 */
 function AppSettingsPanel() {
   const cliMode = isCliBackend();
+  const isMac = window.tud?.platform === 'darwin';
   const [config, setConfig] = useState<TudConfigView | null>(null);
   const [openAtLogin, setOpenAtLogin] = useState(true);
   const [autostartLoading, setAutostartLoading] = useState(true);
   const [autostartError, setAutostartError] = useState<string | null>(null);
   const [launchHidden, setLaunchHidden] = useState(true);
+  const [showTrayUsage, setShowTrayUsage] = useState(true);
+  const [trayUsageMode, setTrayUsageMode] = useState<TrayUsageMode>('both');
+  const [trayUsageLoading, setTrayUsageLoading] = useState(true);
+  const [trayUsageError, setTrayUsageError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -1141,11 +1154,75 @@ function AppSettingsPanel() {
     }
   };
 
+  useEffect(() => {
+    let cancelled = false;
+    if (isMac && typeof window.tud?.getShowTrayUsage === 'function') {
+      setTrayUsageLoading(true);
+      void Promise.all([
+        window.tud.getShowTrayUsage(),
+        window.tud.getTrayUsageMode(),
+      ])
+        .then(([enabled, mode]) => {
+          if (!cancelled) {
+            setShowTrayUsage(enabled);
+            setTrayUsageMode(mode);
+            setTrayUsageError(null);
+          }
+        })
+        .catch((e) => {
+          if (!cancelled) {
+            setTrayUsageError(
+              e instanceof Error ? e.message : '加载托盘用量设置失败',
+            );
+          }
+        })
+        .finally(() => {
+          if (!cancelled) setTrayUsageLoading(false);
+        });
+    } else {
+      setTrayUsageLoading(false);
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [isMac]);
+
+  const onShowTrayUsageChange = async (next: boolean) => {
+    const prev = showTrayUsage;
+    setShowTrayUsage(next);
+    setTrayUsageError(null);
+    try {
+      await window.tud.setShowTrayUsage(next);
+    } catch (e) {
+      setShowTrayUsage(prev);
+      setTrayUsageError(
+        e instanceof Error ? e.message : '更新托盘用量设置失败',
+      );
+    }
+  };
+
+  const onTrayUsageModeChange = async (next: TrayUsageMode) => {
+    const prev = trayUsageMode;
+    setTrayUsageMode(next);
+    setTrayUsageError(null);
+    try {
+      await window.tud.setTrayUsageMode(next);
+    } catch (e) {
+      setTrayUsageMode(prev);
+      setTrayUsageError(
+        e instanceof Error ? e.message : '更新托盘用量显示方式失败',
+      );
+    }
+  };
+
   return (
     <div className="flex h-full flex-col gap-5 overflow-y-auto pr-1">
       {error && <StatusBanner tone="error" title={error} />}
       {autostartError && (
         <StatusBanner tone="error" title={autostartError} />
+      )}
+      {trayUsageError && (
+        <StatusBanner tone="error" title={trayUsageError} />
       )}
 
       {cliMode && (
@@ -1186,6 +1263,62 @@ function AppSettingsPanel() {
                 <p className="text-xs text-muted">
                   开机后只出现托盘，不弹出主窗口
                 </p>
+              )}
+            </>
+          )}
+          {isMac && (
+            <>
+              <Checkbox
+                id="desktop-show-tray-usage"
+                isDisabled={trayUsageLoading}
+                isSelected={showTrayUsage}
+                onChange={(checked) => {
+                  void onShowTrayUsageChange(checked);
+                }}
+              >
+                <Checkbox.Content>
+                  <Checkbox.Control>
+                    <Checkbox.Indicator />
+                  </Checkbox.Control>
+                  在菜单栏托盘显示今日用量
+                </Checkbox.Content>
+              </Checkbox>
+              {showTrayUsage && (
+                <div className="mt-2 max-w-xs pl-4">
+                  <Select
+                    aria-label="菜单栏用量显示方式"
+                    isDisabled={trayUsageLoading}
+                    value={trayUsageMode}
+                    variant="secondary"
+                    onChange={(value) => {
+                      if (isTrayUsageMode(value)) {
+                        void onTrayUsageModeChange(value);
+                      }
+                    }}
+                  >
+                    <Label>显示方式</Label>
+                    <Select.Trigger>
+                      <Select.Value>{({ selectedText }) => selectedText}</Select.Value>
+                      <Select.Indicator />
+                    </Select.Trigger>
+                    <Select.Popover>
+                      <ListBox aria-label="菜单栏用量显示方式列表">
+                        <ListBox.Item id="both" textValue="Token 和金额">
+                          Token 和金额
+                          <ListBox.ItemIndicator />
+                        </ListBox.Item>
+                        <ListBox.Item id="tokens" textValue="仅 Token">
+                          仅 Token
+                          <ListBox.ItemIndicator />
+                        </ListBox.Item>
+                        <ListBox.Item id="cost" textValue="仅金额">
+                          仅金额
+                          <ListBox.ItemIndicator />
+                        </ListBox.Item>
+                      </ListBox>
+                    </Select.Popover>
+                  </Select>
+                </div>
               )}
             </>
           )}

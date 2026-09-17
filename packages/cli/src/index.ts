@@ -38,6 +38,7 @@ import {
   resolvePricingRefreshConfig,
   DEFAULT_PRICING_FIRST_FETCH_TIMEOUT_MS,
   startPricingRefresh,
+  runDoctorDiagnostics,
   type AggregateCache,
   type SyncResult,
   type TudConfig,
@@ -53,6 +54,7 @@ import {
   resolveSyncSource,
 } from './args.js';
 import { writePid } from './daemon.js';
+import { printDoctorReport } from './doctor.js';
 import { cmdServiceStart, cmdServiceStatus, cmdServiceStop } from './service.js';
 
 export { parseArgs } from './args.js';
@@ -446,6 +448,11 @@ async function cmdStatus(): Promise<void> {
   console.log(`调试日志: ${join(dir, 'logs')}`);
 }
 
+async function cmdDoctor(port?: number): Promise<void> {
+  const report = await runDoctorDiagnostics({ port });
+  printDoctorReport(report);
+}
+
 async function cmdUpload(force = false, reconcile = false): Promise<void> {
   const { dir, config } = await loadConfig();
   await touchStatsSince(dir, config);
@@ -543,6 +550,9 @@ async function main(): Promise<void> {
         break;
       case 'status':
         await cmdStatus();
+        break;
+      case 'doctor':
+        await cmdDoctor(port);
         break;
       case 'upload':
         await cmdUpload(force, reconcile);
