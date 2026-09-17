@@ -62,6 +62,16 @@ const TAB_ITEMS: { id: DesktopSettingsTabId; label: string }[] = [
 const CUSTOM_PET_DOCS_URL =
   'https://gitee.com/juejin-cn/juejin-usage/blob/main/README.md#%E6%A1%8C%E9%9D%A2%E5%AE%A0%E7%89%A9%E5%8F%AF%E9%80%89';
 
+/**
+ * Dialog is `max-h-[90vh]`. Header + tab list take ~9rem, so a 78vh panel
+ * overflows the body and gets clipped. Bound the panel to the leftover space
+ * so `overflow-y-auto` both scrolls and stays fully visible.
+ */
+const SETTINGS_SCROLL_PANEL =
+  'max-h-[calc(90vh-9rem)] overflow-y-auto p-4 pb-8 text-left';
+const SETTINGS_FIXED_FOOTER_PANEL =
+  'flex max-h-[calc(90vh-9rem)] min-h-0 flex-col overflow-hidden p-4 text-left';
+
 export function SettingsPanel({
   activeTab,
   isOpen = true,
@@ -178,10 +188,10 @@ export function SettingsPanel({
   }, [toastQueue]);
 
   return (
-    <div className="w-full">
+    <div className="flex min-h-0 w-full flex-1 flex-col">
       <Toast.Provider placement="top end" queue={toastQueue} />
       <Tabs
-        className="w-full text-center"
+        className="flex min-h-0 w-full flex-1 flex-col text-center"
         selectedKey={tab}
         onSelectionChange={(key) => setTab(String(key) as DesktopSettingsTabId)}
       >
@@ -200,7 +210,7 @@ export function SettingsPanel({
           </Tabs.List>
         </Tabs.ListContainer>
 
-        <Tabs.Panel className="max-h-[min(78vh,44rem)] min-h-[40vh] min-w-0 overflow-y-auto p-4 text-left" id="pet">
+        <Tabs.Panel className={`${SETTINGS_SCROLL_PANEL} min-w-0`} id="pet">
           {tab === 'pet' && (
             <DesktopPetSettings
               catalogSelectedPetId={catalogSelectedPetId}
@@ -222,10 +232,7 @@ export function SettingsPanel({
             />
           )}
         </Tabs.Panel>
-        <Tabs.Panel
-          className="flex max-h-[min(78vh,44rem)] min-h-[40vh] flex-col overflow-hidden p-4 text-left font-normal"
-          id="sync"
-        >
+        <Tabs.Panel className={`${SETTINGS_FIXED_FOOTER_PANEL} font-normal`} id="sync">
           {tab === 'sync' &&
             (cliMode ? (
               <CliSyncSettings
@@ -256,15 +263,11 @@ export function SettingsPanel({
               />
             ))}
         </Tabs.Panel>
-        <Tabs.Panel className="max-h-[min(78vh,44rem)] min-h-[40vh] overflow-y-auto p-4 text-left" id="app">
+        <Tabs.Panel className={SETTINGS_SCROLL_PANEL} id="app">
           {tab === 'app' && <AppSettingsPanel />}
         </Tabs.Panel>
-        <Tabs.Panel className="max-h-[min(78vh,44rem)] min-h-[40vh] overflow-hidden p-4 text-left" id="about">
-          {tab === 'about' && (
-            <div className="h-full overflow-y-auto pr-1">
-              <AboutContent />
-            </div>
-          )}
+        <Tabs.Panel className={SETTINGS_SCROLL_PANEL} id="about">
+          {tab === 'about' && <AboutContent />}
         </Tabs.Panel>
       </Tabs>
     </div>
@@ -496,11 +499,11 @@ function DesktopPetSettings({
   };
 
   return (
-    <div className="flex h-full flex-col gap-4 overflow-hidden">
+    <div className="flex flex-col gap-4">
       {(error ?? catalogError) && (
         <StatusBanner tone="error" title={error ?? catalogError ?? ''} />
       )}
-      <div className="min-h-0 min-w-0 flex-1 overflow-y-auto">
+      <div className="min-w-0">
         <p className="mb-3 text-sm text-muted">
           显示悬浮宠物。拖动可移动位置，右键可打开菜单。
         </p>
@@ -1216,7 +1219,7 @@ function AppSettingsPanel() {
   };
 
   return (
-    <div className="flex h-full flex-col gap-5 overflow-y-auto pr-1">
+    <div className="flex flex-col gap-5">
       {error && <StatusBanner tone="error" title={error} />}
       {autostartError && (
         <StatusBanner tone="error" title={autostartError} />

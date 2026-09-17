@@ -37,6 +37,12 @@ const TAB_ITEMS: { id: SettingsTabId; label: string }[] = [
   { id: 'about', label: '关于' },
 ];
 
+/** See desktop SettingsPanel: panel height must fit under dialog chrome. */
+const SETTINGS_SCROLL_PANEL =
+  'max-h-[calc(90vh-9rem)] overflow-y-auto p-4 pb-8 text-left';
+const SETTINGS_FIXED_FOOTER_PANEL =
+  'flex max-h-[calc(90vh-9rem)] min-h-0 flex-col overflow-hidden p-4 text-left';
+
 export function SettingsPanel({
   activeTab,
   onTabChange,
@@ -57,10 +63,10 @@ export function SettingsPanel({
     tab === 'pet' ? 'sync' : tab;
 
   return (
-    <div className="w-full">
+    <div className="flex min-h-0 w-full flex-1 flex-col">
       <Toast.Provider placement="top end" queue={toastQueue} />
       <Tabs
-        className="w-full text-center"
+        className="flex min-h-0 w-full flex-1 flex-col text-center"
         selectedKey={resolvedTab}
         onSelectionChange={(key) => setTab(String(key) as SettingsTabId)}
       >
@@ -79,10 +85,7 @@ export function SettingsPanel({
           </Tabs.List>
         </Tabs.ListContainer>
 
-        <Tabs.Panel
-          className="flex max-h-[min(78vh,44rem)] min-h-[40vh] flex-col overflow-hidden p-4 text-left font-normal"
-          id="sync"
-        >
+        <Tabs.Panel className={`${SETTINGS_FIXED_FOOTER_PANEL} font-normal`} id="sync">
           {resolvedTab === 'sync' &&
             (cliMode ? (
               <CliSyncSettings
@@ -113,15 +116,11 @@ export function SettingsPanel({
               />
             ))}
         </Tabs.Panel>
-        <Tabs.Panel className="max-h-[min(78vh,44rem)] min-h-[40vh] overflow-y-auto p-4 text-left" id="app">
+        <Tabs.Panel className={SETTINGS_SCROLL_PANEL} id="app">
           {resolvedTab === 'app' && <AppSettingsPanel />}
         </Tabs.Panel>
-        <Tabs.Panel className="max-h-[min(78vh,44rem)] min-h-[40vh] overflow-hidden p-4 text-left" id="about">
-          {resolvedTab === 'about' && (
-            <div className="h-full overflow-y-auto pr-1">
-              <AboutContent />
-            </div>
-          )}
+        <Tabs.Panel className={SETTINGS_SCROLL_PANEL} id="about">
+          {resolvedTab === 'about' && <AboutContent />}
         </Tabs.Panel>
       </Tabs>
     </div>
