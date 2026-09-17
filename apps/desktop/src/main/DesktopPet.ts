@@ -542,7 +542,11 @@ async function ensurePetWindow(): Promise<BrowserWindow> {
   const window = petWindow;
   // `titleBarStyle` enables macOS traffic lights even on a frameless window.
   // A floating pet must never expose native window controls over its sprite.
-  if (process.platform === 'darwin') window.setWindowButtonVisibility(false);
+  if (process.platform === 'darwin') {
+    window.setWindowButtonVisibility(false);
+    // Follow the user across macOS Spaces; alwaysOnTop alone only stacks within one Space.
+    window.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  }
   suppressPetWindowTitle(window);
   window.setAlwaysOnTop(true, 'floating');
   window.webContents.on('context-menu', (event) => {

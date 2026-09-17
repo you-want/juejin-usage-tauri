@@ -477,6 +477,8 @@ void acquireDesktopInstanceLock().then((gotLock) => {
     pendingDeepLinkUrl = coldStartUrl;
   }
 
+  let shutdownPromise: Promise<void> | null = null;
+
   app.whenReady().then(async () => {
     registerDesktopPetAssetProtocol();
     applyDevDockIcon();
@@ -601,6 +603,7 @@ void acquireDesktopInstanceLock().then((gotLock) => {
       onInstallFailed: async () => {
         resetAppQuitting();
         resetTrayPopoverQuitting();
+        shutdownPromise = null;
         resumeLocalRuntimeWatchdog();
         // Keep the recovery UI accessible even when runtime startup fails.
         showMainWindow();
@@ -641,10 +644,15 @@ void acquireDesktopInstanceLock().then((gotLock) => {
   // Real exit is via tray "退出" or app:quit.
   app.on('window-all-closed', () => {});
 
-  app.on('before-quit', () => {
+  app.on('before-quit', (event) => {
+    if (shutdownPromise) return;
+    event.preventDefault();
     markAppQuitting();
+    markTrayPopoverQuitting();
     setLocalRuntimeQuitting(true);
-    void stopLocalRuntime();
+    shutdownPromise = stopLocalRuntime().finally(() => {
+      app.quit();
+    });
   });
 
   // before-quit/window close can be cancelled. Keep IPC and the update
