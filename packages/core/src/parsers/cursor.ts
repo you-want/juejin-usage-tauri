@@ -53,26 +53,49 @@ function normalizeCursorSubject(subject: string): string | null {
   return null;
 }
 
-function extractUserIdFromCliConfig(configPath: string): string | null {
+function readCliAuthId(configPath: string): string | null {
   try {
     if (!existsSync(configPath)) return null;
     const raw = readFileSync(configPath, 'utf8');
-    const config = JSON.parse(raw) as { authInfo?: { authId?: string } };
-    return normalizeCursorSubject(config.authInfo?.authId ?? '');
+    const config = JSON.parse(raw) as { authInfo?: { authId?: unknown } };
+    return typeof config.authInfo?.authId === 'string' && config.authInfo.authId.trim()
+      ? config.authInfo.authId.trim()
+      : null;
   } catch {
     return null;
   }
 }
 
-function extractUserIdFromJwt(jwt: string): string | null {
+function decodeJwtSub(jwt: string): string | null {
   try {
     const parts = jwt.split('.');
     if (parts.length !== 3) return null;
-    const payload = JSON.parse(Buffer.from(parts[1]!, 'base64url').toString()) as { sub?: string };
-    return normalizeCursorSubject(payload.sub ?? '');
+    const payload = JSON.parse(Buffer.from(parts[1]!, 'base64url').toString()) as { sub?: unknown };
+    return typeof payload.sub === 'string' && payload.sub.trim() ? payload.sub.trim() : null;
   } catch {
     return null;
   }
+}
+
+/**
+ * Cookie userIds to try. JWT subject first — `cli-config.json` can hold a
+ * different/stale account, and pairing that id with the current access token
+ * is a persistent 401.
+ */
+export function collectCursorSessionUserIds(jwt: string, cliAuthId?: string | null): string[] {
+  const ids: string[] = [];
+  const add = (value: string | null | undefined) => {
+    const trimmed = value?.trim();
+    if (!trimmed || ids.includes(trimmed)) return;
+    if (!normalizeCursorSubject(trimmed) && !/^user_[A-Za-z0-9_]+$/.test(trimmed)) return;
+    ids.push(trimmed);
+  };
+  const jwtSub = decodeJwtSub(jwt);
+  add(normalizeCursorSubject(jwtSub ?? ''));
+  add(jwtSub);
+  add(normalizeCursorSubject(cliAuthId ?? ''));
+  add(cliAuthId);
+  return ids;
 }
 
 function readAccessToken(dbPath: string): string | null {
@@ -86,11 +109,26 @@ function readAccessToken(dbPath: string): string | null {
   return trimmed || null;
 }
 
-function buildSessionCookie(jwt: string): string | null {
-  let userId = extractUserIdFromCliConfig(cursorCliConfigPath());
-  if (!userId) userId = extractUserIdFromJwt(jwt);
-  if (!userId) return null;
-  return `${SESSION_COOKIE}=${userId}%3A%3A${jwt}`;
+function sessionCookiesFromJwt(jwt: string): string[] {
+  return collectCursorSessionUserIds(jwt, readCliAuthId(cursorCliConfigPath())).map(
+    (userId) => `${SESSION_COOKIE}=${userId}%3A%3A${jwt}`,
+  );
+}
+
+async function fetchUsageCsvTrying(cookies: string[]): Promise<{ csv: string; cookie: string }> {
+  let lastAuthError: CursorNotLoggedInError | null = null;
+  for (const cookie of cookies) {
+    try {
+      return { csv: await fetchUsageCsv(cookie), cookie };
+    } catch (err) {
+      if (err instanceof CursorNotLoggedInError) {
+        lastAuthError = err;
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw lastAuthError ?? new CursorNotLoggedInError();
 }
 
 async function fetchUsageCsv(cookie: string): Promise<string> {
@@ -339,53 +377,62 @@ export async function parseCursorIncremental(
     };
   }
 
-  let cookie: string | null = null;
-  if (cookieCache && Date.now() - cookieCache.cachedAt < COOKIE_CACHE_TTL_MS) {
-    cookie = cookieCache.cookie;
-  } else {
+  const cachedCookie =
+    cookieCache && Date.now() - cookieCache.cachedAt < COOKIE_CACHE_TTL_MS ? cookieCache.cookie : null;
+
+  const loadCookies = (): { cookies: string[] } | { skip: string } => {
     let jwt: string | null;
     try {
       jwt = readAccessToken(dbPath);
     } catch (err) {
       if (err instanceof Error && err.message.includes('ENOENT')) {
-        cursors.cursor.lastError = '需要 sqlite3 CLI 或 Node >= 22.5 以读取 Cursor 数据库';
-        return {
-          result: { buckets: [], eventsParsed: 0, filesProcessed: 0, skipped: true, error: cursors.cursor.lastError },
-          cursors,
-        };
+        return { skip: '需要 sqlite3 CLI 或 Node >= 22.5 以读取 Cursor 数据库' };
       }
       if (isSqliteLockError(err)) {
-        cursors.cursor.lastError = 'Cursor 数据库被锁定，本轮跳过';
-        return {
-          result: { buckets: [], eventsParsed: 0, filesProcessed: 0, skipped: true, error: cursors.cursor.lastError },
-          cursors,
-        };
+        return { skip: 'Cursor 数据库被锁定，本轮跳过' };
       }
       throw err;
     }
-
-    if (!jwt) {
-      cursors.cursor.lastError = 'Cursor 未登录';
-      return {
-        result: { buckets: [], eventsParsed: 0, filesProcessed: 0, skipped: true, error: cursors.cursor.lastError },
-        cursors,
-      };
-    }
-
-    cookie = buildSessionCookie(jwt);
-    if (!cookie) {
-      cursors.cursor.lastError = '无法解析 Cursor 会话凭证';
-      return {
-        result: { buckets: [], eventsParsed: 0, filesProcessed: 0, skipped: true, error: cursors.cursor.lastError },
-        cursors,
-      };
-    }
-    cookieCache = { cookie, cachedAt: Date.now() };
-  }
+    if (!jwt) return { skip: 'Cursor 未登录' };
+    const cookies = sessionCookiesFromJwt(jwt);
+    if (cookies.length === 0) return { skip: '无法解析 Cursor 会话凭证' };
+    return { cookies };
+  };
 
   try {
-    const csvText = await fetchUsageCsv(cookie);
-    const records = parseCursorCsv(csvText);
+    const cookies: string[] = [];
+    if (cachedCookie) cookies.push(cachedCookie);
+    else {
+      const loaded = loadCookies();
+      if ('skip' in loaded) {
+        cursors.cursor.lastError = loaded.skip;
+        return {
+          result: { buckets: [], eventsParsed: 0, filesProcessed: 0, skipped: true, error: loaded.skip },
+          cursors,
+        };
+      }
+      cookies.push(...loaded.cookies);
+    }
+
+    let fetched: { csv: string; cookie: string };
+    try {
+      fetched = await fetchUsageCsvTrying(cookies);
+    } catch (err) {
+      if (!(cachedCookie && err instanceof CursorNotLoggedInError)) throw err;
+      cookieCache = null;
+      const loaded = loadCookies();
+      if ('skip' in loaded) {
+        cursors.cursor.lastError = loaded.skip;
+        return {
+          result: { buckets: [], eventsParsed: 0, filesProcessed: 0, skipped: true, error: loaded.skip },
+          cursors,
+        };
+      }
+      fetched = await fetchUsageCsvTrying(loaded.cookies);
+    }
+
+    cookieCache = { cookie: fetched.cookie, cachedAt: Date.now() };
+    const records = parseCursorCsv(fetched.csv);
     const buckets = recordsToBuckets(records, statsSince);
 
     let latestTs = cursors.cursor.lastRecordTimestamp ?? null;
