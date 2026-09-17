@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  collectCursorSessionUserIds,
   parseCursorCsv,
   parseCursorIncremental,
   recordsToBuckets,
@@ -34,6 +35,18 @@ test('parseCursorIncremental skips the remote fetch when lastSyncAt is fresh', a
   assert.match(result.error ?? '', /节流/);
   // Throttling is not a failure: lastError must stay untouched.
   assert.equal(cursors.cursor.lastError, null);
+});
+
+test('collectCursorSessionUserIds prefers the JWT subject over a stale CLI authId', () => {
+  const header = Buffer.from(JSON.stringify({ alg: 'none' })).toString('base64url');
+  const payload = Buffer.from(JSON.stringify({ sub: 'auth0|user_live' })).toString('base64url');
+  const jwt = `${header}.${payload}.sig`;
+  assert.deepEqual(collectCursorSessionUserIds(jwt, 'auth0|user_stale'), [
+    'user_live',
+    'auth0|user_live',
+    'user_stale',
+    'auth0|user_stale',
+  ]);
 });
 
 test('recordsToBuckets aggregates into half-hour UTC buckets', () => {

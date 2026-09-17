@@ -127,7 +127,9 @@ async function readCursorCredentials(): Promise<CursorCredentials> {
   }
   if (!token) throw new CursorCredentialError('not-signed-in');
 
-  const userId = await readCursorCliUserId() ?? extractCursorUserId(token);
+  // JWT subject first. cli-config.json can hold a different Cursor CLI account;
+  // pairing that id with the desktop access token is a persistent 401.
+  const userId = extractCursorUserId(token) ?? await readCursorCliUserId();
   if (!userId) throw new CursorCredentialError('not-signed-in');
   return { token, userId };
 }

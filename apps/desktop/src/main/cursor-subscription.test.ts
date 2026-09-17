@@ -18,3 +18,9 @@ test('encodes the Cursor dashboard session cookie', () => {
     'WorkosCursorSessionToken=auth0|user%3A%3Aa.b-c_d',
   );
 });
+
+test('desktop session user id prefers the JWT subject over CLI authId', () => {
+  const token = jwt({ sub: 'auth0|user_live' });
+  assert.equal(extractCursorUserId(token), 'user_live');
+  assert.equal(extractCursorUserId(token) ?? 'auth0|user_stale', 'user_live');
+});
