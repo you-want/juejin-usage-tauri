@@ -25,6 +25,12 @@ test('isZcodeNativeMessage blocks anthropic/openai/google', () => {
   assert.equal(isZcodeNativeMessage({ providerID: 'google-vertex' }), false);
 });
 
+test('isZcodeNativeMessage accepts renamed providerId field', () => {
+  assert.equal(isZcodeNativeMessage({ providerId: 'builtin:bigmodel' }), true);
+  assert.equal(isZcodeNativeMessage({ providerId: 'anthropic' }), false);
+  assert.equal(isZcodeNativeMessage({}), false);
+});
+
 test('parseOpenclawIncremental subtracts cache from input', async () => {
   const home = await mkdtemp(join(tmpdir(), 'tud-oc-'));
   const prev = process.env.OPENCLAW_STATE_DIR;
@@ -307,6 +313,104 @@ test('parseZcodeIncremental filters non-native providers', async () => {
     assert.equal(result.eventsParsed, 1);
     assert.equal(result.buckets[0]!.source, 'zcode');
     assert.equal(result.buckets[0]!.model, 'glm-4.6');
+  } finally {
+    if (prev === undefined) delete process.env.ZCODE_HOME;
+    else process.env.ZCODE_HOME = prev;
+  }
+});
+
+test('parseZcodeIncremental fallback accepts renamed providerId', async () => {
+  const home = await mkdtemp(join(tmpdir(), 'tud-zcode-'));
+  const prev = process.env.ZCODE_HOME;
+  process.env.ZCODE_HOME = home;
+  try {
+    const dbDir = join(home, 'cli', 'db');
+    await mkdir(dbDir, { recursive: true });
+    const db = new DatabaseSync(join(dbDir, 'db.sqlite'));
+    db.exec(`CREATE TABLE message (
+      id TEXT PRIMARY KEY,
+      session_id TEXT,
+      data TEXT
+    )`);
+    const native = {
+      role: 'assistant',
+      providerId: 'builtin:bigmodel',
+      modelId: 'GLM-5.3-Flash',
+      time: { created: Date.parse('2026-09-18T08:00:00.000Z') },
+      tokens: { input: 20, output: 10, reasoning: 0, cache: { read: 0, write: 0 } },
+      path: { root: '/tmp/z' },
+    };
+    db.prepare('INSERT INTO message VALUES (?, ?, ?)').run('m1', 'ses1', JSON.stringify(native));
+    db.close();
+
+    const { result } = await parseZcodeIncremental({}, SINCE);
+    assert.equal(result.eventsParsed, 1);
+    assert.equal(result.buckets[0]!.model, 'GLM-5.3-Flash');
+  } finally {
+    if (prev === undefined) delete process.env.ZCODE_HOME;
+    else process.env.ZCODE_HOME = prev;
+  }
+});
+
+test('parseZcodeIncremental reads model_usage table and dedupes', async () => {
+  const home = await mkdtemp(join(tmpdir(), 'tud-zcode-usage-'));
+  const prev = process.env.ZCODE_HOME;
+  process.env.ZCODE_HOME = home;
+  try {
+    const dbDir = join(home, 'cli', 'db');
+    await mkdir(dbDir, { recursive: true });
+    const db = new DatabaseSync(join(dbDir, 'db.sqlite'));
+    db.exec(`CREATE TABLE message (
+      id TEXT PRIMARY KEY,
+      session_id TEXT,
+      data TEXT
+    )`);
+    db.exec(`CREATE TABLE model_usage (
+      id TEXT PRIMARY KEY,
+      session_id TEXT,
+      assistant_message_id TEXT,
+      model_id TEXT,
+      started_at INTEGER,
+      completed_at INTEGER,
+      input_tokens INTEGER,
+      output_tokens INTEGER,
+      reasoning_tokens INTEGER,
+      cache_creation_input_tokens INTEGER,
+      cache_read_input_tokens INTEGER,
+      computed_total_tokens INTEGER
+    )`);
+    db.prepare('INSERT INTO message VALUES (?, ?, ?)').run(
+      'm1',
+      'ses1',
+      JSON.stringify({ role: 'assistant', path: { root: '/tmp/z' } }),
+    );
+    db.prepare('INSERT INTO model_usage VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').run(
+      'u1',
+      'ses1',
+      'm1',
+      'GLM-5.3-Flash',
+      Date.parse('2026-09-18T08:00:00.000Z'),
+      Date.parse('2026-09-18T08:00:10.000Z'),
+      100,
+      10,
+      0,
+      0,
+      80,
+      110,
+    );
+    db.close();
+
+    const first = await parseZcodeIncremental({}, SINCE);
+    assert.equal(first.result.eventsParsed, 1);
+    assert.equal(first.result.buckets[0]!.source, 'zcode');
+    assert.equal(first.result.buckets[0]!.model, 'GLM-5.3-Flash');
+    // ZCode input_tokens includes cache read; fresh input = 100 - 80.
+    assert.equal(first.result.buckets[0]!.input_tokens, 20);
+    assert.equal(first.result.buckets[0]!.cached_input_tokens, 80);
+    assert.equal(first.result.buckets[0]!.total_tokens, 110);
+
+    const second = await parseZcodeIncremental(first.cursors, SINCE);
+    assert.equal(second.result.eventsParsed, 0);
   } finally {
     if (prev === undefined) delete process.env.ZCODE_HOME;
     else process.env.ZCODE_HOME = prev;
