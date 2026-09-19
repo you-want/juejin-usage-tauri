@@ -13,7 +13,7 @@ const INITIAL_SNAPSHOT: DeepSeekSubscriptionSnapshot = {
 };
 
 /**
- * Compact DeepSeek account balance summary for the macOS tray.
+ * Compact DeepSeek account balance summary for macOS desktop surfaces.
  *
  * DeepSeek reports a CNY balance using the same compact meter treatment as TRAE.
  */

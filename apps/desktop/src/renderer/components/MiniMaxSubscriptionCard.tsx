@@ -16,7 +16,7 @@ const INITIAL_SNAPSHOT: MiniMaxSubscriptionSnapshot = {
   message: null,
 };
 
-/** Compact local MiniMax Code Coding Plan allowance summary for the macOS tray. */
+/** Compact local MiniMax Code Coding Plan allowance summary for macOS desktop surfaces. */
 export function MiniMaxSubscriptionCard() {
   const [snapshot, setSnapshot] = useState<MiniMaxSubscriptionSnapshot>(INITIAL_SNAPSHOT);
   const [loading, setLoading] = useState(true);

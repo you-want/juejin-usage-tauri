@@ -1,7 +1,7 @@
 import { TraeSubscriptionCard } from './TraeSubscriptionCard';
 import type { TraeSubscriptionSnapshot } from '../../shared/trae-subscription';
 
-/** Mounts TRAE and TRAE CN cards in the tray grid. */
+/** Mounts TRAE and TRAE CN cards in a subscription grid. */
 export function TraeSubscriptionGroup() {
   return (
     <>

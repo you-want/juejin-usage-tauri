@@ -14,7 +14,7 @@ const INITIAL_SNAPSHOT: CodexSubscriptionSnapshot = {
   message: null,
 };
 
-/** Compact local ChatGPT/Codex allowance summary for the macOS tray. */
+/** Compact local ChatGPT/Codex allowance summary for macOS desktop surfaces. */
 export function CodexSubscriptionCard() {
   const [snapshot, setSnapshot] = useState<CodexSubscriptionSnapshot>(INITIAL_SNAPSHOT);
   const [loading, setLoading] = useState(true);

@@ -22,7 +22,7 @@ interface SubscriptionUsageCardProps {
   loading: boolean;
 }
 
-/** Shared tray presentation for subscription allowance progress bars. */
+/** Shared desktop presentation for subscription allowance progress bars. */
 export function SubscriptionUsageCard({
   data,
   loading,
@@ -32,8 +32,8 @@ export function SubscriptionUsageCard({
       metric.remainingPercent !== null,
   );
 
-  // Keep the tray focused on subscriptions with usable allowance data. Empty
-  // or in-flight channels do not reserve a card-sized gap in the popover.
+  // Keep subscription surfaces focused on usable allowance data. Empty or
+  // in-flight channels do not reserve a card-sized gap in their grid.
   if (loading || visibleMetrics.length === 0) return null;
 
   return (

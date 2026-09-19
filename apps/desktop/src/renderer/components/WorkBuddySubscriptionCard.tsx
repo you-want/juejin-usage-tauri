@@ -23,7 +23,7 @@ interface WorkBuddySubscriptionCardProps {
   fetcher: () => Promise<WorkBuddySubscriptionSnapshot>;
 }
 
-/** Compact WorkBuddy account resource summary for the macOS tray. */
+/** Compact WorkBuddy account resource summary for macOS desktop surfaces. */
 export function WorkBuddySubscriptionCard({ region, title, fetcher }: WorkBuddySubscriptionCardProps) {
   const [snapshot, setSnapshot] = useState<WorkBuddySubscriptionSnapshot>({
     ...INITIAL_SNAPSHOT,

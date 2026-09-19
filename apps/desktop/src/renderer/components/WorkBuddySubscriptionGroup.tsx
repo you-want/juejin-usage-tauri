@@ -1,7 +1,7 @@
 import { WorkBuddySubscriptionCard } from './WorkBuddySubscriptionCard';
 import type { WorkBuddySubscriptionSnapshot } from '../../shared/workbuddy-subscription';
 
-/** Mounts Workbuddy and Workbuddy CN cards in the tray grid. */
+/** Mounts Workbuddy and Workbuddy CN cards in a subscription grid. */
 export function WorkBuddySubscriptionGroup() {
   return (
     <>

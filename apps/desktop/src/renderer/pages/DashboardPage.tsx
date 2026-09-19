@@ -17,6 +17,7 @@ import { StatusBanner } from '@/components/StatusBanner';
 import { ProjectUsagePanel } from '@/components/ProjectUsagePanel';
 import { ToolModelUsagePanel } from '@/components/ToolModelUsagePanel';
 import { UsageDistributionCard } from '@/components/UsageDistributionCard';
+import { SubscriptionUsageGrid } from '@/components/SubscriptionUsageGrid';
 import { useDashboardData } from '@/hooks/useDashboardData';
 import { useLocalStorage } from '@/hooks/useLocalStorage';
 import { projectDashboardForDate } from '@/lib/dashboard-data';
@@ -60,6 +61,7 @@ function useDeferredDashboardRange(range: DashboardRange): DashboardRange {
 
 /** HeroUI dashboard backed by the same usage dataset as the root route. */
 export function DashboardPage() {
+  const isMac = window.tud?.platform === 'darwin';
   const [range, setRange] = useLocalStorage<DashboardRange>(
     'tud.dashboardRange',
     DEFAULT_DASHBOARD_RANGE,
@@ -293,6 +295,10 @@ export function DashboardPage() {
           />
         </div>
       )}
+
+      {isMac ? (
+        <SubscriptionUsageGrid className="mb-4 grid-cols-4 gap-2.5" />
+      ) : null}
 
       {loading ? (
         <div className="relative isolate min-h-48">
