@@ -489,6 +489,71 @@ test('parseZcodeIncremental reads model_usage table and dedupes', async () => {
   }
 });
 
+test('parseZcodeIncremental adds reasoning to the provider total (issue #181)', async () => {
+  const home = await mkdtemp(join(tmpdir(), 'tud-zcode-usage-reasoning-'));
+  const prev = process.env.ZCODE_HOME;
+  process.env.ZCODE_HOME = home;
+  try {
+    const dbDir = join(home, 'cli', 'db');
+    await mkdir(dbDir, { recursive: true });
+    const db = new DatabaseSync(join(dbDir, 'db.sqlite'));
+    db.exec(`CREATE TABLE message (
+      id TEXT PRIMARY KEY,
+      session_id TEXT,
+      data TEXT
+    )`);
+    db.exec(`CREATE TABLE model_usage (
+      id TEXT PRIMARY KEY,
+      session_id TEXT,
+      assistant_message_id TEXT,
+      model_id TEXT,
+      started_at INTEGER,
+      completed_at INTEGER,
+      input_tokens INTEGER,
+      output_tokens INTEGER,
+      reasoning_tokens INTEGER,
+      cache_creation_input_tokens INTEGER,
+      cache_read_input_tokens INTEGER,
+      computed_total_tokens INTEGER
+    )`);
+    db.prepare('INSERT INTO message VALUES (?, ?, ?)').run(
+      'm1',
+      'ses1',
+      JSON.stringify({ role: 'assistant', path: { root: '/tmp/z' } }),
+    );
+    // ZCode's computed_total_tokens = input + output (reasoning excluded):
+    // 100 + 10 = 110, with 7 reasoning tokens reported separately.
+    db.prepare('INSERT INTO model_usage VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').run(
+      'u1',
+      'ses1',
+      'm1',
+      'GLM-5.3-Flash',
+      Date.parse('2026-09-18T08:00:00.000Z'),
+      Date.parse('2026-09-18T08:00:10.000Z'),
+      100,
+      10,
+      7,
+      0,
+      80,
+      110,
+    );
+    db.close();
+
+    const { result } = await parseZcodeIncremental({}, SINCE);
+    assert.equal(result.eventsParsed, 1);
+    const bucket = result.buckets[0]!;
+    // Bucket five-field sum must equal the stored total so panel aggregates
+    // match the server's ingest recompute.
+    assert.equal(bucket.input_tokens, 20);
+    assert.equal(bucket.cached_input_tokens, 80);
+    assert.equal(bucket.reasoning_output_tokens, 7);
+    assert.equal(bucket.total_tokens, 117);
+  } finally {
+    if (prev === undefined) delete process.env.ZCODE_HOME;
+    else process.env.ZCODE_HOME = prev;
+  }
+});
+
 test('parseKimiIncremental prefers kimi-code step.end', async () => {
   const home = await mkdtemp(join(tmpdir(), 'tud-kimi-'));
   const prev = process.env.KIMI_CODE_HOME;
