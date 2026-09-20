@@ -9,7 +9,10 @@ import test from 'node:test';
 import { parseClineIncremental } from '../src/parsers/cline.js';
 import { parseAmpIncremental } from '../src/parsers/amp.js';
 import { parseQwenIncremental } from '../src/parsers/qwen.js';
-import { parseCodebuddyIncremental } from '../src/parsers/codebuddy.js';
+import {
+  parseCodebuddyIncremental,
+  resolveCodebuddyExtensionMessageFiles,
+} from '../src/parsers/codebuddy.js';
 import { parseWorkbuddyIncremental } from '../src/parsers/workbuddy.js';
 import { parseGrokBuildIncremental } from '../src/parsers/grok.js';
 import { parseMimoIncremental } from '../src/parsers/mimo.js';
@@ -414,6 +417,92 @@ test('parseCodebuddyIncremental subtracts cached tokens from prompt', async () =
   } finally {
     if (prev === undefined) delete process.env.CODEBUDDY_HOME;
     else process.env.CODEBUDDY_HOME = prev;
+  }
+});
+
+test('parseCodebuddyIncremental reads App / extension history messages', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'tud-cb-ext-'));
+  const messagesDir = join(
+    root,
+    'user-1',
+    'CodeBuddyIDE',
+    'user-1',
+    'history',
+    'ws-md5',
+    'sess-1',
+    'messages',
+  );
+  await mkdir(messagesDir, { recursive: true });
+
+  // A real model call: usage lives in `extra` (serialized JSON string).
+  await writeFile(
+    join(messagesDir, 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.json'),
+    JSON.stringify({
+      id: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      role: 'assistant',
+      createdAt: '2026-09-20T08:13:32.746Z',
+      message: '{"role":"assistant","content":[]}',
+      extra: JSON.stringify({
+        modelId: 'hy4-preview-f',
+        modelName: 'Hy4 preview',
+        lastStepInputTokens: 1000,
+        lastStepOutputTokens: 40,
+        lastStepCachedInputTokens: 800,
+      }),
+    }),
+  );
+  // Assistant step with no model call (tool / intermediate state) → ignored.
+  await writeFile(
+    join(messagesDir, 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.json'),
+    JSON.stringify({
+      id: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+      role: 'assistant',
+      createdAt: '2026-09-20T08:13:40.000Z',
+      extra: JSON.stringify({ modelId: 'hy4-preview-f', toolStatus: 'done' }),
+    }),
+  );
+  await writeFile(
+    join(messagesDir, 'cccccccccccccccccccccccccccccccc.json'),
+    JSON.stringify({
+      id: 'cccccccccccccccccccccccccccccccc',
+      role: 'user',
+      createdAt: '2026-09-20T08:13:30.000Z',
+      extra: '{}',
+    }),
+  );
+
+  const prev = process.env.CODEBUDDY_EXTENSION_ROOTS;
+  process.env.CODEBUDDY_EXTENSION_ROOTS = root;
+  try {
+    const files = resolveCodebuddyExtensionMessageFiles();
+    assert.equal(files.length, 3);
+    assert.equal(files[0]!.host, 'CodeBuddyIDE');
+    assert.equal(files[0]!.sessionId, 'sess-1');
+
+    const { result, cursors } = await parseCodebuddyIncremental({}, SINCE, {
+      extensionFiles: files,
+      sessionCwds: new Map([['sess-1', '/Users/lishanbing/workspace/juejin-usage']]),
+      defaultModel: 'codebuddy-unknown',
+    });
+    assert.equal(result.eventsParsed, 1);
+    const bucket = result.buckets.find((b) => b.source === 'codebuddy')!;
+    assert.equal(bucket.model, 'hy4-preview-f');
+    assert.equal(bucket.input_tokens, 200); // 1000 - 800 cached
+    assert.equal(bucket.cached_input_tokens, 800);
+    assert.equal(bucket.output_tokens, 40);
+    assert.equal(bucket.total_tokens, 1040);
+    assert.equal(bucket.project, 'juejin-usage');
+
+    // Re-running with the same cursors must not double-count (mtime gate).
+    const second = await parseCodebuddyIncremental(cursors, SINCE, {
+      extensionFiles: files,
+      sessionCwds: new Map([['sess-1', '/Users/lishanbing/workspace/juejin-usage']]),
+      defaultModel: 'codebuddy-unknown',
+    });
+    assert.equal(second.result.eventsParsed, 0);
+  } finally {
+    if (prev === undefined) delete process.env.CODEBUDDY_EXTENSION_ROOTS;
+    else process.env.CODEBUDDY_EXTENSION_ROOTS = prev;
   }
 });
 

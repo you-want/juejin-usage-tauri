@@ -385,6 +385,10 @@ export interface CursorsFile {
     fileOffsets?: Record<string, { size: number; mtimeMs: number; ino: number }>;
     logModelsByAgent?: Record<string, string>;
     updatedAt?: string;
+    /** Message ids already ingested from the CodeBuddy App / editor extension history. */
+    extSeenIds?: string[];
+    /** mtimeMs per extension history message file, so unchanged files are skipped. */
+    extFileMtimes?: Record<string, number>;
   };
   workbuddy?: {
     seenIds?: string[];

@@ -1,24 +1,32 @@
 /**
- * CodeBuddy passive JSONL reader (source `codebuddy`, collector `codebuddy`).
+ * CodeBuddy passive reader (source `codebuddy`, collector `codebuddy`).
  *
- * Scans ~/.codebuddy/projects/ (recursive .jsonl) for assistant messages with
- * providerData.rawUsage. MVP is JSONL-only; IDE extension logs are
- * omitted here until needed.
+ * Two channels feed the same source:
+ *  1. CLI JSONL — ~/.codebuddy/projects/ (recursive .jsonl), assistant
+ *     messages with providerData.rawUsage.
+ *  2. App / editor extension history — <CodeBuddyExtension>/Data/<userId>/
+ *     <host>/<userId>/history/<workspace>/<session>/messages/*.json, assistant
+ *     messages carrying extra.lastStep*Tokens. This is what the CodeBuddy
+ *     desktop app (CodeBuddy CN) and the VSCode / Cursor plugin actually
+ *     write; the CLI channel alone never sees them.
  */
 import { createReadStream, existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { createInterface } from 'node:readline';
 import { homedir } from 'node:os';
-import { basename, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { stat } from 'node:fs/promises';
 
 import type { CursorsFile, QueueBucket, TokenTotals } from '../types.js';
+import { resolveProjectName } from '../project-name.js';
 import { toUtcHalfHourStart } from '../queue/keys.js';
 import {
   accumulateBucket,
   bucketsFromState,
   computeTotalTokens,
+  splitRootsEnv,
   type BucketAccumulator,
 } from './shared.js';
+import { queryDbJson, readSqliteWithSnapshot, sqliteTableExists } from './sqlite.js';
 
 export const CODEBUDDY_COLLECTOR = 'codebuddy';
 
@@ -26,6 +34,8 @@ type CodebuddyExtCursors = CursorsFile & {
   codebuddy?: {
     seenIds?: string[];
     fileOffsets?: Record<string, { size: number; mtimeMs: number; ino: number }>;
+    extSeenIds?: string[];
+    extFileMtimes?: Record<string, number>;
   };
 };
 
@@ -86,6 +96,252 @@ export function resolveCodebuddyProjectFiles(env: NodeJS.ProcessEnv = process.en
   return files;
 }
 
+/** Directory name holding the App / editor extension data on every platform. */
+const CODEBUDDY_EXTENSION_DIR = 'CodeBuddyExtension';
+
+/** Desktop app dir name whose `codebuddy-sessions.vscdb` maps session → cwd. */
+const CODEBUDDY_APP_DIR = 'CodeBuddy CN';
+const CODEBUDDY_APP_SESSIONS_DB = 'codebuddy-sessions.vscdb';
+
+/** How deep to look for a `history` dir under the extension root. */
+const EXT_HISTORY_SEARCH_DEPTH = 6;
+
+function readDirEntries(dir: string) {
+  try {
+    return readdirSync(dir, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Roots of the App / editor extension data dir:
+ * `<root>/<userId>/<host>/<userId>/history/...`
+ *
+ * Override with `CODEBUDDY_EXTENSION_ROOTS` (`:`, `;` or `,` separated).
+ */
+export function resolveCodebuddyExtensionRoots(env: NodeJS.ProcessEnv = process.env): string[] {
+  const override = env.CODEBUDDY_EXTENSION_ROOTS?.trim();
+  if (override) return splitRootsEnv(override);
+
+  const home = homedir();
+  const plat = process.platform;
+  if (plat === 'darwin') {
+    return [join(home, 'Library', 'Application Support', CODEBUDDY_EXTENSION_DIR, 'Data')];
+  }
+  if (plat === 'win32') {
+    const appData = env.APPDATA || join(home, 'AppData', 'Roaming');
+    const localAppData = env.LOCALAPPDATA || join(home, 'AppData', 'Local');
+    return [
+      join(appData, CODEBUDDY_EXTENSION_DIR, 'Data'),
+      join(localAppData, CODEBUDDY_EXTENSION_DIR, 'Data'),
+    ];
+  }
+  const dataHome = env.XDG_DATA_HOME || join(home, '.local', 'share');
+  const configHome = env.XDG_CONFIG_HOME || join(home, '.config');
+  return [
+    join(dataHome, CODEBUDDY_EXTENSION_DIR, 'Data'),
+    join(configHome, CODEBUDDY_EXTENSION_DIR, 'Data'),
+  ];
+}
+
+/**
+ * `codebuddy-sessions.vscdb` of the desktop app: `session:<id>` rows hold the
+ * session cwd, which is the only place a project name can come from — the
+ * extension history keys workspaces by md5.
+ */
+export function resolveCodebuddyAppSessionsDb(env: NodeJS.ProcessEnv = process.env): string {
+  const override = env.CODEBUDDY_APP_SESSIONS_DB?.trim();
+  if (override) return expandHome(override);
+  const home = homedir();
+  const plat = process.platform;
+  const bases =
+    plat === 'darwin'
+      ? [join(home, 'Library', 'Application Support')]
+      : plat === 'win32'
+        ? [env.APPDATA || join(home, 'AppData', 'Roaming'), env.LOCALAPPDATA || join(home, 'AppData', 'Local')]
+        : [env.XDG_CONFIG_HOME || join(home, '.config')];
+  // `CodeBuddy CN` is the domestic app dir; probe the plain name too so an
+  // international build still resolves on unverified platforms.
+  for (const base of bases) {
+    for (const dirName of [CODEBUDDY_APP_DIR, 'CodeBuddy']) {
+      const candidate = join(base, dirName, CODEBUDDY_APP_SESSIONS_DB);
+      if (existsSync(candidate)) return candidate;
+    }
+  }
+  return join(bases[0]!, CODEBUDDY_APP_DIR, CODEBUDDY_APP_SESSIONS_DB);
+}
+
+export interface CodebuddyExtensionMessageFile {
+  /** Absolute path of the message json. */
+  file: string;
+  /** `CodeBuddyIDE` (desktop app) or `VSCode` (VSCode / Cursor plugin). */
+  host: string;
+  /** Conversation id = the parent dir name of `messages/`. */
+  sessionId: string;
+}
+
+function findHistoryDirs(dir: string, depth: number, out: string[]): void {
+  if (depth > EXT_HISTORY_SEARCH_DEPTH) return;
+  for (const entry of readDirEntries(dir)) {
+    if (!entry.isDirectory()) continue;
+    const full = join(dir, entry.name);
+    if (entry.name === 'history') out.push(full);
+    else findHistoryDirs(full, depth + 1, out);
+  }
+}
+
+/**
+ * Enumerate `<...>/history/<workspace>/<session>/messages/*.json`.
+ *
+ * Enumeration is host-agnostic: any `history` dir under the extension root
+ * counts, so new hosts (JetBrains, …) are picked up without a code change.
+ */
+export function resolveCodebuddyExtensionMessageFiles(
+  env: NodeJS.ProcessEnv = process.env,
+): CodebuddyExtensionMessageFile[] {
+  const out: CodebuddyExtensionMessageFile[] = [];
+  for (const root of resolveCodebuddyExtensionRoots(env)) {
+    if (!existsSync(root)) continue;
+    const historyDirs: string[] = [];
+    findHistoryDirs(root, 0, historyDirs);
+    for (const historyDir of historyDirs) {
+      // `<root>/<userId>/<host>/<userId>/history` — the host name sits two
+      // levels above `history` because the user id is duplicated.
+      const host = basename(dirname(dirname(historyDir))) || basename(dirname(historyDir)) || 'unknown';
+      for (const workspace of readDirEntries(historyDir)) {
+        if (!workspace.isDirectory()) continue;
+        const workspacePath = join(historyDir, workspace.name);
+        for (const session of readDirEntries(workspacePath)) {
+          if (!session.isDirectory()) continue;
+          const messagesDir = join(workspacePath, session.name, 'messages');
+          for (const file of readDirEntries(messagesDir)) {
+            if (!file.isFile() || !file.name.endsWith('.json')) continue;
+            out.push({
+              file: join(messagesDir, file.name),
+              host,
+              sessionId: session.name,
+            });
+          }
+        }
+      }
+    }
+  }
+  out.sort((a, b) => a.file.localeCompare(b.file));
+  return out;
+}
+
+interface CodebuddyExtensionMessage {
+  id: string | null;
+  role: string | null;
+  createdAt: string | null;
+  extra: Record<string, unknown>;
+}
+
+/** Read one history message file; `null` when unreadable. */
+export function readCodebuddyExtensionMessage(filePath: string): CodebuddyExtensionMessage | null {
+  let raw: string;
+  try {
+    raw = readFileSync(filePath, 'utf-8');
+  } catch {
+    return null;
+  }
+  let parsed: Record<string, unknown>;
+  try {
+    parsed = JSON.parse(raw) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+  // `extra` is a serialized JSON string in the on-disk format.
+  let extra: Record<string, unknown> = {};
+  if (typeof parsed.extra === 'string') {
+    try {
+      const decoded = JSON.parse(parsed.extra) as unknown;
+      if (decoded && typeof decoded === 'object') extra = decoded as Record<string, unknown>;
+    } catch {
+      extra = {};
+    }
+  } else if (parsed.extra && typeof parsed.extra === 'object') {
+    extra = parsed.extra as Record<string, unknown>;
+  }
+  return {
+    id: typeof parsed.id === 'string' && parsed.id ? parsed.id : null,
+    role: typeof parsed.role === 'string' ? parsed.role : null,
+    createdAt: typeof parsed.createdAt === 'string' ? parsed.createdAt : null,
+    extra,
+  };
+}
+
+/**
+ * Token split for the extension channel.
+ *
+ * `lastStepInputTokens` is the prompt size of that step (full context), and
+ * `lastStepCachedInputTokens` the cache-hit part of it, so — same as the CLI
+ * channel — the billed new input is `input - cached`. Steps without any usage
+ * are tool/assistant intermediate states and carry no model call.
+ */
+function usageFromCodebuddyExtra(
+  extra: Record<string, unknown>,
+): Omit<TokenTotals, 'conversation_count'> | null {
+  const rawInput = toNonNeg(extra.lastStepInputTokens);
+  const rawOutput = toNonNeg(extra.lastStepOutputTokens);
+  const cached = toNonNeg(extra.lastStepCachedInputTokens);
+  if (rawInput === 0 && rawOutput === 0 && cached === 0) return null;
+
+  const inputTokens = Math.max(0, rawInput - cached);
+  const body = {
+    input_tokens: inputTokens,
+    cached_input_tokens: cached,
+    cache_creation_input_tokens: 0,
+    output_tokens: rawOutput,
+    reasoning_output_tokens: 0,
+  };
+  return { ...body, total_tokens: computeTotalTokens(body) };
+}
+
+/** Empty / non-string cwd stays 'unknown'. */
+function projectFromCwd(cwd: unknown): string {
+  if (typeof cwd !== 'string' || !cwd.trim()) return 'unknown';
+  return resolveProjectName(cwd.trim());
+}
+
+/** `conversationId → cwd` from the desktop app's session store. */
+function loadCodebuddyAppSessionCwds(dbPath: string): Map<string, string> {
+  const map = new Map<string, string>();
+  if (!existsSync(dbPath)) return map;
+  if (!sqliteTableExists(dbPath, 'ItemTable')) return map;
+  try {
+    const rows = readSqliteWithSnapshot(dbPath, (snap) =>
+      queryDbJson(snap, "SELECT key, value FROM ItemTable WHERE key LIKE 'session:%'", {
+        timeout: 10_000,
+        maxBuffer: 16 * 1024 * 1024,
+      }),
+    );
+    for (const row of rows) {
+      let value: unknown = row.value;
+      if (typeof value === 'string') {
+        try {
+          value = JSON.parse(value) as unknown;
+        } catch {
+          continue;
+        }
+      }
+      if (!value || typeof value !== 'object') continue;
+      const rec = value as Record<string, unknown>;
+      const key = typeof row.key === 'string' ? row.key : '';
+      const id =
+        typeof rec.conversationId === 'string' && rec.conversationId
+          ? rec.conversationId
+          : key.replace(/^session:/, '');
+      const cwd = typeof rec.cwd === 'string' ? rec.cwd.trim() : '';
+      if (id && cwd) map.set(id, cwd);
+    }
+  } catch {
+    // Best effort; unresolved sessions stay 'unknown'.
+  }
+  return map;
+}
+
 function normalizeModel(value: unknown): string | null {
   if (typeof value !== 'string') return null;
   const trimmed = value.trim();
@@ -140,13 +396,23 @@ export interface ParseCodebuddyResult {
 export async function parseCodebuddyIncremental(
   cursors: CursorsFile,
   statsSince: string,
-  opts?: { env?: NodeJS.ProcessEnv; projectFiles?: string[]; defaultModel?: string },
+  opts?: {
+    env?: NodeJS.ProcessEnv;
+    projectFiles?: string[];
+    defaultModel?: string;
+    /** Seam for tests: extension history message files to read. */
+    extensionFiles?: CodebuddyExtensionMessageFile[];
+    /** Seam for tests: explicit session → cwd map instead of the app session db. */
+    sessionCwds?: Map<string, string>;
+  },
 ): Promise<{ result: ParseCodebuddyResult; cursors: CursorsFile }> {
   const env = opts?.env ?? process.env;
   const sinceMs = new Date(statsSince).getTime();
   const ext = cursors as CodebuddyExtCursors;
   if (!ext.codebuddy) ext.codebuddy = { seenIds: [], fileOffsets: {} };
   if (!ext.codebuddy.fileOffsets) ext.codebuddy.fileOffsets = {};
+  if (!ext.codebuddy.extSeenIds) ext.codebuddy.extSeenIds = [];
+  if (!ext.codebuddy.extFileMtimes) ext.codebuddy.extFileMtimes = {};
   const seenIds = new Set(ext.codebuddy.seenIds ?? []);
   const fileOffsets = ext.codebuddy.fileOffsets;
   const bucketState: BucketAccumulator = new Map();
@@ -253,11 +519,88 @@ export async function parseCodebuddyIncremental(
 
   ext.codebuddy.seenIds = Array.from(seenIds).slice(-10_000);
 
+  // Channel 2 — App / editor extension history. Where the desktop app and the
+  // VSCode / Cursor plugin actually record usage.
+  const extSeenIds = new Set(ext.codebuddy.extSeenIds ?? []);
+  const extFileMtimes = ext.codebuddy.extFileMtimes ?? {};
+  // An explicit `projectFiles` list scopes the run to the CLI channel (used by
+  // tests and by callers that already resolved their own files); the extension
+  // channel is only auto-discovered on a normal full parse.
+  const extensionFiles =
+    opts?.extensionFiles ?? (opts?.projectFiles ? [] : resolveCodebuddyExtensionMessageFiles(env));
+
+  let sessionCwds: Map<string, string> | null = opts?.sessionCwds ?? null;
+  let sessionCwdsLoaded = sessionCwds != null;
+  const getSessionCwd = (sessionId: string): string | undefined => {
+    if (!sessionCwdsLoaded) {
+      sessionCwdsLoaded = true;
+      sessionCwds = loadCodebuddyAppSessionCwds(resolveCodebuddyAppSessionsDb(env));
+    }
+    return sessionCwds?.get(sessionId);
+  };
+
+  let extEventsParsed = 0;
+  let extFilesProcessed = 0;
+
+  for (const entry of extensionFiles) {
+    const st = await stat(entry.file).catch(() => null);
+    if (!st?.isFile()) continue;
+
+    // One file per message, so mtime is enough to skip untouched history.
+    const prevMtime = extFileMtimes[entry.file];
+    if (prevMtime != null && Math.trunc(prevMtime) === Math.trunc(st.mtimeMs)) continue;
+    extFileMtimes[entry.file] = st.mtimeMs;
+    extFilesProcessed += 1;
+
+    const message = readCodebuddyExtensionMessage(entry.file);
+    if (!message || message.role !== 'assistant') continue;
+
+    const usage = usageFromCodebuddyExtra(message.extra);
+    // Steps without usage are tool/intermediate states. They are not marked
+    // seen so a later rewrite (mtime bump) can still pick up real usage.
+    if (!usage) continue;
+
+    const messageId = message.id ?? basename(entry.file, '.json');
+    if (extSeenIds.has(messageId)) continue;
+
+    const tsMs = message.createdAt ? Date.parse(message.createdAt) : Number.NaN;
+    if (!Number.isFinite(tsMs) || tsMs <= 0) {
+      extSeenIds.add(messageId);
+      continue;
+    }
+    const hourStart = toUtcHalfHourStart(new Date(tsMs).toISOString());
+    if (!hourStart || new Date(hourStart).getTime() < sinceMs) {
+      extSeenIds.add(messageId);
+      continue;
+    }
+
+    const model =
+      normalizeModel(message.extra.modelId) ??
+      normalizeModel(message.extra.modelName) ??
+      fallbackModel;
+    const project = projectFromCwd(getSessionCwd(entry.sessionId));
+
+    accumulateBucket(
+      bucketState,
+      'codebuddy',
+      model,
+      project,
+      hourStart,
+      { ...usage, conversation_count: 1 },
+      CODEBUDDY_COLLECTOR,
+    );
+    extSeenIds.add(messageId);
+    extEventsParsed += 1;
+  }
+
+  ext.codebuddy.extSeenIds = Array.from(extSeenIds).slice(-50_000);
+  ext.codebuddy.extFileMtimes = extFileMtimes;
+
   return {
     result: {
       buckets: bucketsFromState(bucketState, 'codebuddy'),
-      eventsParsed,
-      filesProcessed,
+      eventsParsed: eventsParsed + extEventsParsed,
+      filesProcessed: filesProcessed + extFilesProcessed,
     },
     cursors,
   };
