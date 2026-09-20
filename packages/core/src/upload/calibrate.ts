@@ -693,6 +693,7 @@ export async function applyCalibrateSelectedDates(
       const date = localDateAndHour(batch.from, DEFAULT_STATS_TIMEZONE).date;
       throw new Error(
         `${date} 校准失败（本地 ${batch.events.length} 条事件，窗口 ${batch.from} ~ ${batch.to}）：${reason}`,
+        { cause: error },
       );
     }
     deleted += result.deleted_count;
