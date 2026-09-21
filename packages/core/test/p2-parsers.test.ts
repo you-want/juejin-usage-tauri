@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { statSync } from 'node:fs';
 import { appendFile, mkdtemp, mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -9,12 +10,18 @@ import test from 'node:test';
 import { parseClineIncremental } from '../src/parsers/cline.js';
 import { parseAmpIncremental } from '../src/parsers/amp.js';
 import { parseQwenIncremental } from '../src/parsers/qwen.js';
-import { parseCodebuddyIncremental } from '../src/parsers/codebuddy.js';
+import {
+  parseCodebuddyIncremental,
+  resolveCodebuddyExtensionMessageFiles,
+  tryDecodeCodebuddyBase64Path,
+  loadCodebuddyEditorWorkspaceMaps,
+} from '../src/parsers/codebuddy.js';
 import { parseWorkbuddyIncremental } from '../src/parsers/workbuddy.js';
 import { parseGrokBuildIncremental } from '../src/parsers/grok.js';
 import { parseMimoIncremental } from '../src/parsers/mimo.js';
 import { parseEveryCodeIncremental } from '../src/parsers/every-code.js';
 import { bucketToIngestEvent } from '../src/upload/events.js';
+import { isSyncSourcePresent } from '../src/sync/source-presence.js';
 import type { CursorsFile } from '../src/types.js';
 
 const SINCE = '2020-01-01T00:00:00.000Z';
@@ -414,6 +421,448 @@ test('parseCodebuddyIncremental subtracts cached tokens from prompt', async () =
   } finally {
     if (prev === undefined) delete process.env.CODEBUDDY_HOME;
     else process.env.CODEBUDDY_HOME = prev;
+  }
+});
+
+test('parseCodebuddyIncremental reads App / extension history messages', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'tud-cb-ext-'));
+  const messagesDir = join(
+    root,
+    'user-1',
+    'CodeBuddyIDE',
+    'user-1',
+    'history',
+    'ws-md5',
+    'sess-1',
+    'messages',
+  );
+  await mkdir(messagesDir, { recursive: true });
+
+  // A real model call: usage lives in `extra` (serialized JSON string).
+  await writeFile(
+    join(messagesDir, 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.json'),
+    JSON.stringify({
+      id: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      role: 'assistant',
+      createdAt: '2026-09-20T08:13:32.746Z',
+      message: '{"role":"assistant","content":[]}',
+      extra: JSON.stringify({
+        modelId: 'hy4-preview-f',
+        modelName: 'Hy4 preview',
+        lastStepInputTokens: 1000,
+        lastStepOutputTokens: 40,
+        lastStepCachedInputTokens: 800,
+      }),
+    }),
+  );
+  // Assistant step with no model call (tool / intermediate state) → ignored.
+  await writeFile(
+    join(messagesDir, 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.json'),
+    JSON.stringify({
+      id: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+      role: 'assistant',
+      createdAt: '2026-09-20T08:13:40.000Z',
+      extra: JSON.stringify({ modelId: 'hy4-preview-f', toolStatus: 'done' }),
+    }),
+  );
+  await writeFile(
+    join(messagesDir, 'cccccccccccccccccccccccccccccccc.json'),
+    JSON.stringify({
+      id: 'cccccccccccccccccccccccccccccccc',
+      role: 'user',
+      createdAt: '2026-09-20T08:13:30.000Z',
+      extra: '{}',
+    }),
+  );
+
+  const prev = process.env.CODEBUDDY_EXTENSION_ROOTS;
+  process.env.CODEBUDDY_EXTENSION_ROOTS = root;
+  try {
+    const files = resolveCodebuddyExtensionMessageFiles();
+    assert.equal(files.length, 3);
+    assert.equal(files[0]!.host, 'CodeBuddyIDE');
+    assert.equal(files[0]!.sessionId, 'sess-1');
+    assert.equal(files[0]!.workspaceId, 'ws-md5');
+    assert.equal(files[0]!.pathHint, null);
+
+    const { result, cursors } = await parseCodebuddyIncremental({}, SINCE, {
+      projectFiles: [], // keep the CLI channel off real ~/.codebuddy data
+      extensionFiles: files,
+      sessionCwds: new Map([['sess-1', '/Users/lishanbing/workspace/juejin-usage']]),
+      defaultModel: 'codebuddy-unknown',
+    });
+    assert.equal(result.eventsParsed, 1);
+    const bucket = result.buckets.find((b) => b.source === 'codebuddy')!;
+    assert.equal(bucket.model, 'hy4-preview-f');
+    assert.equal(bucket.input_tokens, 200); // 1000 - 800 cached
+    assert.equal(bucket.cached_input_tokens, 800);
+    assert.equal(bucket.output_tokens, 40);
+    assert.equal(bucket.total_tokens, 1040);
+    assert.equal(bucket.project, 'juejin-usage');
+
+    // Re-running with the same cursors must not double-count (mtime gate).
+    const second = await parseCodebuddyIncremental(cursors, SINCE, {
+      projectFiles: [],
+      extensionFiles: files,
+      sessionCwds: new Map([['sess-1', '/Users/lishanbing/workspace/juejin-usage']]),
+      defaultModel: 'codebuddy-unknown',
+    });
+    assert.equal(second.result.eventsParsed, 0);
+  } finally {
+    if (prev === undefined) delete process.env.CODEBUDDY_EXTENSION_ROOTS;
+    else process.env.CODEBUDDY_EXTENSION_ROOTS = prev;
+  }
+});
+
+test('parseCodebuddyIncremental attributes plugin sessions via genie-history', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'tud-cb-plugin-'));
+  const cwd = '/Users/sugar/Documents/github/juejin-usage';
+  const workspaceId = createHash('md5').update(cwd, 'utf8').digest('hex');
+  const pathB64 = Buffer.from(cwd, 'utf8').toString('base64url');
+  const sessionId = 'sess-plugin-1';
+
+  const messagesDir = join(
+    root,
+    'ext',
+    'user-uuid',
+    'VSCode',
+    'user-uuid',
+    'history',
+    workspaceId,
+    sessionId,
+    'messages',
+  );
+  await mkdir(messagesDir, { recursive: true });
+  await writeFile(
+    join(messagesDir, 'msg1.json'),
+    JSON.stringify({
+      id: 'msg1',
+      role: 'assistant',
+      createdAt: '2026-09-21T08:58:02.256Z',
+      extra: JSON.stringify({
+        modelId: 'auto',
+        lastStepInputTokens: 100,
+        lastStepOutputTokens: 10,
+        lastStepCachedInputTokens: 0,
+      }),
+    }),
+  );
+
+  const genieRoot = join(root, 'genie');
+  const convDir = join(genieRoot, pathB64, 'conversations', sessionId);
+  await mkdir(convDir, { recursive: true });
+  await writeFile(
+    join(genieRoot, pathB64, 'current.json'),
+    JSON.stringify({ conversationId: sessionId }),
+  );
+
+  assert.equal(tryDecodeCodebuddyBase64Path(pathB64), cwd);
+  const maps = loadCodebuddyEditorWorkspaceMaps({
+    ...process.env,
+    CODEBUDDY_GENIE_HISTORY_ROOTS: genieRoot,
+  });
+  assert.equal(maps.sessionCwds.get(sessionId), cwd);
+  assert.equal(maps.workspaceCwds.get(workspaceId), cwd);
+
+  const files = resolveCodebuddyExtensionMessageFiles({
+    ...process.env,
+    CODEBUDDY_EXTENSION_ROOTS: join(root, 'ext'),
+  });
+  assert.equal(files.length, 1);
+  assert.equal(files[0]!.pathHint, null); // logged-in tree: parent of history is user uuid
+  assert.equal(files[0]!.workspaceId, workspaceId);
+
+  const { result } = await parseCodebuddyIncremental({}, SINCE, {
+    projectFiles: [],
+    extensionFiles: files,
+    sessionCwds: maps.sessionCwds,
+    workspaceCwds: maps.workspaceCwds,
+    defaultModel: 'codebuddy-unknown',
+  });
+  assert.equal(result.eventsParsed, 1);
+  const bucket = result.buckets.find((b) => b.source === 'codebuddy')!;
+  assert.equal(bucket.project, 'juejin-usage');
+  assert.equal(bucket.model, 'auto');
+});
+
+test('parseCodebuddyIncremental uses base64 pathHint on anonymous extension trees', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'tud-cb-anon-'));
+  const cwd = '/Users/sugar/Documents/github/juejin-usage';
+  const pathB64 = Buffer.from(cwd, 'utf8').toString('base64url');
+  const messagesDir = join(root, 'default', 'VSCode', pathB64, 'history', 'ws1', 'sess-a', 'messages');
+  await mkdir(messagesDir, { recursive: true });
+  await writeFile(
+    join(messagesDir, 'msg-a.json'),
+    JSON.stringify({
+      id: 'msg-a',
+      role: 'assistant',
+      createdAt: '2026-09-21T08:58:02.256Z',
+      extra: JSON.stringify({
+        modelId: 'deepseek-v4-flash',
+        lastStepInputTokens: 50,
+        lastStepOutputTokens: 5,
+        lastStepCachedInputTokens: 0,
+      }),
+    }),
+  );
+
+  const files = resolveCodebuddyExtensionMessageFiles({
+    ...process.env,
+    CODEBUDDY_EXTENSION_ROOTS: root,
+  });
+  assert.equal(files[0]!.pathHint, cwd);
+
+  const { result } = await parseCodebuddyIncremental({}, SINCE, {
+    projectFiles: [],
+    extensionFiles: files,
+    sessionCwds: new Map(),
+    workspaceCwds: new Map(),
+    defaultModel: 'codebuddy-unknown',
+  });
+  assert.equal(result.eventsParsed, 1);
+  assert.equal(result.buckets[0]!.project, 'juejin-usage');
+});
+
+test('loadCodebuddyEditorWorkspaceMaps reads current.json without conversations dir', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'tud-cb-current-'));
+  const cwd = '/Users/sugar/Documents/github/ai-usage';
+  const pathB64 = Buffer.from(cwd, 'utf8').toString('base64url');
+  const sessionId = 'sess-from-current';
+  await mkdir(join(root, pathB64), { recursive: true });
+  await writeFile(
+    join(root, pathB64, 'current.json'),
+    JSON.stringify({ conversationId: sessionId, lastUpdated: '2026-09-21T00:00:00.000Z' }),
+  );
+
+  const maps = loadCodebuddyEditorWorkspaceMaps({
+    ...process.env,
+    CODEBUDDY_GENIE_HISTORY_ROOTS: root,
+  });
+  assert.equal(maps.sessionCwds.get(sessionId), cwd);
+  assert.equal(
+    maps.workspaceCwds.get(createHash('md5').update(cwd, 'utf8').digest('hex')),
+    cwd,
+  );
+});
+
+test('tryDecodeCodebuddyBase64Path accepts paths and rejects noise', () => {
+  const unix = '/Users/sugar/Documents/github/juejin-usage';
+  const win = 'C:\\Users\\sugar\\proj';
+  assert.equal(tryDecodeCodebuddyBase64Path(Buffer.from(unix, 'utf8').toString('base64url')), unix);
+  assert.equal(tryDecodeCodebuddyBase64Path(Buffer.from(unix, 'utf8').toString('base64')), unix);
+  assert.equal(tryDecodeCodebuddyBase64Path(Buffer.from(win, 'utf8').toString('base64url')), win);
+  assert.equal(
+    tryDecodeCodebuddyBase64Path(Buffer.from(`${unix}/`, 'utf8').toString('base64url')),
+    unix,
+  );
+  assert.equal(tryDecodeCodebuddyBase64Path('3379f4bd-e71f-4e60-a935-387b53cba6a4'), null);
+  assert.equal(tryDecodeCodebuddyBase64Path('short'), null);
+  assert.equal(tryDecodeCodebuddyBase64Path('VSCode'), null);
+  assert.equal(tryDecodeCodebuddyBase64Path('user-1'), null);
+});
+
+test('parseCodebuddyIncremental falls back to workspace md5 when session is unknown', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'tud-cb-ws-'));
+  const cwd = '/Users/sugar/Documents/github/juejin-usage';
+  const workspaceId = createHash('md5').update(cwd, 'utf8').digest('hex');
+  const msgFile = join(dir, 'ws-only-msg.json');
+  const files = [
+    {
+      file: msgFile,
+      host: 'VSCode',
+      sessionId: 'orphan-session',
+      workspaceId,
+      pathHint: null as string | null,
+    },
+  ];
+  await writeFile(
+    msgFile,
+    JSON.stringify({
+      id: 'ws-only-1',
+      role: 'assistant',
+      createdAt: '2026-09-21T09:00:00.000Z',
+      extra: JSON.stringify({
+        modelId: 'auto',
+        lastStepInputTokens: 10,
+        lastStepOutputTokens: 2,
+        lastStepCachedInputTokens: 0,
+      }),
+    }),
+  );
+
+  const { result } = await parseCodebuddyIncremental({}, SINCE, {
+    projectFiles: [],
+    extensionFiles: files,
+    sessionCwds: new Map(),
+    workspaceCwds: new Map([[workspaceId, cwd]]),
+    defaultModel: 'codebuddy-unknown',
+  });
+  assert.equal(result.eventsParsed, 1);
+  assert.equal(result.buckets[0]!.project, 'juejin-usage');
+});
+
+test('parseCodebuddyIncremental prefers session cwd over workspace and pathHint', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'tud-cb-prio-'));
+  const sessionCwd = '/Users/sugar/Documents/github/juejin-usage';
+  const otherCwd = '/Users/sugar/Documents/github/other-repo';
+  const workspaceId = createHash('md5').update(otherCwd, 'utf8').digest('hex');
+  const msgFile = join(dir, 'prio-msg.json');
+  const files = [
+    {
+      file: msgFile,
+      host: 'VSCode',
+      sessionId: 'sess-priority',
+      workspaceId,
+      pathHint: otherCwd as string | null,
+    },
+  ];
+  await writeFile(
+    msgFile,
+    JSON.stringify({
+      id: 'prio-1',
+      role: 'assistant',
+      createdAt: '2026-09-21T09:00:00.000Z',
+      extra: JSON.stringify({
+        modelId: 'auto',
+        lastStepInputTokens: 10,
+        lastStepOutputTokens: 2,
+        lastStepCachedInputTokens: 0,
+      }),
+    }),
+  );
+
+  const { result } = await parseCodebuddyIncremental({}, SINCE, {
+    projectFiles: [],
+    extensionFiles: files,
+    sessionCwds: new Map([['sess-priority', sessionCwd]]),
+    workspaceCwds: new Map([[workspaceId, otherCwd]]),
+    defaultModel: 'codebuddy-unknown',
+  });
+  assert.equal(result.buckets[0]!.project, 'juejin-usage');
+});
+
+test('parseCodebuddyIncremental auto-loads genie-history maps from env', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'tud-cb-autoload-'));
+  const cwd = '/Users/sugar/Documents/github/juejin-usage';
+  const workspaceId = createHash('md5').update(cwd, 'utf8').digest('hex');
+  const pathB64 = Buffer.from(cwd, 'utf8').toString('base64url');
+  const sessionId = 'sess-autoload';
+  const userId = '3379f4bd-e71f-4e60-a935-387b53cba6a4';
+
+  const messagesDir = join(
+    root,
+    'ext',
+    userId,
+    'VSCode',
+    userId,
+    'history',
+    workspaceId,
+    sessionId,
+    'messages',
+  );
+  await mkdir(messagesDir, { recursive: true });
+  await writeFile(
+    join(messagesDir, 'auto.json'),
+    JSON.stringify({
+      id: 'auto-msg',
+      role: 'assistant',
+      createdAt: '2026-09-21T09:10:00.000Z',
+      extra: JSON.stringify({
+        modelId: 'auto',
+        lastStepInputTokens: 20,
+        lastStepOutputTokens: 3,
+        lastStepCachedInputTokens: 0,
+      }),
+    }),
+  );
+
+  const genieRoot = join(root, 'genie');
+  await mkdir(join(genieRoot, pathB64, 'conversations', sessionId), { recursive: true });
+
+  const env = {
+    ...process.env,
+    CODEBUDDY_EXTENSION_ROOTS: join(root, 'ext'),
+    CODEBUDDY_GENIE_HISTORY_ROOTS: genieRoot,
+    CODEBUDDY_APP_SESSIONS_DB: join(root, 'no-such-sessions.vscdb'),
+  };
+  const files = resolveCodebuddyExtensionMessageFiles(env);
+  assert.equal(files.length, 1);
+  assert.equal(files[0]!.pathHint, null); // real UUID above history
+
+  // No injected maps — parser must discover genie-history via env.
+  const { result } = await parseCodebuddyIncremental({}, SINCE, {
+    env,
+    projectFiles: [],
+    extensionFiles: files,
+    defaultModel: 'codebuddy-unknown',
+  });
+  assert.equal(result.eventsParsed, 1);
+  assert.equal(result.buckets[0]!.project, 'juejin-usage');
+});
+
+test('parseCodebuddyIncremental leaves project unknown without cwd sources', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'tud-cb-unk-'));
+  const msgFile = join(dir, 'unk-msg.json');
+  const files = [
+    {
+      file: msgFile,
+      host: 'VSCode',
+      sessionId: 'sess-none',
+      workspaceId: 'deadbeefdeadbeefdeadbeefdeadbeef',
+      pathHint: null as string | null,
+    },
+  ];
+  await writeFile(
+    msgFile,
+    JSON.stringify({
+      id: 'unk-1',
+      role: 'assistant',
+      createdAt: '2026-09-21T09:00:00.000Z',
+      extra: JSON.stringify({
+        modelId: 'auto',
+        lastStepInputTokens: 10,
+        lastStepOutputTokens: 1,
+        lastStepCachedInputTokens: 0,
+      }),
+    }),
+  );
+
+  const { result } = await parseCodebuddyIncremental({}, SINCE, {
+    projectFiles: [],
+    extensionFiles: files,
+    sessionCwds: new Map(),
+    workspaceCwds: new Map(),
+    defaultModel: 'codebuddy-unknown',
+  });
+  assert.equal(result.buckets[0]!.project, 'unknown');
+});
+
+test('isSyncSourcePresent codebuddy gates on extension data or projects', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'tud-cb-presence-'));
+  const emptyHome = join(root, 'home-empty');
+  await mkdir(emptyHome, { recursive: true });
+  const extRoot = join(root, 'ext-data');
+  await mkdir(extRoot, { recursive: true });
+  await writeFile(join(extRoot, 'marker'), '1');
+
+  const prevExt = process.env.CODEBUDDY_EXTENSION_ROOTS;
+  const prevHome = process.env.CODEBUDDY_HOME;
+  try {
+    process.env.CODEBUDDY_HOME = emptyHome;
+    process.env.CODEBUDDY_EXTENSION_ROOTS = join(root, 'missing-ext');
+    assert.equal(isSyncSourcePresent('codebuddy'), false);
+
+    process.env.CODEBUDDY_EXTENSION_ROOTS = extRoot;
+    assert.equal(isSyncSourcePresent('codebuddy'), true);
+
+    process.env.CODEBUDDY_EXTENSION_ROOTS = join(root, 'missing-ext');
+    await mkdir(join(emptyHome, 'projects'), { recursive: true });
+    assert.equal(isSyncSourcePresent('codebuddy'), true);
+  } finally {
+    if (prevExt === undefined) delete process.env.CODEBUDDY_EXTENSION_ROOTS;
+    else process.env.CODEBUDDY_EXTENSION_ROOTS = prevExt;
+    if (prevHome === undefined) delete process.env.CODEBUDDY_HOME;
+    else process.env.CODEBUDDY_HOME = prevHome;
   }
 });
 
