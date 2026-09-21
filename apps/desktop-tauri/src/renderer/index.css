@@ -3,6 +3,9 @@
 @import "@heroui/styles";
 @source "../../../../packages/dashboard/src/components/ShareCardActions.tsx";
 @source "../../../../packages/dashboard/src/components/ShareCardCarousel.tsx";
+/* Shell-specific views (tray popover, desktop pet, …) now live in the shared
+   desktop-ui package; their Tailwind utilities must be generated here too. */
+@source "../../../../packages/desktop-ui/src";
 
 :root {
   --font-dashboard-sans: "JetBrains Mono Variable", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", "Noto Sans SC", system-ui, sans-serif;

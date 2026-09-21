@@ -6,8 +6,9 @@
   "description": "Juejin AI Usage 统计客户端（Tauri 版）：Token 用量明细追踪，本地记录、云端同步，还有线上排行榜。",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "tsc -p tsconfig.json --noEmit && vite build",
+    "dev": "pnpm build:dashboard && node ./scripts/copy-dashboard.mjs && vite",
+    "build": "pnpm build:dashboard && node ./scripts/copy-dashboard.mjs && tsc -p tsconfig.json --noEmit && vite build",
+    "build:dashboard": "pnpm --filter @juejin-opensource/jusage-dashboard build:tauri",
     "preview": "vite preview",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "tauri": "tauri"

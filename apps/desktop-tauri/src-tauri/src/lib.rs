@@ -11,10 +11,11 @@
 //! deep-link, autostart) are registered with safe defaults so the whole bridge
 //! resolves without "command not found"; their real behavior lands in P1+.
 
-use tauri::{AppHandle, Emitter, Manager, State, Window};
+use tauri::{AppHandle, Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder, Window};
 
-mod dashboard_range;
+mod bridge;
 mod clipboard;
+mod dashboard_range;
 mod deeplink;
 mod instance;
 mod pet;
@@ -24,6 +25,7 @@ mod theme;
 mod tray;
 mod updater;
 
+use crate::bridge::TUD_BRIDGE_INIT_SCRIPT;
 use crate::dashboard_range::DashboardRangeState;
 use crate::pet::PetState;
 use crate::prefs::PrefsState;
@@ -38,6 +40,102 @@ use std::sync::Arc;
 /// "restore fast poll + refresh stale data" poke when the main window regains
 /// focus (port of Electron's `pokeSyncOnForeground`, 30s debounce).
 static LAST_POKE_SYNC: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// Create the main dashboard window, explicitly (not via `tauri.conf.json >
+/// app.windows`) so we can attach `on_navigation` — any navigation to a
+/// non-loopback http(s) URL is suppressed and forwarded to the default
+/// browser instead of loading inside the webview. The initial URL is the
+/// bundled dashboard dist (`dashboard/index.html`) served by Tauri's own
+/// frontend static resources — the same loading mechanism as the tray-popover
+/// and desktop-pet windows, which avoids the WKWebView blank-screen failure
+/// mode of navigating to the loopback sidecar HTTP server.
+fn create_main_window(app: &AppHandle) {
+    // Load the dashboard as a Tauri static resource (`App(...)`), exactly like
+    // the tray-popover (`index.html?view=tray-popover`) and pet (`pet.html`)
+    // windows. The main window no longer navigates to `http://127.0.0.1:8462/`
+    // (the Node sidecar's loopback HTTP server): that cross-process load left
+    // the WKWebView with no URL (`webview.URL()` → None) and a permanently
+    // blank page. Data requests still reach the sidecar, but via the JS
+    // `window.tud` bridge (`tud.api.request` → `sidecar_url` → 8462), not as
+    // the page origin.
+    // `WebviewUrl::App` is correct for bundled builds. In dev, use the full
+    // Vite URL explicitly: macOS WKWebView can otherwise remain on its
+    // initial `about:blank` document even though the `devUrl + path` URL is
+    // reported to the navigation callback as allowed.
+    let initial_webview_url = WebviewUrl::App("dashboard/index.html".into());
+    // Inject the Tauri-backed `window.tud` bridge before the dashboard's own
+    // scripts run. The dashboard is a standalone build (its own `main.tsx`),
+    // so it cannot call `initTudBridge()` itself the way the tray/pet
+    // renderers do; the bridge must be provided by the shell. This makes
+    // `hasDesktopApi()` true in the dashboard's data layer so its
+    // `/functions/tud-*` requests are routed through `tud.api.request` to the
+    // sidecar instead of a same-origin fetch that would 404 on the Tauri
+    // origin.
+    let navigation_app = app.clone();
+    let new_window_app = app.clone();
+    let builder = WebviewWindowBuilder::new(app, "main", initial_webview_url)
+        .title("Juejin Usage")
+        // The dashboard is built as an independent app bundle, so it cannot
+        // import the shell renderer's `bridge.ts`. Install the Tauri bridge
+        // before the dashboard module executes; otherwise its first API
+        // request falls back to `/functions/...` on the static Tauri origin
+        // and the page stays in a blank/recovering state.
+        .initialization_script(TUD_BRIDGE_INIT_SCRIPT)
+        .inner_size(1024.0, 780.0)
+        .min_inner_size(800.0, 600.0)
+        .center()
+        .on_page_load(|_, payload| {
+            eprintln!(
+                "[tud-desktop] main page {:?}: {}",
+                payload.event(),
+                payload.url()
+            );
+        })
+        // Intercept external http(s) URLs: hand them off to the OS default
+        // browser and keep the webview on its own dashboard. Tauri's
+        // `on_navigation` callback returns `true` to allow a navigation and
+        // `false` to cancel it.
+        .on_navigation(move |url| {
+            eprintln!("[tud-desktop] main navigation: {url}");
+            if is_internal_navigation_url(url) {
+                return true;
+            }
+            if is_http_url(url) {
+                if let Err(err) = open_http_url_in_browser(&navigation_app, url) {
+                    eprintln!("[tud-desktop] failed to open external URL {url}: {err}");
+                }
+            }
+            false
+        })
+        // `window.open(url, "_blank")` must follow the same policy as a
+        // top-level navigation. Never create a second in-app browser window;
+        // open http(s) targets with the OS handler and deny the WebView popup.
+        .on_new_window(move |url, _features| {
+            if is_http_url(&url) {
+                if let Err(err) = open_http_url_in_browser(&new_window_app, &url) {
+                    eprintln!("[tud-desktop] failed to open popup URL {url}: {err}");
+                }
+            }
+            tauri::webview::NewWindowResponse::Deny
+        });
+
+    match builder.build() {
+        Ok(window) => {
+            eprintln!(
+                "[tud-desktop] main window created (url={})",
+                window.url().map(|url| url.to_string()).unwrap_or_else(|_| "<unavailable>".into())
+            );
+            if has_hidden_arg() {
+                if let Err(err) = window.hide() {
+                    eprintln!("[tud-desktop] failed to hide main window: {err}");
+                }
+            }
+        }
+        Err(err) => {
+            eprintln!("[tud-desktop] failed to create main window: {err}");
+        }
+    }
+}
 
 fn unix_epoch_secs() -> u64 {
     std::time::SystemTime::now()
@@ -147,6 +245,33 @@ struct OpenExternalResult {
     message: Option<String>,
 }
 
+fn is_http_url(url: &url::Url) -> bool {
+    matches!(url.scheme(), "http" | "https")
+}
+
+fn is_internal_navigation_url(url: &url::Url) -> bool {
+    match (url.scheme(), url.host_str(), url.port_or_known_default()) {
+        ("tauri", Some("localhost"), _) => true,
+        // Tauri's Windows WebView workaround uses this origin instead of the
+        // custom `tauri://localhost` scheme.
+        ("http" | "https", Some("tauri.localhost"), _) => true,
+        // In `tauri dev`, `WebviewUrl::App` is resolved against `devUrl`.
+        ("http", Some("127.0.0.1" | "localhost"), Some(1720)) => true,
+        ("about", None, None) if url.as_str() == "about:blank" => true,
+        _ => false,
+    }
+}
+
+fn open_http_url_in_browser(app: &AppHandle, url: &url::Url) -> Result<(), String> {
+    if !is_http_url(url) {
+        return Err("INVALID_PROTOCOL".to_string());
+    }
+    use tauri_plugin_opener::OpenerExt;
+    app.opener()
+        .open_url(url.as_str(), None::<&str>)
+        .map_err(|err| err.to_string())
+}
+
 /// Open an http(s) URL in the OS default browser, validating the protocol so
 /// `juejin-usage://` or `file://` can't leak through. Mirrors
 /// `registerOpenExternalIpc` in Electron's `DesktopWindow.ts`.
@@ -155,12 +280,10 @@ fn open_external(url: String, app: AppHandle) -> OpenExternalResult {
     let Ok(parsed) = url::Url::parse(&url) else {
         return OpenExternalResult { ok: false, message: Some("INVALID_URL".to_string()) };
     };
-    if !(parsed.scheme() == "http" || parsed.scheme() == "https") {
+    if !is_http_url(&parsed) {
         return OpenExternalResult { ok: false, message: Some("INVALID_PROTOCOL".to_string()) };
     }
-    use tauri_plugin_opener::OpenerExt;
-    let target = parsed.to_string();
-    match app.opener().open_url(&target, None::<&str>) {
+    match open_http_url_in_browser(&app, &parsed) {
         Ok(()) => OpenExternalResult { ok: true, message: None },
         Err(e) => OpenExternalResult { ok: false, message: Some(e.to_string()) },
     }
@@ -341,6 +464,10 @@ pub fn run() {
                 app.state::<DashboardRangeState>().set(range);
             }
 
+            // P2b: create the main window explicitly so we can attach the
+            // external-link navigation hook before the dashboard loads.
+            create_main_window(app.handle());
+
             // P1: spawn the Node sidecar (data core). Failures are non-fatal —
             // the frontend shows "recovering" until the sidecar reports its port.
             let state = app.state::<SidecarState>();
@@ -365,10 +492,10 @@ pub fn run() {
             deeplink::create(app.handle());
 
             // P2: `--hidden` (tray-only launch) — the autostart pref launches the
-            // app silent. Tauri already auto-created the `main` window (and the
-            // pet, if enabled) before setup finished, so hide them here to
-            // match Electron's `launchHidden` (a real user click on the tray
-            // brings the main window back).
+            // app silent. The main window and pet (if enabled) are created
+            // before setup finishes, so hide them here to match Electron's
+            // `launchHidden` (a real user click on the tray brings the main
+            // window back).
             if has_hidden_arg() {
                 if let Some(main) = app.get_webview_window("main") {
                     let _ = main.hide();
@@ -416,6 +543,8 @@ pub fn run() {
             open_external,
             clipboard::copy_image_to_clipboard,
             tray::resize_tray_popover,
+            bridge::tud_api_request,
+            bridge::tud_bridge_ready,
             theme_get,
             theme_set,
             dashboard_range_get,
@@ -440,4 +569,49 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[cfg(test)]
+mod navigation_tests {
+    use super::{is_http_url, is_internal_navigation_url};
+
+    fn url(value: &str) -> url::Url {
+        url::Url::parse(value).unwrap()
+    }
+
+    #[test]
+    fn bundled_dashboard_navigation_is_internal() {
+        assert!(is_internal_navigation_url(&url(
+            "tauri://localhost/dashboard/index.html"
+        )));
+        assert!(is_internal_navigation_url(&url(
+            "http://tauri.localhost/dashboard"
+        )));
+    }
+
+    #[test]
+    fn tauri_dev_navigation_is_internal() {
+        assert!(is_internal_navigation_url(&url(
+            "http://127.0.0.1:1720/dashboard/index.html"
+        )));
+        assert!(is_internal_navigation_url(&url(
+            "http://localhost:1720/dashboard"
+        )));
+    }
+
+    #[test]
+    fn external_web_navigation_is_not_internal() {
+        let github = url("https://github.com/juejin-cn/juejin-usage");
+        assert!(is_http_url(&github));
+        assert!(!is_internal_navigation_url(&github));
+        assert!(!is_internal_navigation_url(&url(
+            "http://127.0.0.1:8462/"
+        )));
+    }
+
+    #[test]
+    fn non_web_protocols_are_not_external_browser_targets() {
+        assert!(!is_http_url(&url("juejin-usage://link?user_id=1")));
+        assert!(!is_internal_navigation_url(&url("file:///tmp/index.html")));
+    }
 }

@@ -26,6 +26,9 @@
 /// A transient "cannot open the lock file" error is *not* fatal: we log it and
 /// proceed without a lock, matching Electron's fail-open posture (a broken
 /// config dir must not block launch).
+///
+/// `TUD_INSTANCE_FILE` (dev/CI) redirects the lock to an arbitrary path so the
+/// guard is testable outside the (possibly TCC-blocked) app config dir.
 pub fn acquire(app: &tauri::AppHandle) -> Result<(), String> {
     use tauri::Manager;
 
@@ -35,20 +38,49 @@ pub fn acquire(app: &tauri::AppHandle) -> Result<(), String> {
 
         const LOCK_NAME: &str = "single-instance.lock";
 
-        let Ok(path) = app
-            .path()
-            .resolve(LOCK_NAME, tauri::path::BaseDirectory::AppConfig)
-        else {
-            eprintln!("[tud-desktop] single-instance: cannot resolve lock path");
-            return Ok(());
+        let path = match std::env::var("TUD_INSTANCE_FILE") {
+            Ok(custom) => {
+                let p = std::path::PathBuf::from(custom);
+                if let Some(dir) = p.parent() {
+                    let _ = std::fs::create_dir_all(dir);
+                }
+                p
+            }
+            Err(_) => {
+                let Ok(path) = app
+                    .path()
+                    .resolve(LOCK_NAME, tauri::path::BaseDirectory::AppConfig)
+                else {
+                    eprintln!("[tud-desktop] single-instance: cannot resolve lock path");
+                    return Ok(());
+                };
+                if let Some(dir) = path.parent() {
+                    let _ = std::fs::create_dir_all(dir);
+                }
+                path
+            }
         };
-        if let Some(dir) = path.parent() {
-            let _ = std::fs::create_dir_all(dir);
-        }
 
-        let Ok(file) = std::fs::OpenOptions::new().create(true).truncate(false).open(&path)
+        let Ok(file) = std::fs::OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .read(true)
+            .write(true)
+            .open(&path)
         else {
-            eprintln!("[tud-desktop] single-instance: cannot open {path:?}");
+            // `std::fs::OpenOptions::open` collapses all OS errors into an `io::Error`;
+            // surface the kind + raw_os_error so TCC EPERM / sandbox denials are
+            // distinguishable from plain ENOENT in the log.
+            let io_err = std::fs::OpenOptions::new()
+                .create(true)
+                .truncate(false)
+                .read(true)
+                .write(true)
+                .open(&path)
+                .err();
+            eprintln!(
+                "[tud-desktop] single-instance: cannot open {path:?} (last_err={io_err:?})"
+            );
             return Ok(());
         };
 

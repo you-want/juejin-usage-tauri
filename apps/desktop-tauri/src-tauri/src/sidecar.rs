@@ -56,12 +56,24 @@ impl Default for SidecarState {
 /// Resolve the Node executable to spawn.
 ///
 /// Priority: the `TUD_NODE_BIN` env (dev / testing a specific runtime), then
-/// the bundled `node-app/node/node` resource (packaged `.app`), then `node` on
-/// the PATH (last resort). The packaged tree is staged by
-/// `scripts/stage-node-app.mjs` and shipped via `bundle.resources`.
+/// the app-sibling `node-app/node/node` (a staged runtime next to the binary,
+/// see `scripts/stage-node-app.mjs`), then the bundled `node-app/node/node`
+/// resource (packaged `.app`), then `node` on the PATH (last resort).
+///
+/// The app-sibling slot exists because Tauri `resolve(..., BaseDirectory::Resource)`
+/// on macOS walks up from the *main binary* to find the app bundle — if the
+/// binary lives outside a `.app` (e.g. a bare `target/release` build in dev)
+/// it resolves to a directory that lacks `Resources/node-app`, while a
+/// *staged* sibling copy may well exist. Checking the sibling first keeps both
+/// layouts working with one path.
 fn node_bin(app: &AppHandle) -> Option<String> {
     if let Ok(custom) = std::env::var("TUD_NODE_BIN") {
         return Some(custom);
+    }
+    if let Some(candidate) = app_sibling_runtime("node-app/node/node") {
+        if candidate.exists() {
+            return Some(candidate.to_string_lossy().into_owned());
+        }
     }
     if let Ok(bundled) = app.path().resolve("node-app/node/node", BaseDirectory::Resource) {
         if bundled.exists() {
@@ -71,14 +83,28 @@ fn node_bin(app: &AppHandle) -> Option<String> {
     Some("node".to_string())
 }
 
+/// Locate a staged runtime file in `node-app/` next to the *current executable*
+/// (i.e. `<exe-dir>/node-app/...`). Returns `None` when the file is absent or
+/// the exe dir is unresolvable.
+fn app_sibling_runtime(rel: &str) -> Option<std::path::PathBuf> {
+    let exe = std::env::current_exe().ok()?;
+    let exe_dir = exe.parent()?;
+    Some(exe_dir.join(rel))
+}
+
 /// Resolve the compiled sidecar entry to run.
 ///
-/// Priority: the `TUD_SIDECAR_SCRIPT` env (dev override), then the bundled
-/// `node-app/app/dist/index.js` resource (packaged build, paired with the
-/// bundled `node-app/app/node_modules`), then a repo-relative fallback for dev.
+/// Priority: the `TUD_SIDECAR_SCRIPT` env (dev override), then the app-sibling
+/// `node-app/app/dist/index.js` (see `node_bin`), then the bundled resource
+/// copy, then a repo-relative fallback for dev.
 fn sidecar_script(app: &AppHandle) -> Option<String> {
     if let Ok(custom) = std::env::var("TUD_SIDECAR_SCRIPT") {
         return Some(custom);
+    }
+    if let Some(candidate) = app_sibling_runtime("node-app/app/dist/index.js") {
+        if candidate.exists() {
+            return Some(candidate.to_string_lossy().into_owned());
+        }
     }
     if let Ok(bundled) = app.path().resolve("node-app/app/dist/index.js", BaseDirectory::Resource) {
         if bundled.exists() {
@@ -167,6 +193,44 @@ fn read_stdout(
         if let Some(p) = line.strip_prefix("PORT=") {
             if let Ok(n) = p.trim().parse::<u16>() {
                 *port.lock().unwrap() = Some(n);
+                eprintln!("[tud-desktop] sidecar bound to PORT={n}");
+                // Verify the main webview (now the bundled dashboard, not the
+                // loopback sidecar) actually mounted: probe its URL, the
+                // injected `window.tud` bridge, and whether the dashboard
+                // `#root` has children. Done a few seconds after the sidecar
+                // binds so the dashboard's first data fetch has fired.
+                let app_probe = app.clone();
+                std::thread::spawn(move || {
+                    use tauri::Manager as _;
+                    for i in 1..=4u32 {
+                        std::thread::sleep(std::time::Duration::from_secs(3));
+                        let secs = i as u64 * 3;
+                        match app_probe.get_webview_window("main") {
+                            Some(win) => {
+                                let js = r#"JSON.stringify({
+  href: location.href,
+  ready: document.readyState,
+  title: document.title,
+  rootKids: document.getElementById("root") ? document.getElementById("root").children.length : -1,
+  hasTud: typeof window.tud !== "undefined",
+  hasTudApi: !!(window.tud && window.tud.api && window.tud.api.request),
+  bodyLen: document.body ? document.body.innerText.length : -1
+})"#;
+                                match win.eval_with_callback(js, move |out| {
+                                    eprintln!("[tud-desktop] main-webview(t+{secs}s): {out}")
+                                }) {
+                                    Ok(()) => {}
+                                    Err(e) => {
+                                        eprintln!("[tud-desktop] main-webview(t+{secs}s): eval failed: {e}")
+                                    }
+                                }
+                            }
+                            None => {
+                                eprintln!("[tud-desktop] main-webview(t+{}s): main window gone", secs)
+                            }
+                        }
+                    }
+                });
             }
         } else if line.trim() == "SYNCED" {
             let _ = app.emit("tud:data-synced", ());
