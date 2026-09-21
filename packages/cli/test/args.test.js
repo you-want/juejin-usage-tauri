@@ -4,11 +4,23 @@ import test from 'node:test';
 import {
   formatListenUrl,
   formatSyncSourceList,
+  formatUploadTokenStatus,
   normalizeListenHost,
   normalizeListenPort,
   parseArgs,
   resolveSyncSource,
 } from '../dist/args.js';
+
+test('formatUploadTokenStatus never exposes the upload credential', () => {
+  const deviceId = '550e8400-e29b-41d4-a716-446655440000';
+  const linkedToken = 'jau.do-not-print-this-token';
+
+  assert.equal(formatUploadTokenStatus(deviceId, null), '未配置');
+  assert.equal(formatUploadTokenStatus(deviceId, '   '), '未配置');
+  assert.equal(formatUploadTokenStatus(deviceId, deviceId), '未关联');
+  assert.equal(formatUploadTokenStatus(deviceId, linkedToken), '已配置（已关联）');
+  assert.equal(formatUploadTokenStatus(deviceId, linkedToken).includes(linkedToken), false);
+});
 
 test('parseArgs reads --host and --port without defaulting them', () => {
   const parsed = parseArgs(['node', 'jusage', 'start', '--host', '0.0.0.0', '--port', '9000']);
