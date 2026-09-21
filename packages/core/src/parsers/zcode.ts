@@ -123,8 +123,10 @@ function numField(value: unknown): number {
 /**
  * ZCode's normalized usage convention (see model_usage.raw_usage_json):
  * input_tokens already includes cache read/write, and computed_total_tokens
- * is the provider-reported total (input + output). Keep fresh input separate
- * from cached so the bucket sums match ZCode's own total.
+ * is the provider-reported total (input + output, excluding reasoning).
+ * Reasoning is reported separately, so the bucket total adds it back on top
+ * to keep the five-field-sum convention every other parser (and the server's
+ * ingest recompute) follows.
  */
 function totalsFromUsageRow(row: Record<string, unknown>): ZcodeTotals | null {
   const input = numField(row.input_tokens);
@@ -132,7 +134,8 @@ function totalsFromUsageRow(row: Record<string, unknown>): ZcodeTotals | null {
   const reasoning = numField(row.reasoning_tokens);
   const cacheRead = numField(row.cache_read_input_tokens);
   const cacheWrite = numField(row.cache_creation_input_tokens);
-  const total = numField(row.computed_total_tokens) || input + output + reasoning;
+  const total =
+    (numField(row.computed_total_tokens) || input + output) + reasoning;
   if (total <= 0) return null;
   return {
     input_tokens: Math.max(0, input - cacheRead - cacheWrite),
