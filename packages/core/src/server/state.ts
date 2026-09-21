@@ -205,7 +205,7 @@ export function buildSyncStatus(
       kiro: poll('kiro', 'Kiro CLI 读取 sessions/cli 与 kiro-cli SQLite，定时轮询同步', countKiroRows(rows)),
       cline: poll(
         'cline',
-        'Cline 读取 VS Code globalStorage tasks/ui_messages.json，定时轮询同步',
+        'Cline 读取 SDK sessions/messages.json 与 VS Code globalStorage ui_messages.json，定时轮询同步',
         countClineRows(rows),
       ),
       amp: poll('amp', 'Amp 读取 ~/.local/share/amp/threads T-*.json，定时轮询同步', countAmpRows(rows)),

@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { resolveAntigravityBrainDirs } from '../parsers/antigravity.js';
 import { resolveAmpThreadsDir } from '../parsers/amp.js';
 import { resolveCodebuddyHome } from '../parsers/codebuddy.js';
+import { clineSessionDataDir, findClineExtensionDirs } from '../parsers/cline.js';
 import { droidSessionsDirs } from '../parsers/droid.js';
 import { everyCodeHome } from '../parsers/every-code.js';
 import { gooseDbPath } from '../parsers/goose.js';
@@ -135,11 +136,7 @@ export function isSyncSourcePresent(source: string): boolean {
     case 'kiro':
       return anyExists([kiroCliSessionsDir(), kiroCliDbPath()]);
     case 'cline':
-      return anyExists(
-        vscodeGlobalStorageRoots().map((r) =>
-          join(r, 'saoudrizwan.claude-dev'),
-        ),
-      );
+      return anyExists([...findClineExtensionDirs(), clineSessionDataDir()]);
     case 'amp':
       return anyExists([resolveAmpThreadsDir()]);
     case 'qwen':
