@@ -12,7 +12,8 @@
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import * as zlib from 'node:zlib';
+
+import { decompress as fzstdDecompress } from 'fzstd';
 
 import type { CursorsFile, QueueBucket, TokenTotals } from '../types.js';
 import { resolveProjectName } from '../project-name.js';
@@ -153,56 +154,25 @@ function readSessionCwd(text: string): string | null {
   return null;
 }
 
-/** 解压单帧 zstd，返回 (解压内容, 消费的压缩字节数)。 */
-function zstdDecompressFrame(compressed: Buffer): { out: Buffer; consumed: number } | null {
-  try {
-    const res = zlib.zstdDecompressSync(compressed, { info: true }) as unknown as {
-      buffer: Buffer;
-      engine?: { bytesWritten?: number };
-    };
-    const consumed = res.engine?.bytesWritten ?? 0;
-    if (!consumed || consumed <= 0) return null;
-    return { out: res.buffer, consumed };
-  } catch {
-    return null;
-  }
-}
-
 /**
  * 解压 DSH 会话文件 → UTF-8 文本。
  *
- * DSH 的 session.jsonl.zstd 是流式追加写入的「多帧」zstd 文件，Node 内置的
- * zstdDecompressSync 只解压第一个帧。这里按帧循环解压并拼接：每次用
- * { info: true } 拿到 engine.bytesWritten（本帧消费的压缩字节数）推进偏移，
- * 直到覆盖整个 buffer。
+ * DSH 的 session.jsonl.zstd 是流式追加写入的「多帧」zstd 文件，Node 内置
+ * zstdDecompressSync 只解压第一个帧；而逐帧推进的原生解码在 Electron 内置的
+ * Node 上存在确定性原生崩溃——进程内累计解码约十几 MB 后 SIGTRAP，事件循环
+ * wedge 成 100% CPU 僵尸（Node 22.15.0 官方版与 Electron 35.4/35.7 均实测触发，
+ * 见 issue #187）。这里改用纯 JS 解码器 fzstd 一次解出整个多帧文件：不经过
+ * 原生 zlib，输出与原生逐帧解码逐字节一致（含多帧 fixture 的测试覆盖）。
  */
 function decodeDsh(compressed: Buffer): string | null {
-  if (typeof zlib.zstdDecompressSync !== 'function') {
-    throw new Error('zstdDecompressSync unavailable (Node >= 22.9 with zstd support required)');
+  try {
+    const out = fzstdDecompress(compressed);
+    if (out.length === 0 || out.length > MAX_DECODED_BYTES) return null;
+    return Buffer.from(out).toString('utf8');
+  } catch {
+    // 损坏/截断文件 → null，调用方保留旧游标下轮重试。
+    return null;
   }
-  const chunks: Buffer[] = [];
-  let offset = 0;
-  let total = 0;
-  // 防御性上限，避免损坏文件导致死循环。
-  const guard = compressed.length + 1;
-  let frames = 0;
-  while (offset < compressed.length && frames < guard) {
-    const frame = zstdDecompressFrame(compressed.subarray(offset));
-    if (!frame) {
-      // 首帧就失败 → 整个文件损坏；中途失败 → 已解压部分仍可用。
-      if (frames === 0) return null;
-      break;
-    }
-    chunks.push(frame.out);
-    total += frame.out.length;
-    if (total > MAX_DECODED_BYTES) {
-      throw new Error(`decoded session exceeds ${MAX_DECODED_BYTES} bytes`);
-    }
-    offset += frame.consumed;
-    frames += 1;
-  }
-  if (chunks.length === 0) return null;
-  return Buffer.concat(chunks).toString('utf8');
 }
 
 function coerceEpochMs(value: unknown): number | null {
@@ -280,21 +250,9 @@ export async function parseDshIncremental(
     } catch {
       continue;
     }
-    let text: string | null;
-    try {
-      text = filePath.endsWith('.zstd') ? decodeDsh(contents) : contents.toString('utf8');
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      if (/zstdDecompressSync unavailable/i.test(msg)) {
-        return {
-          result: { buckets: [], eventsParsed: 0, filesProcessed: 0, skipped: true, error: msg },
-          cursors,
-        };
-      }
-      continue;
-    }
+    const text = filePath.endsWith('.zstd') ? decodeDsh(contents) : contents.toString('utf8');
     if (!text) {
-      // 解码失败（写入中的文件）—— 保留旧游标，下次重试。
+      // 解码失败（损坏或写入中的文件）—— 保留旧游标，下次重试。
       continue;
     }
 
