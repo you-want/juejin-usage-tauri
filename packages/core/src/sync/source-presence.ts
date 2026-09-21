@@ -152,9 +152,15 @@ export function isSyncSourcePresent(source: string): boolean {
       // there while usage lives under the extension data dir. Gate on the
       // actual data dirs so an installed-but-unreadable setup reports
       // "not installed" instead of "installed with zero usage".
-      const hasExtensionData = resolveCodebuddyExtensionRoots().some(
-        (root) => existsSync(root) && readdirSync(root).length > 0,
-      );
+      const hasExtensionData = resolveCodebuddyExtensionRoots().some((root) => {
+        if (!existsSync(root)) return false;
+        try {
+          return readdirSync(root).length > 0;
+        } catch {
+          // Unreadable / not a directory counts as absent.
+          return false;
+        }
+      });
       return hasExtensionData || anyExists([join(resolveCodebuddyHome(), 'projects')]);
     }
     case 'workbuddy':

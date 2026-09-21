@@ -342,6 +342,26 @@ function loadCodebuddyAppSessionCwds(dbPath: string): Map<string, string> {
   return map;
 }
 
+/** Hard cap on tracked extension message files; the oldest-modified are dropped first. */
+const EXT_FILE_MTIMES_CAP = 20_000;
+
+/**
+ * The mtime map lives in the shared cursors file (one entry per assistant
+ * message file), so it must not grow forever. Evicting an entry is safe: the
+ * worst case is the file being re-read on a later run, where `extSeenIds`
+ * dedups it — and messages older than the stats window are re-marked seen
+ * without being counted again.
+ */
+function capExtFileMtimes(map: Record<string, number>): Record<string, number> {
+  const keys = Object.keys(map);
+  if (keys.length <= EXT_FILE_MTIMES_CAP) return map;
+  const dropped = keys
+    .sort((a, b) => map[a]! - map[b]!)
+    .slice(0, keys.length - EXT_FILE_MTIMES_CAP);
+  for (const key of dropped) delete map[key];
+  return map;
+}
+
 function normalizeModel(value: unknown): string | null {
   if (typeof value !== 'string') return null;
   const trimmed = value.trim();
@@ -594,7 +614,7 @@ export async function parseCodebuddyIncremental(
   }
 
   ext.codebuddy.extSeenIds = Array.from(extSeenIds).slice(-50_000);
-  ext.codebuddy.extFileMtimes = extFileMtimes;
+  ext.codebuddy.extFileMtimes = capExtFileMtimes(extFileMtimes);
 
   return {
     result: {

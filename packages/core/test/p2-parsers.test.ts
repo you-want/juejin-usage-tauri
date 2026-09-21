@@ -480,6 +480,7 @@ test('parseCodebuddyIncremental reads App / extension history messages', async (
     assert.equal(files[0]!.sessionId, 'sess-1');
 
     const { result, cursors } = await parseCodebuddyIncremental({}, SINCE, {
+      projectFiles: [], // keep the CLI channel off real ~/.codebuddy data
       extensionFiles: files,
       sessionCwds: new Map([['sess-1', '/Users/lishanbing/workspace/juejin-usage']]),
       defaultModel: 'codebuddy-unknown',
@@ -495,6 +496,7 @@ test('parseCodebuddyIncremental reads App / extension history messages', async (
 
     // Re-running with the same cursors must not double-count (mtime gate).
     const second = await parseCodebuddyIncremental(cursors, SINCE, {
+      projectFiles: [],
       extensionFiles: files,
       sessionCwds: new Map([['sess-1', '/Users/lishanbing/workspace/juejin-usage']]),
       defaultModel: 'codebuddy-unknown',

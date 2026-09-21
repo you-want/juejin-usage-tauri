@@ -387,7 +387,7 @@ export interface CursorsFile {
     updatedAt?: string;
     /** Message ids already ingested from the CodeBuddy App / editor extension history. */
     extSeenIds?: string[];
-    /** mtimeMs per extension history message file, so unchanged files are skipped. */
+    /** mtimeMs per extension history message file, so unchanged files are skipped. Capped at 20k entries, oldest-modified dropped first. */
     extFileMtimes?: Record<string, number>;
   };
   workbuddy?: {
