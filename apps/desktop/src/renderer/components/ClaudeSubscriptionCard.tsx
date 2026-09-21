@@ -59,6 +59,7 @@ export function ClaudeSubscriptionCard() {
             remainingPercent: snapshot.fiveHour
               ? claudeRemainingPercent(snapshot.fiveHour.usedPercent)
               : null,
+            resetsAt: snapshot.fiveHour?.resetsAt,
           },
           {
             color: '#2b7eff',
@@ -66,8 +67,10 @@ export function ClaudeSubscriptionCard() {
             remainingPercent: snapshot.sevenDay
               ? claudeRemainingPercent(snapshot.sevenDay.usedPercent)
               : null,
+            resetsAt: snapshot.sevenDay?.resetsAt,
           },
         ],
+        planLabel: snapshot.planLabel,
         stale: snapshot.stale,
         title: 'Claude',
       }}

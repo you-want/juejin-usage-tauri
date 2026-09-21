@@ -52,7 +52,9 @@ export function GrokSubscriptionCard() {
           color: index === 0 && snapshot.limits.length > 1 ? '#7dcf00' : '#2b7eff',
           label: limit.label,
           remainingPercent: grokRemainingPercent(limit.usedPercent),
+          resetsAt: limit.resetsAt,
         })),
+        planLabel: snapshot.planLabel,
         stale: snapshot.stale,
         title: 'Grok',
       }}

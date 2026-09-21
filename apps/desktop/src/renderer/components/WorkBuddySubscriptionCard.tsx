@@ -60,7 +60,9 @@ export function WorkBuddySubscriptionCard({ region, title, fetcher }: WorkBuddyS
           color: index === 0 && snapshot.limits.length > 1 ? '#7dcf00' : '#2b7eff',
           label: workBuddyLabel(region, limit.label),
           remainingPercent: workBuddyRemainingPercent(limit.usedPercent),
+          resetsAt: limit.resetsAt,
         })),
+        planLabel: snapshot.planLabel,
         stale: snapshot.stale,
         title,
       }}

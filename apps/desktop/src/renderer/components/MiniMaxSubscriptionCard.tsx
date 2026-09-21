@@ -56,7 +56,9 @@ export function MiniMaxSubscriptionCard() {
           color: index === 0 && snapshot.limits.length > 1 ? '#ff6a00' : '#2b7eff',
           label: limit.label,
           remainingPercent: miniMaxRemainingPercent(limit.usedPercent),
+          resetsAt: limit.resetsAt,
         })),
+        planLabel: snapshot.planLabel,
         stale: snapshot.stale,
         title,
       }}

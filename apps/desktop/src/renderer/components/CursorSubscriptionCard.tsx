@@ -51,6 +51,7 @@ export function CursorSubscriptionCard() {
         color: '#2b7eff',
         label: 'Plan',
         remainingPercent: cursorRemainingPercent(snapshot.plan.usedPercent),
+        resetsAt: snapshot.plan.resetsAt,
       }]
     : [
         {
@@ -59,6 +60,7 @@ export function CursorSubscriptionCard() {
           remainingPercent: snapshot.cursorModels
             ? cursorRemainingPercent(snapshot.cursorModels.usedPercent)
             : null,
+          resetsAt: snapshot.cursorModels?.resetsAt,
         },
         {
           color: '#2b7eff',
@@ -66,6 +68,7 @@ export function CursorSubscriptionCard() {
           remainingPercent: snapshot.otherModels
             ? cursorRemainingPercent(snapshot.otherModels.usedPercent)
             : null,
+          resetsAt: snapshot.otherModels?.resetsAt,
         },
       ];
 
@@ -74,6 +77,7 @@ export function CursorSubscriptionCard() {
       data={{
         icon: <SubscriptionBrandIcon brand="cursor" />,
         metrics,
+        planLabel: snapshot.planLabel,
         stale: snapshot.stale,
         title: 'Cursor',
       }}

@@ -50,6 +50,7 @@ export function DeepSeekSubscriptionCard() {
           color: deepSeekRemainingPercent(balance.usedPercent) > 25 ? '#4f7dff' : '#ff7a45',
           label: '余额',
           remainingPercent: deepSeekRemainingPercent(balance.usedPercent),
+          resetsAt: balance.resetsAt,
           valueText: balance.remaining === null ? '—' : `¥${balance.remaining.toFixed(2)}`,
         })),
         stale: snapshot.stale,
