@@ -9,7 +9,11 @@
  *     messages carrying extra.lastStep*Tokens. This is what the CodeBuddy
  *     desktop app (CodeBuddy CN) and the VSCode / Cursor plugin actually
  *     write; the CLI channel alone never sees them.
+ *     Project names come from (1) desktop codebuddy-sessions.vscdb,
+ *     (2) editor genie-history/<base64(cwd)> keyed by session or md5(cwd),
+ *     (3) base64 path segment above history/ on anonymous trees.
  */
+import { createHash } from 'node:crypto';
 import { createReadStream, existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { createInterface } from 'node:readline';
 import { homedir } from 'node:os';
@@ -27,6 +31,7 @@ import {
   type BucketAccumulator,
 } from './shared.js';
 import { queryDbJson, readSqliteWithSnapshot, sqliteTableExists } from './sqlite.js';
+import { vscodeHostRoots } from './roocode.js';
 
 export const CODEBUDDY_COLLECTOR = 'codebuddy';
 
@@ -179,6 +184,51 @@ export interface CodebuddyExtensionMessageFile {
   host: string;
   /** Conversation id = the parent dir name of `messages/`. */
   sessionId: string;
+  /** Workspace folder under `history/` — md5 hex of the absolute cwd when known. */
+  workspaceId: string;
+  /**
+   * Absolute cwd decoded from the directory above `history/` when that name is
+   * base64(path). Anonymous/`default` trees use this; logged-in trees usually
+   * put the user id there instead (then `pathHint` is null).
+   */
+  pathHint: string | null;
+}
+
+/** VS Code / Cursor plugin id that owns `genie-history/<base64(cwd)>/`. */
+const CODEBUDDY_PLUGIN_STORAGE = join(
+  'User',
+  'globalStorage',
+  'tencent-cloud.coding-copilot',
+  'genie-history',
+);
+
+/**
+ * Decode a directory segment that stores an absolute workspace path as
+ * standard or URL-safe base64. Returns null for user ids, host names, etc.
+ */
+export function tryDecodeCodebuddyBase64Path(segment: string): string | null {
+  const trimmed = segment.trim();
+  if (trimmed.length < 8) return null;
+  // Logged-in trees put the account UUID above `history/` — skip early.
+  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(trimmed)) {
+    return null;
+  }
+  for (const encoding of ['base64url', 'base64'] as const) {
+    let decoded: string;
+    try {
+      decoded = Buffer.from(trimmed, encoding).toString('utf8');
+    } catch {
+      continue;
+    }
+    if (!decoded || /[\u0000-\u0008\u000e-\u001f]/.test(decoded)) continue;
+    const path = decoded.replace(/[\\/]+$/, '');
+    if (path.startsWith('/') || /^[A-Za-z]:[\\/]/.test(path)) return path;
+  }
+  return null;
+}
+
+function md5Hex(value: string): string {
+  return createHash('md5').update(value, 'utf8').digest('hex');
 }
 
 function findHistoryDirs(dir: string, depth: number, out: string[]): void {
@@ -208,7 +258,9 @@ export function resolveCodebuddyExtensionMessageFiles(
     for (const historyDir of historyDirs) {
       // `<root>/<userId>/<host>/<userId>/history` — the host name sits two
       // levels above `history` because the user id is duplicated.
+      // Anonymous trees look like `<root>/default/<host>/<base64(cwd)>/history`.
       const host = basename(dirname(dirname(historyDir))) || basename(dirname(historyDir)) || 'unknown';
+      const pathHint = tryDecodeCodebuddyBase64Path(basename(dirname(historyDir)));
       for (const workspace of readDirEntries(historyDir)) {
         if (!workspace.isDirectory()) continue;
         const workspacePath = join(historyDir, workspace.name);
@@ -221,6 +273,8 @@ export function resolveCodebuddyExtensionMessageFiles(
               file: join(messagesDir, file.name),
               host,
               sessionId: session.name,
+              workspaceId: workspace.name,
+              pathHint,
             });
           }
         }
@@ -229,6 +283,58 @@ export function resolveCodebuddyExtensionMessageFiles(
   }
   out.sort((a, b) => a.file.localeCompare(b.file));
   return out;
+}
+
+/**
+ * Roots of the editor plugin's `genie-history` dirs (Cursor / VS Code / …).
+ * Override with `CODEBUDDY_GENIE_HISTORY_ROOTS`.
+ */
+export function resolveCodebuddyGenieHistoryRoots(env: NodeJS.ProcessEnv = process.env): string[] {
+  const override = env.CODEBUDDY_GENIE_HISTORY_ROOTS?.trim();
+  if (override) return splitRootsEnv(override);
+  const out: string[] = [];
+  for (const hostRoot of vscodeHostRoots()) {
+    const candidate = join(hostRoot, CODEBUDDY_PLUGIN_STORAGE);
+    if (existsSync(candidate)) out.push(candidate);
+  }
+  return out;
+}
+
+/**
+ * Plugin-side cwd maps from `genie-history/<base64(cwd)>/conversations/<sessionId>/`.
+ *
+ * Desktop `codebuddy-sessions.vscdb` only covers the App; the VS Code / Cursor
+ * plugin writes session → workspace here instead. `workspaceCwds` keys are
+ * `md5(cwd)` — the same id used as the folder under extension `history/`.
+ */
+export function loadCodebuddyEditorWorkspaceMaps(
+  env: NodeJS.ProcessEnv = process.env,
+): { sessionCwds: Map<string, string>; workspaceCwds: Map<string, string> } {
+  const sessionCwds = new Map<string, string>();
+  const workspaceCwds = new Map<string, string>();
+  for (const gh of resolveCodebuddyGenieHistoryRoots(env)) {
+    for (const entry of readDirEntries(gh)) {
+      if (!entry.isDirectory()) continue;
+      const cwd = tryDecodeCodebuddyBase64Path(entry.name);
+      if (!cwd) continue;
+      workspaceCwds.set(md5Hex(cwd), cwd);
+      const base = join(gh, entry.name);
+      for (const conv of readDirEntries(join(base, 'conversations'))) {
+        if (conv.isDirectory() && conv.name) sessionCwds.set(conv.name, cwd);
+      }
+      try {
+        const current = JSON.parse(readFileSync(join(base, 'current.json'), 'utf-8')) as {
+          conversationId?: unknown;
+        };
+        if (typeof current.conversationId === 'string' && current.conversationId) {
+          sessionCwds.set(current.conversationId, cwd);
+        }
+      } catch {
+        // optional pointer file
+      }
+    }
+  }
+  return { sessionCwds, workspaceCwds };
 }
 
 interface CodebuddyExtensionMessage {
@@ -422,8 +528,10 @@ export async function parseCodebuddyIncremental(
     defaultModel?: string;
     /** Seam for tests: extension history message files to read. */
     extensionFiles?: CodebuddyExtensionMessageFile[];
-    /** Seam for tests: explicit session → cwd map instead of the app session db. */
+    /** Seam for tests: explicit session → cwd map instead of disk discovery. */
     sessionCwds?: Map<string, string>;
+    /** Seam for tests: workspace md5 → cwd (plugin history folder name). */
+    workspaceCwds?: Map<string, string>;
   },
 ): Promise<{ result: ParseCodebuddyResult; cursors: CursorsFile }> {
   const env = opts?.env ?? process.env;
@@ -549,14 +657,36 @@ export async function parseCodebuddyIncremental(
   const extensionFiles =
     opts?.extensionFiles ?? (opts?.projectFiles ? [] : resolveCodebuddyExtensionMessageFiles(env));
 
-  let sessionCwds: Map<string, string> | null = opts?.sessionCwds ?? null;
-  let sessionCwdsLoaded = sessionCwds != null;
-  const getSessionCwd = (sessionId: string): string | undefined => {
-    if (!sessionCwdsLoaded) {
-      sessionCwdsLoaded = true;
-      sessionCwds = loadCodebuddyAppSessionCwds(resolveCodebuddyAppSessionsDb(env));
+  // Project attribution, in order: desktop session db → editor genie-history
+  // (session id / workspace md5) → base64 path above `history/` (anonymous tree).
+  type ExtProjectMaps = {
+    sessionCwds: Map<string, string>;
+    workspaceCwds: Map<string, string>;
+  };
+  let projectMaps: ExtProjectMaps | null =
+    opts?.sessionCwds != null || opts?.workspaceCwds != null
+      ? {
+          sessionCwds: opts.sessionCwds ?? new Map(),
+          workspaceCwds: opts.workspaceCwds ?? new Map(),
+        }
+      : null;
+  const ensureProjectMaps = (): ExtProjectMaps => {
+    if (projectMaps) return projectMaps;
+    const sessionCwds = loadCodebuddyAppSessionCwds(resolveCodebuddyAppSessionsDb(env));
+    const editor = loadCodebuddyEditorWorkspaceMaps(env);
+    for (const [id, cwd] of editor.sessionCwds) {
+      if (!sessionCwds.has(id)) sessionCwds.set(id, cwd);
     }
-    return sessionCwds?.get(sessionId);
+    projectMaps = { sessionCwds, workspaceCwds: editor.workspaceCwds };
+    return projectMaps;
+  };
+  const resolveExtensionProject = (entry: CodebuddyExtensionMessageFile): string => {
+    const maps = ensureProjectMaps();
+    return projectFromCwd(
+      maps.sessionCwds.get(entry.sessionId) ??
+        (entry.workspaceId ? maps.workspaceCwds.get(entry.workspaceId) : undefined) ??
+        entry.pathHint,
+    );
   };
 
   let extEventsParsed = 0;
@@ -598,7 +728,7 @@ export async function parseCodebuddyIncremental(
       normalizeModel(message.extra.modelId) ??
       normalizeModel(message.extra.modelName) ??
       fallbackModel;
-    const project = projectFromCwd(getSessionCwd(entry.sessionId));
+    const project = resolveExtensionProject(entry);
 
     accumulateBucket(
       bucketState,
