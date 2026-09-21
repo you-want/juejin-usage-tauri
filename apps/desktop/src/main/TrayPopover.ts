@@ -11,6 +11,12 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { defaultPreloadPath, resolveAppIconPath, WINDOW_BACKGROUND_COLORS, type DesktopWindowTheme } from './DesktopWindow';
 import { pokeSyncOnForeground } from './local-runtime';
+import {
+  markTrayPopoverQuitting,
+  shouldTrayPopoverPreventClose,
+} from './tray-popover-quit-state';
+
+export { markTrayPopoverQuitting, resetTrayPopoverQuitting } from './tray-popover-quit-state';
 
 /**
  * TrayPopover
@@ -33,7 +39,7 @@ const isMac = process.platform === 'darwin';
 
 const TRAY_POPOVER_RESIZE_CHANNEL = 'tray-popover:resize';
 
-const POPOVER_WIDTH = 420;
+const POPOVER_WIDTH = 430;
 const POPOVER_MIN_HEIGHT = 200;
 const POPOVER_MAX_HEIGHT = 700;
 /** Initial height; the renderer reports its real content height on first paint. */
@@ -51,7 +57,6 @@ export interface TrayPopoverOptions {
 
 let tray: Tray | null = null;
 let popover: BrowserWindow | null = null;
-let isQuitting = false;
 let popoverTheme: DesktopWindowTheme = 'light';
 /** Latest content height reported by the renderer, used when re-anchoring. */
 let popoverHeight = POPOVER_INITIAL_HEIGHT;
@@ -136,7 +141,7 @@ function ensurePopover(): BrowserWindow {
   popover.on('blur', () => popover?.hide());
   popover.on('close', (e) => {
     // Hide instead of destroy on user close to allow re-toggling.
-    if (!isQuitting) {
+    if (shouldTrayPopoverPreventClose()) {
       e.preventDefault();
       popover?.hide();
     }
@@ -262,14 +267,14 @@ export function setPopoverTheme(theme: DesktopWindowTheme): void {
   }
 }
 
-/** Allow electron-updater to close the popover instead of hide-on-close. */
-export function markTrayPopoverQuitting(): void {
-  isQuitting = true;
-}
-
-/** Restore hide-on-close if an attempted update install fails. */
-export function resetTrayPopoverQuitting(): void {
-  isQuitting = false;
+/**
+ * Set the text displayed beside the tray icon in the macOS menu bar.
+ * Uses monospaced digits to prevent jitter when usage numbers tick up.
+ */
+export function setTrayUsageTitle(text: string): void {
+  if (!tray || tray.isDestroyed() || !isMac) return;
+  const title = text.trim() ? ` ${text.trim()}` : '';
+  tray.setTitle(title, { fontType: 'monospacedDigit' });
 }
 
 export function createTrayPopover(options: TrayPopoverOptions): void {
@@ -292,7 +297,7 @@ export function createTrayPopover(options: TrayPopoverOptions): void {
 }
 
 export function disposeTrayPopover(): void {
-  isQuitting = true;
+  markTrayPopoverQuitting();
   ipcMain.removeAllListeners(TRAY_POPOVER_RESIZE_CHANNEL);
   if (popover && !popover.isDestroyed()) {
     popover.removeAllListeners('blur');

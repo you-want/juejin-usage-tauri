@@ -27,6 +27,7 @@ import {
   countCopilotRows,
   countAntigravityRows,
   countOpenclawRows,
+  countAutoclawRows,
   countHermesRows,
   countZcodeRows,
   countDshRows,
@@ -185,6 +186,11 @@ export function buildSyncStatus(
         'OpenClaw 读取 ~/.openclaw*/agents/*/sessions，定时轮询同步',
         countOpenclawRows(rows),
       ),
+      autoclaw: poll(
+        'autoclaw',
+        'AutoClaw 读取 ~/.openclaw-autoclaw*/agents/*/sessions，定时轮询同步',
+        countAutoclawRows(rows),
+      ),
       hermes: poll('hermes', 'Hermes 读取 ~/.hermes/**/state.db，定时轮询同步', countHermesRows(rows)),
       zcode: poll('zcode', 'ZCode 读取 ~/.zcode/cli/db/db.sqlite，定时轮询同步', countZcodeRows(rows)),
       dsh: poll('dsh', 'DeepSeek Harness 读取 ~/.dsh/sessions/**/session.jsonl.zstd，定时轮询同步', countDshRows(rows)),
@@ -215,7 +221,7 @@ export function buildSyncStatus(
       ),
       workbuddy: poll(
         'workbuddy',
-        'WorkBuddy 读取 ~/.workbuddy/projects JSONL / SQLite，定时轮询同步',
+        'WorkBuddy 读取 ~/.workbuddy 与 ~/.workbuddy-ai 的 projects JSONL / SQLite，定时轮询同步',
         countWorkbuddyRows(rows),
       ),
       grok: poll(

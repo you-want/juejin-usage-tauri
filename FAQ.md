@@ -8,6 +8,12 @@
 npx @juejin-opensource/jusage@latest upload --force --reconcile
 ```
 
+### 数据校对提示 `reconcile failed: HTTP 422 INVALID_USAGE_EVENT`？
+
+已知服务端问题（详见 #178）：`/v1/model-usage/reconcile` 在校验事件前会先把 `occurred_at` 做 +8 小时归一化，再检查是否落在目标日期的覆盖窗口内，导致北京时间 16:00 及以后的事件全部被拒。含晚间用量的日期基本必然校准失败，普通自动同步（ingest）不受影响。
+
+报错信息里已附上失败的具体日期与窗口，便于定位和反馈。服务端修复前无法完成「以本地为准覆盖」，可先跳过校对，等修复后在「设置 → 云端同步 → 数据校对」重试。
+
 ### 客户端提示 `LOCAL_RUNTIME_NOT_READY` 怎么办？
 
 关窗口不会退出（会留在托盘）。先从托盘点 **退出**，再按下面的 case 排查。

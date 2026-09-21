@@ -23,6 +23,7 @@ import {
 } from '@/lib/api';
 import { openJuejinLogin } from '@/lib/juejin-client-link';
 import { AboutContent } from '@/components/AboutContent';
+import { DataCalibrateSection } from '@/components/DataCalibrateSection';
 import { JuejinLoginConsentModal } from '@/components/JuejinLoginConsentModal';
 import { StatusBanner } from '@/components/StatusBanner';
 import {
@@ -35,6 +36,12 @@ const TAB_ITEMS: { id: SettingsTabId; label: string }[] = [
   { id: 'app', label: '应用' },
   { id: 'about', label: '关于' },
 ];
+
+/** See desktop SettingsPanel: panel height must fit under dialog chrome. */
+const SETTINGS_SCROLL_PANEL =
+  'max-h-[calc(90vh-9rem)] overflow-y-auto p-4 pb-8 text-left';
+const SETTINGS_FIXED_FOOTER_PANEL =
+  'flex max-h-[calc(90vh-9rem)] min-h-0 flex-col overflow-hidden p-4 text-left';
 
 export function SettingsPanel({
   activeTab,
@@ -56,10 +63,10 @@ export function SettingsPanel({
     tab === 'pet' ? 'sync' : tab;
 
   return (
-    <div className="w-full">
+    <div className="flex min-h-0 w-full flex-1 flex-col">
       <Toast.Provider placement="top end" queue={toastQueue} />
       <Tabs
-        className="w-full text-center"
+        className="flex min-h-0 w-full flex-1 flex-col text-center"
         selectedKey={resolvedTab}
         onSelectionChange={(key) => setTab(String(key) as SettingsTabId)}
       >
@@ -78,10 +85,7 @@ export function SettingsPanel({
           </Tabs.List>
         </Tabs.ListContainer>
 
-        <Tabs.Panel
-          className="h-[50vh] overflow-hidden p-4 text-left font-normal"
-          id="sync"
-        >
+        <Tabs.Panel className={`${SETTINGS_FIXED_FOOTER_PANEL} font-normal`} id="sync">
           {resolvedTab === 'sync' &&
             (cliMode ? (
               <CliSyncSettings
@@ -112,15 +116,11 @@ export function SettingsPanel({
               />
             ))}
         </Tabs.Panel>
-        <Tabs.Panel className="h-[50vh] overflow-hidden p-4 text-left" id="app">
+        <Tabs.Panel className={SETTINGS_SCROLL_PANEL} id="app">
           {resolvedTab === 'app' && <AppSettingsPanel />}
         </Tabs.Panel>
-        <Tabs.Panel className="h-[50vh] overflow-hidden p-4 text-left" id="about">
-          {resolvedTab === 'about' && (
-            <div className="h-full overflow-y-auto pr-1">
-              <AboutContent />
-            </div>
-          )}
+        <Tabs.Panel className={SETTINGS_SCROLL_PANEL} id="about">
+          {resolvedTab === 'about' && <AboutContent />}
         </Tabs.Panel>
       </Tabs>
     </div>
@@ -237,8 +237,9 @@ function CliSyncSettings({
   };
 
   return (
-    <div className="flex h-full flex-col gap-3 overflow-hidden">
+    <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden">
       {error && <StatusBanner tone="error" title={error} />}
+      <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
       <Surface className="rounded-xl p-4" variant="secondary">
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0">
@@ -321,7 +322,13 @@ function CliSyncSettings({
         )}
       </Surface>
 
-      <div className="mt-auto flex justify-end gap-2">
+      <DataCalibrateSection
+        linked={Boolean(userId)}
+        onNotify={onNotify}
+      />
+      </div>
+
+      <div className="mt-auto flex shrink-0 justify-end gap-2">
         {userId ? (
           <Button
             isDisabled={saving}

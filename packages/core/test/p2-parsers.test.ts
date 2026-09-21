@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { statSync } from 'node:fs';
 import { appendFile, mkdtemp, mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -171,6 +172,203 @@ test('parseWorkbuddyIncremental subtracts cacheRead and cacheCreate from prompt'
     assert.equal(result.buckets[0]!.cached_input_tokens, 15);
     assert.equal(result.buckets[0]!.cache_creation_input_tokens, 5);
     assert.equal(result.buckets[0]!.output_tokens, 40);
+    // No workbuddy.db → no cwd source → project stays unknown.
+    assert.equal(result.buckets[0]!.project, 'unknown');
+  } finally {
+    if (prev === undefined) delete process.env.WORKBUDDY_HOME;
+    else process.env.WORKBUDDY_HOME = prev;
+  }
+});
+
+test('parseWorkbuddyIncremental derives project from entry cwd and rescans legacy cursors', async () => {
+  const home = await mkdtemp(join(tmpdir(), 'tud-wb2-'));
+  const prev = process.env.WORKBUDDY_HOME;
+  process.env.WORKBUDDY_HOME = home;
+  try {
+    const projects = join(home, 'projects');
+    await mkdir(projects, { recursive: true });
+    const filePath = join(projects, 'sess-b.jsonl');
+    await writeFile(
+      filePath,
+      JSON.stringify({
+        sessionId: 'sess-b',
+        id: 'm1',
+        cwd: '/Users/me/wb-demo',
+        timestamp: Date.parse('2026-07-24T11:00:00.000Z'),
+        providerData: {
+          model: 'wb-model',
+          rawUsage: {
+            prompt_tokens: 90,
+            completion_tokens: 10,
+          },
+        },
+      }) + '\n',
+    );
+
+    // Legacy cursor state predating cwd attribution: consumed offsets, no marker.
+    const legacyCursors = {
+      workbuddy: {
+        seenIds: [],
+        fileOffsets: { [filePath]: { size: 999, mtimeMs: 0, ino: 0 } },
+        sqliteSessions: {},
+        detailedSessions: {},
+      },
+    } as CursorsFile;
+
+    const { result, cursors } = await parseWorkbuddyIncremental(legacyCursors, SINCE, {
+      projectFiles: [filePath],
+      defaultModel: 'auto',
+      fullRescan: true,
+    });
+    assert.equal(result.fullRescan, true);
+    assert.equal(result.eventsParsed, 1);
+    assert.equal(result.buckets[0]!.source, 'workbuddy');
+    assert.equal(result.buckets[0]!.project, 'wb-demo');
+    assert.equal(
+      (cursors as { workbuddy?: { cwdProjects?: boolean } }).workbuddy?.cwdProjects,
+      true,
+    );
+
+    // Marker present → incremental pass, no rescan flag.
+    const second = await parseWorkbuddyIncremental(cursors, SINCE, {
+      projectFiles: [filePath],
+      defaultModel: 'auto',
+    });
+    assert.notEqual(second.result.fullRescan, true);
+    assert.equal(second.result.eventsParsed, 0);
+  } finally {
+    if (prev === undefined) delete process.env.WORKBUDDY_HOME;
+    else process.env.WORKBUDDY_HOME = prev;
+  }
+});
+
+test('parseWorkbuddyIncremental skips legacy cursor reset unless fullRescan requested', async () => {
+  const home = await mkdtemp(join(tmpdir(), 'tud-wb3-'));
+  const prev = process.env.WORKBUDDY_HOME;
+  process.env.WORKBUDDY_HOME = home;
+  try {
+    const projects = join(home, 'projects');
+    await mkdir(projects, { recursive: true });
+    const filePath = join(projects, 'sess-c.jsonl');
+    const line =
+      JSON.stringify({
+        sessionId: 'sess-c',
+        id: 'm1',
+        cwd: '/Users/me/wb-demo',
+        timestamp: Date.parse('2026-07-24T11:00:00.000Z'),
+        providerData: {
+          model: 'wb-model',
+          rawUsage: { prompt_tokens: 90, completion_tokens: 10 },
+        },
+      }) + '\n';
+    await writeFile(filePath, line);
+    const consumed = statSync(filePath);
+
+    const legacyCursors = {
+      workbuddy: {
+        seenIds: ['m1'],
+        fileOffsets: {
+          [filePath]: { size: consumed.size, mtimeMs: consumed.mtimeMs, ino: consumed.ino },
+        },
+        sqliteSessions: {},
+        detailedSessions: { 'sess-c': true },
+      },
+    } as CursorsFile;
+
+    const { result } = await parseWorkbuddyIncremental(legacyCursors, SINCE, {
+      projectFiles: [filePath],
+      defaultModel: 'auto',
+    });
+    assert.notEqual(result.fullRescan, true);
+    assert.equal(result.eventsParsed, 0);
+  } finally {
+    if (prev === undefined) delete process.env.WORKBUDDY_HOME;
+    else process.env.WORKBUDDY_HOME = prev;
+  }
+});
+
+test('parseWorkbuddyIncremental resolves JSONL projects via sessions.cwd', async () => {
+  const home = await mkdtemp(join(tmpdir(), 'tud-wb-proj-'));
+  const prev = process.env.WORKBUDDY_HOME;
+  process.env.WORKBUDDY_HOME = home;
+  try {
+    const db = new DatabaseSync(join(home, 'workbuddy.db'));
+    db.exec('CREATE TABLE sessions (id TEXT PRIMARY KEY, model TEXT, cwd TEXT)');
+    db.prepare('INSERT INTO sessions (id, model, cwd) VALUES (?, ?, ?)').run(
+      'sess-a',
+      'wb-model',
+      '/Users/me/wb-app',
+    );
+    db.close();
+
+    const projects = join(home, 'projects');
+    await mkdir(projects, { recursive: true });
+    const filePath = join(projects, 'sess-a.jsonl');
+    const message = (sessionId: string, id: string) =>
+      JSON.stringify({
+        sessionId,
+        id,
+        timestamp: Date.parse('2026-07-24T11:00:00.000Z'),
+        providerData: {
+          model: 'wb-model',
+          rawUsage: { prompt_tokens: 100, completion_tokens: 40 },
+        },
+      }) + '\n';
+    await writeFile(filePath, message('sess-a', 'm1') + message('sess-nodb', 'm2'));
+
+    const { result } = await parseWorkbuddyIncremental({}, SINCE, {
+      projectFiles: [filePath],
+      defaultModel: 'auto',
+    });
+    assert.equal(result.eventsParsed, 2);
+    const byProject = new Map(result.buckets.map((b) => [b.project, b]));
+    // cwd path does not exist → git lookup falls back to basename.
+    assert.ok(byProject.has('wb-app'));
+    // Session without a sessions row keeps 'unknown'.
+    assert.ok(byProject.has('unknown'));
+  } finally {
+    if (prev === undefined) delete process.env.WORKBUDDY_HOME;
+    else process.env.WORKBUDDY_HOME = prev;
+  }
+});
+
+test('parseWorkbuddyIncremental sqlite fallback uses queried cwd', async () => {
+  const home = await mkdtemp(join(tmpdir(), 'tud-wb-sql-'));
+  const prev = process.env.WORKBUDDY_HOME;
+  process.env.WORKBUDDY_HOME = home;
+  try {
+    const db = new DatabaseSync(join(home, 'workbuddy.db'));
+    db.exec('CREATE TABLE sessions (id TEXT PRIMARY KEY, model TEXT, cwd TEXT)');
+    db.exec(
+      'CREATE TABLE session_usage (session_id TEXT PRIMARY KEY, used INTEGER, updated_at INTEGER)',
+    );
+    const insertSession = db.prepare(
+      'INSERT INTO sessions (id, model, cwd) VALUES (?, ?, ?)',
+    );
+    insertSession.run('s1', 'model-a', '/Users/me/wb-sql-app');
+    insertSession.run('s2', 'model-b', '');
+    const insertUsage = db.prepare(
+      'INSERT INTO session_usage (session_id, used, updated_at) VALUES (?, ?, ?)',
+    );
+    const ts = Date.parse('2026-07-24T12:00:00.000Z');
+    insertUsage.run('s1', 100, ts);
+    insertUsage.run('s2', 50, ts);
+    // s3 has usage but no sessions row (LEFT JOIN miss → cwd null).
+    insertUsage.run('s3', 30, ts);
+    db.close();
+
+    const { result } = await parseWorkbuddyIncremental({}, SINCE, {
+      projectFiles: [],
+      defaultModel: 'auto',
+    });
+    assert.equal(result.eventsParsed, 3);
+    const byModel = new Map(result.buckets.map((b) => [b.model, b]));
+    assert.equal(byModel.get('model-a')!.project, 'wb-sql-app');
+    assert.equal(byModel.get('model-a')!.input_tokens, 100);
+    // Empty cwd and missing sessions row both stay 'unknown'.
+    assert.equal(byModel.get('model-b')!.project, 'unknown');
+    assert.equal(byModel.get('auto')!.project, 'unknown');
+    assert.equal(byModel.get('auto')!.input_tokens, 30);
   } finally {
     if (prev === undefined) delete process.env.WORKBUDDY_HOME;
     else process.env.WORKBUDDY_HOME = prev;

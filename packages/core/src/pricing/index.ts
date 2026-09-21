@@ -439,8 +439,25 @@ export function computeRowCost(row: QueueBucket): number {
   );
 }
 
+/**
+ * Sum the five token fields instead of trusting `row.total_tokens`:
+ * zcode buckets historically stored the provider total (input + output,
+ * excluding reasoning), which made panel aggregates undercount reasoning
+ * versus the server's ingest recompute (issue #181). Summing here also
+ * self-heals existing zcode buckets that will never see a fresh snapshot.
+ *
+ * Each field is null-coalesced: queue JSONL loads without normalization
+ * (queue/index.ts casts parsed lines directly), so rows written before
+ * `reasoning_output_tokens` joined the schema would otherwise NaN the sum.
+ */
 export function computeTokens(row: QueueBucket): number {
-  return row.total_tokens;
+  return (
+    (row.input_tokens ?? 0) +
+    (row.output_tokens ?? 0) +
+    (row.cached_input_tokens ?? 0) +
+    (row.cache_creation_input_tokens ?? 0) +
+    (row.reasoning_output_tokens ?? 0)
+  );
 }
 
 export { ZERO_PRICING };

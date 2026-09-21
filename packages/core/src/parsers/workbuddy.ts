@@ -3,6 +3,10 @@
  *
  * Recursively scans ~/.workbuddy/projects/ for .jsonl files (including subagents/).
  * Token math differs from CodeBuddy — see normalizeWorkbuddyUsage().
+ * Projects come from the session cwd in workbuddy.db's sessions table, falling
+ * back to the cwd recorded on JSONL entries when the table has no row; legacy
+ * cursor state that predates this attribution is re-scanned once so historical
+ * rows stop reading 'unknown'.
  * SQLite fallback reads workbuddy.db session_usage when a session has no JSONL detail.
  */
 import { createReadStream, existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
@@ -12,6 +16,7 @@ import { basename, join } from 'node:path';
 import { stat } from 'node:fs/promises';
 
 import type { CursorsFile, QueueBucket, TokenTotals } from '../types.js';
+import { resolveProjectName } from '../project-name.js';
 import { toUtcHalfHourStart } from '../queue/keys.js';
 import {
   accumulateBucket,
@@ -32,6 +37,8 @@ type WorkbuddyExtCursors = CursorsFile & {
       { used: number; updatedAt?: number; model?: string }
     >;
     detailedSessions?: Record<string, boolean>;
+    /** Marker for cursor state written after cwd-based project attribution landed. */
+    cwdProjects?: boolean;
   };
 };
 
@@ -158,12 +165,51 @@ export interface ParseWorkbuddyResult {
   filesProcessed: number;
   skipped?: boolean;
   error?: string;
+  /** True when legacy cursor state was reset so the whole window was re-read. */
+  fullRescan?: boolean;
+}
+
+/** Empty / non-string cwd (e.g. LEFT JOIN miss) stays 'unknown'. */
+function projectFromCwd(cwd: unknown): string {
+  if (typeof cwd !== 'string' || !cwd.trim()) return 'unknown';
+  return resolveProjectName(cwd.trim());
+}
+
+/**
+ * `sessions.id → cwd` from workbuddy.db; JSONL messages only carry a
+ * sessionId, the working directory lives in this table.
+ */
+function loadWorkbuddySessionCwds(dbPath: string): Map<string, string> {
+  const map = new Map<string, string>();
+  if (!sqliteTableExists(dbPath, 'sessions')) return map;
+  try {
+    const rows = readSqliteWithSnapshot(dbPath, (snap) =>
+      queryDbJson(snap, 'SELECT id, cwd FROM sessions WHERE cwd IS NOT NULL', {
+        timeout: 10_000,
+        maxBuffer: 16 * 1024 * 1024,
+      }),
+    );
+    for (const row of rows) {
+      const id = typeof row.id === 'string' ? row.id.trim() : '';
+      const cwd = typeof row.cwd === 'string' ? row.cwd.trim() : '';
+      if (id && cwd) map.set(id, cwd);
+    }
+  } catch {
+    // Best effort; unresolved sessions stay 'unknown'.
+  }
+  return map;
 }
 
 export async function parseWorkbuddyIncremental(
   cursors: CursorsFile,
   statsSince: string,
-  opts?: { env?: NodeJS.ProcessEnv; projectFiles?: string[]; defaultModel?: string },
+  opts?: {
+    env?: NodeJS.ProcessEnv;
+    projectFiles?: string[];
+    defaultModel?: string;
+    /** Set by sync when queue still has legacy `unknown` project rows to backfill. */
+    fullRescan?: boolean;
+  },
 ): Promise<{ result: ParseWorkbuddyResult; cursors: CursorsFile }> {
   const env = opts?.env ?? process.env;
   const sinceMs = new Date(statsSince).getTime();
@@ -174,6 +220,15 @@ export async function parseWorkbuddyIncremental(
   if (!ext.workbuddy.fileOffsets) ext.workbuddy.fileOffsets = {};
   if (!ext.workbuddy.sqliteSessions) ext.workbuddy.sqliteSessions = {};
   if (!ext.workbuddy.detailedSessions) ext.workbuddy.detailedSessions = {};
+
+  // Sync decides whether unknown-project rows still need a one-shot backfill.
+  const fullRescan = opts?.fullRescan === true;
+  if (fullRescan) {
+    ext.workbuddy.seenIds = [];
+    ext.workbuddy.fileOffsets = {};
+    ext.workbuddy.sqliteSessions = {};
+    ext.workbuddy.detailedSessions = {};
+  }
 
   const seenIds = new Set(ext.workbuddy.seenIds ?? []);
   const fileOffsets = ext.workbuddy.fileOffsets;
@@ -186,6 +241,14 @@ export async function parseWorkbuddyIncremental(
   const workbuddyHome = resolveWorkbuddyHome(env);
   const dbPath = join(workbuddyHome, 'workbuddy.db');
   const dbExists = existsSync(dbPath);
+
+  // Loaded on first use so idle rounds skip the extra sqlite read.
+  let sessionCwds: Map<string, string> | null = null;
+  const getSessionCwd = (sessionId: string): string | undefined => {
+    if (!dbExists) return undefined;
+    if (!sessionCwds) sessionCwds = loadWorkbuddySessionCwds(dbPath);
+    return sessionCwds.get(sessionId);
+  };
 
   let eventsParsed = 0;
   let filesProcessed = 0;
@@ -264,11 +327,14 @@ export async function parseWorkbuddyIncremental(
         normalizeModel(entry.model) ??
         fallbackModel;
 
+      const cwd = getSessionCwd(sessionId) ?? entry.cwd;
+      const project = projectFromCwd(cwd);
+
       accumulateBucket(
         bucketState,
         'workbuddy',
         model,
-        'unknown',
+        project,
         hourStart,
         { ...delta, conversation_count: 1 },
         WORKBUDDY_COLLECTOR,
@@ -346,6 +412,7 @@ export async function parseWorkbuddyIncremental(
         }
 
         const model = normalizeModel(rawModel) || fallbackModel;
+        const project = projectFromCwd(row.cwd);
         const delta: TokenTotals = {
           input_tokens: inputDelta,
           cached_input_tokens: 0,
@@ -360,7 +427,7 @@ export async function parseWorkbuddyIncremental(
           bucketState,
           'workbuddy',
           model,
-          'unknown',
+          project,
           hourStart,
           delta,
           WORKBUDDY_COLLECTOR,
@@ -377,6 +444,7 @@ export async function parseWorkbuddyIncremental(
     }
   }
 
+  ext.workbuddy.cwdProjects = true;
   ext.workbuddy.seenIds = Array.from(seenIds).slice(-10_000);
   const sqliteEntries = Object.entries(sqliteSessions);
   if (sqliteEntries.length > 10_000) {
@@ -398,6 +466,7 @@ export async function parseWorkbuddyIncremental(
       buckets: bucketsFromState(bucketState, 'workbuddy'),
       eventsParsed,
       filesProcessed,
+      ...(fullRescan ? { fullRescan: true } : {}),
     },
     cursors,
   };

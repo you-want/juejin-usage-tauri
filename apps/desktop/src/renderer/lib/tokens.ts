@@ -13,6 +13,7 @@ export const SOURCE_COLORS: Record<string, string> = {
   copilot: 'var(--source-copilot)',
   antigravity: 'var(--source-antigravity)',
   openclaw: 'var(--source-openclaw)',
+  autoclaw: 'var(--source-autoclaw)',
   hermes: 'var(--source-hermes)',
   zcode: 'var(--source-zcode)',
   dsh: 'var(--source-dsh)',
@@ -35,6 +36,8 @@ export const SOURCE_COLORS: Record<string, string> = {
   goose: 'var(--source-goose)',
   zed: 'var(--source-zed)',
   warp: 'var(--source-warp)',
+  qwenwork: 'var(--source-qwenwork)',
+  'command-code': 'var(--source-command-code)',
 };
 
 const SOURCE_LABELS: Record<string, string> = {
@@ -48,6 +51,7 @@ const SOURCE_LABELS: Record<string, string> = {
   copilot: 'Copilot',
   antigravity: 'Antigravity',
   openclaw: 'OpenClaw',
+  autoclaw: 'AutoClaw',
   hermes: 'Hermes',
   zcode: 'ZCode',
   dsh: 'DeepSeek Harness',
@@ -70,6 +74,8 @@ const SOURCE_LABELS: Record<string, string> = {
   goose: 'Goose',
   zed: 'Zed',
   warp: 'Warp',
+  qwenwork: 'QwenWork',
+  'command-code': 'Command Code',
 };
 
 /** Local `claude` ↔ Server ingest `claude-code` (and similar aliases). */
@@ -87,6 +93,7 @@ function canonicalSource(source: string): string {
   }
   if (key.startsWith('antigravity')) return 'antigravity';
   if (key.startsWith('openclaw') || key.startsWith('open-claw')) return 'openclaw';
+  if (key === 'auto-claw' || key.startsWith('autoclaw')) return 'autoclaw';
   if (key.startsWith('hermes')) return 'hermes';
   if (key.startsWith('zcode') || key === 'zai') return 'zcode';
   if (
@@ -105,6 +112,7 @@ function canonicalSource(source: string): string {
   if (key.startsWith('kiro')) return 'kiro';
   if (key.startsWith('cline')) return 'cline';
   if (key.startsWith('amp')) return 'amp';
+  if (key.startsWith('qwenwork')) return 'qwenwork';
   if (key === 'qwen-code' || key.startsWith('qwen')) return 'qwen';
   if (key.startsWith('codebuddy') || key === 'code-buddy') return 'codebuddy';
   if (key.startsWith('workbuddy')) return 'workbuddy';
@@ -117,6 +125,7 @@ function canonicalSource(source: string): string {
   if (key.startsWith('goose')) return 'goose';
   if (key.startsWith('zed')) return 'zed';
   if (key.startsWith('warp')) return 'warp';
+  if (key.startsWith('command-code') || key.startsWith('commandcode')) return 'command-code';
   return key;
 }
 

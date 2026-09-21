@@ -14,7 +14,7 @@ import {
   bucketsFromState,
   type BucketAccumulator,
 } from './shared.js';
-import { queryDbJson, readSqliteWithSnapshot } from './sqlite.js';
+import { queryDbJson, readSqliteWithSnapshot, sqliteTableExists } from './sqlite.js';
 import { diffGeminiTotals, sameGeminiTotals } from './gemini.js';
 import { deriveOpencodeMessageKey, normalizeOpencodeTokens } from './opencode.js';
 
@@ -25,7 +25,8 @@ type ZcodeTotals = Omit<TokenTotals, 'conversation_count'>;
 /** Block bundled Claude/Codex/Gemini sub-agents (counted by their own parsers). */
 export function isZcodeNativeMessage(data: Record<string, unknown> | null | undefined): boolean {
   if (!data || typeof data !== 'object') return false;
-  const provider = String(data.providerID ?? '').toLowerCase();
+  // ZCode renamed providerID -> providerId in newer builds; accept both.
+  const provider = String(data.providerID ?? data.providerId ?? '').toLowerCase();
   if (!provider) return false;
   return !(
     provider.includes('anthropic') ||
@@ -113,6 +114,99 @@ function ingestMessage(
     ZCODE_COLLECTOR,
   );
   return 1;
+}
+
+function numField(value: unknown): number {
+  return Math.max(0, Math.floor(Number(value) || 0));
+}
+
+/**
+ * ZCode's normalized usage convention (see model_usage.raw_usage_json):
+ * input_tokens already includes cache read/write, and computed_total_tokens
+ * is the provider-reported total (input + output, excluding reasoning).
+ * Reasoning is reported separately, so the bucket total adds it back on top
+ * to keep the five-field-sum convention every other parser (and the server's
+ * ingest recompute) follows.
+ */
+function totalsFromUsageRow(row: Record<string, unknown>): ZcodeTotals | null {
+  const input = numField(row.input_tokens);
+  const output = numField(row.output_tokens);
+  const reasoning = numField(row.reasoning_tokens);
+  const cacheRead = numField(row.cache_read_input_tokens);
+  const cacheWrite = numField(row.cache_creation_input_tokens);
+  const total =
+    (numField(row.computed_total_tokens) || input + output) + reasoning;
+  if (total <= 0) return null;
+  return {
+    input_tokens: Math.max(0, input - cacheRead - cacheWrite),
+    cached_input_tokens: cacheRead,
+    cache_creation_input_tokens: cacheWrite,
+    output_tokens: output,
+    reasoning_output_tokens: reasoning,
+    total_tokens: total,
+  };
+}
+
+function parseFromUsageTable(
+  dbPath: string,
+  sinceMs: number,
+  messageIndex: Record<string, { lastTotals: ZcodeTotals }>,
+  bucketState: BucketAccumulator,
+): { eventsParsed: number; filesProcessed: number } {
+  // model_usage is append-only and per-request; joining message gives the
+  // project path without needing session lookup.
+  const query = `SELECT
+    u.id,
+    u.session_id,
+    u.model_id,
+    u.started_at,
+    u.completed_at,
+    u.input_tokens,
+    u.output_tokens,
+    u.reasoning_tokens,
+    u.cache_creation_input_tokens,
+    u.cache_read_input_tokens,
+    u.computed_total_tokens,
+    json_extract(m.data, '$.path.root') AS rootPath
+    FROM model_usage u
+    LEFT JOIN message m ON m.id = u.assistant_message_id
+    WHERE u.computed_total_tokens > 0`;
+
+  const rows = readSqliteWithSnapshot(dbPath, (snap) => queryDbJson(snap, query));
+
+  let eventsParsed = 0;
+  for (const row of rows) {
+    const currentTotals = totalsFromUsageRow(row);
+    if (!currentTotals) continue;
+
+    const usageId = typeof row.id === 'string' ? row.id : null;
+    const sessionId = typeof row.session_id === 'string' ? row.session_id : null;
+    const messageKey = usageId
+      ? sessionId
+        ? `usage|${sessionId}|${usageId}`
+        : `usage|${usageId}`
+      : null;
+    const model = (typeof row.model_id === 'string' && row.model_id) || 'unknown';
+    const project =
+      typeof row.rootPath === 'string' && row.rootPath.trim()
+        ? resolveProjectName(row.rootPath)
+        : 'unknown';
+    const timestampMs =
+      coerceEpochMs(row.completed_at) || coerceEpochMs(row.started_at);
+
+    eventsParsed += ingestMessage({
+      messageKey,
+      currentTotals,
+      model,
+      project,
+      timestampMs,
+      sinceMs,
+      messageIndex,
+      bucketState,
+    });
+  }
+
+  return { eventsParsed, filesProcessed: rows.length > 0 ? 1 : 0 };
 }
 
 function parseFromSqlite(
@@ -249,7 +343,11 @@ export async function parseZcodeIncremental(
   }
 
   try {
-    const parsed = parseFromSqlite(dbPath, sinceMs, messageIndex, bucketState);
+    // Newer ZCode builds log usage in a dedicated model_usage table; fall
+    // back to assistant-message JSON for older versions.
+    const parsed = sqliteTableExists(dbPath, 'model_usage')
+      ? parseFromUsageTable(dbPath, sinceMs, messageIndex, bucketState)
+      : parseFromSqlite(dbPath, sinceMs, messageIndex, bucketState);
     return {
       result: {
         buckets: bucketsFromState(bucketState, 'zcode'),

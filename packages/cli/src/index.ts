@@ -38,6 +38,7 @@ import {
   resolvePricingRefreshConfig,
   DEFAULT_PRICING_FIRST_FETCH_TIMEOUT_MS,
   startPricingRefresh,
+  runDoctorDiagnostics,
   type AggregateCache,
   type SyncResult,
   type TudConfig,
@@ -47,11 +48,14 @@ import {
   DEFAULT_HOST,
   formatListenUrl,
   isWildcardListenHost,
+  formatUploadTokenStatus,
   parseArgs,
   printHelp,
   resolveDaysAgo,
+  resolveSyncSource,
 } from './args.js';
 import { writePid } from './daemon.js';
+import { printDoctorReport } from './doctor.js';
 import { cmdServiceStart, cmdServiceStatus, cmdServiceStop } from './service.js';
 
 export { parseArgs } from './args.js';
@@ -198,7 +202,9 @@ async function cmdStart(portArg?: number, hostArg?: string, daysAgo?: number): P
   await saveConfig(dir, config);
 
   console.log(`设备 UUID: ${config.deviceId}`);
-  console.log(`上报 Token: ${config.juejin.token ?? '(未配置)'}`);
+  console.log(
+    `上报 Token: ${formatUploadTokenStatus(config.deviceId, config.juejin.token)}`,
+  );
   console.log(`云端地址: ${config.juejin.apiUrl}`);
   console.log(`云端同步: ${config.juejin.enabled ? '已开启' : '未开启'}`);
 
@@ -363,16 +369,19 @@ async function cmdStart(portArg?: number, hostArg?: string, daysAgo?: number): P
 }
 
 async function cmdSync(source?: string): Promise<void> {
+  // Reject unknown sources before touching config/log/lastSync state, so a
+  // typo exits non-zero instead of refreshing "上次同步" with zero work done.
+  const filter = resolveSyncSource(source);
   const { dir, config } = await loadConfig();
   await touchStatsSince(dir, config);
-  const scope = source ?? 'all';
+  const scope = filter ?? 'all';
   const started = Date.now();
   const logPath = syncLogPath(dir);
 
   await appendJsonLog(logPath, { event: 'start', source: scope });
 
   try {
-    const results = await syncAll(dir, config, source);
+    const results = await syncAll(dir, config, filter);
     await writeSyncDone(dir);
     await maybeUploadAfterSync(dir, config, collectWrittenBuckets(results));
     await appendJsonLog(logPath, {
@@ -384,9 +393,15 @@ async function cmdSync(source?: string): Promise<void> {
         eventsParsed: r.eventsParsed,
         bucketsWritten: r.bucketsWritten,
         filesProcessed: r.filesProcessed,
+        ...(r.skipped ? { skipped: true } : {}),
+        ...(r.error ? { error: r.error } : {}),
       })),
     });
     for (const r of results) {
+      if (r.skipped) {
+        console.log(`${r.source}: 跳过（${r.error ?? '无数据'}）`);
+        continue;
+      }
       console.log(
         `${r.source}: ${r.eventsParsed} 条消息, ${r.bucketsWritten} 个桶写入, ${r.filesProcessed} 个文件`,
       );
@@ -425,7 +440,9 @@ async function cmdStatus(): Promise<void> {
   console.log(`面板: ${formatListenUrl(host, port)}`);
   console.log(`数据目录: ${dir}`);
   console.log(`设备 UUID: ${config.deviceId}`);
-  console.log(`上报 Token: ${config.juejin.token ?? '(未配置)'}`);
+  console.log(
+    `上报 Token: ${formatUploadTokenStatus(config.deviceId, config.juejin.token)}`,
+  );
   console.log(`statsSince: ${config.statsSince}`);
   console.log(`上次同步: ${config.lastSyncAt ?? '从未'}`);
   console.log(`Claude Hook: ${hooks.claude ? 'active' : 'poll 模式'}`);
@@ -434,6 +451,11 @@ async function cmdStatus(): Promise<void> {
   console.log(`云端同步: ${config.juejin.enabled ? '已开启' : '未开启'} → ${config.juejin.apiUrl}`);
   console.log(`上次上报: ${config.lastUploadAt ?? '从未'}`);
   console.log(`调试日志: ${join(dir, 'logs')}`);
+}
+
+async function cmdDoctor(port?: number): Promise<void> {
+  const report = await runDoctorDiagnostics({ port });
+  printDoctorReport(report);
 }
 
 async function cmdUpload(force = false, reconcile = false): Promise<void> {
@@ -565,6 +587,9 @@ async function main(): Promise<void> {
         break;
       case 'status':
         await cmdStatus();
+        break;
+      case 'doctor':
+        await cmdDoctor(port);
         break;
       case 'upload':
         await cmdUpload(force, reconcile);

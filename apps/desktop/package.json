@@ -1,6 +1,6 @@
 {
   "name": "@juejin-opensource/jusage-desktop",
-  "version": "0.1.9",
+  "version": "0.1.11",
   "private": true,
   "license": "MIT",
   "description": "Juejin AI Usage 统计客户端：Token 用量明细追踪，本地记录、云端同步，还有线上排行榜。",
@@ -12,7 +12,6 @@
   "main": "./out/main/index.js",
   "scripts": {
     "dev": "electron-vite dev",
-    "dev:mock": "cross-env VITE_ENABLE_MOCK_DATA=true electron-vite dev",
     "build": "electron-vite build",
     "start": "electron-vite preview",
     "build:mac": "electron-vite build && electron-builder --mac",
@@ -21,7 +20,7 @@
     "release:mac": "electron-vite build && electron-builder --mac --publish always",
     "release:win": "electron-vite build && electron-builder --win --publish always",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "tsc -p tsconfig.test.json && node --test dist-test/shared/auto-update.test.js dist-test/main/auto-update.test.js"
+    "test": "node -e \"require('node:fs').rmSync('dist-test', { recursive: true, force: true })\" && tsc -p tsconfig.test.json && node --test \"dist-test/**/*.test.js\""
   },
   "dependencies": {
     "@fontsource-variable/jetbrains-mono": "5.2.8",
@@ -29,6 +28,7 @@
     "@heroui/react": "^3.2.4",
     "@heroui/styles": "^3.2.4",
     "@juejin-opensource/jusage-core": "workspace:*",
+    "@lobehub/icons": "^5.18.0",
     "@lobehub/icons-static-svg": "^1.94.0",
     "@nivo/heatmap": "^0.99.0",
     "@tailwindcss/vite": "^4.3.2",
@@ -50,7 +50,7 @@
     "@tanstack/router-plugin": "^1.168.20",
     "@types/node": "^22.20.1",
     "@types/react": "^19.0.10",
-    "@types/react-dom": "^19.0.4",
+    "@types/react-dom": "^19.0.10",
     "@vitejs/plugin-react": "^4.3.4",
     "electron": "35.4.0",
     "electron-builder": "^25.1.8",

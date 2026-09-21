@@ -1,5 +1,28 @@
 # @juejin-opensource/jusage-dashboard
 
+## 0.1.11
+
+### Patch Changes
+
+- AutoClaw 在「工具与模型用量」等统计图标处改用官方品牌图标，此前借用的是 OpenClaw 图标。
+- 设置中新增数据校验：对比本机与线上近 90 天用量，仅校准当前设备，可以本地为准覆盖线上差异。
+- 线上用量页支持按设备筛选，多设备账号可只看指定设备的用量。
+- Updated dependencies
+  - @juejin-opensource/jusage-core@0.1.11
+
+## 0.1.10
+
+### Patch Changes
+
+- 新增 Command Code、QwenWork（含国内版/国际版）用量展示：同步源、图表与模型列表显示对应图标与品牌色。
+- 下载页 Star 旁新增贡献者墙，展示「感谢掘友们的贡献支持」并链到 GitHub contributors。
+- 统一卡片汇总、工具筛选和趋势比较口径；趋势改为与紧邻的等长上一周期比较，今天按昨天同期计算。
+- 修复排行榜分享卡把已登录但未进前 100 的用户显示成「登录后查看」；榜外改为「100+名」，开启「隐藏自己」时不再展示个人名次。
+- 修复 Token 趋势「详细」视图在缓存远大于未缓存输入时把输入画成 0 的问题。
+- 修复设置里未勾选复选框在深色模式下几乎不可见；修复白底徽章上 DeepSeek Harness 等内联图标在深色模式变成空白方块。
+- Updated dependencies
+  - @juejin-opensource/jusage-core@0.1.10
+
 ## 0.1.9
 
 ### Patch Changes

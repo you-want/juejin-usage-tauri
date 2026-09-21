@@ -1,7 +1,10 @@
-import { app, BrowserWindow, clipboard, ipcMain, nativeImage, nativeTheme } from 'electron';
+import { app, BrowserWindow, clipboard, ipcMain, nativeImage, nativeTheme, powerMonitor } from 'electron';
 import {
   initAutostartOnLaunch,
+  loadShowTrayUsage,
+  loadTrayUsageMode,
   loadThemeMode,
+  onTrayUsagePrefChanged,
   registerAutostartIpc,
   saveThemeMode,
   shouldStartHidden,
@@ -25,10 +28,26 @@ import {
   markTrayPopoverQuitting,
   resetTrayPopoverQuitting,
   setPopoverTheme,
+  setTrayUsageTitle,
 } from './TrayPopover';
+import { formatTrayUsage } from '../shared/tray-usage';
 import { registerLocalApiIpc } from './local-api-ipc';
+import { registerCodexSubscriptionIpc } from './codex-subscription-ipc';
+import { registerClaudeSubscriptionIpc } from './claude-subscription-ipc';
+import { registerCursorSubscriptionIpc } from './cursor-subscription-ipc';
+import { registerGrokSubscriptionIpc } from './grok-subscription-ipc';
+import { registerKimiSubscriptionIpc } from './kimi-subscription-ipc';
+import { registerZcodeSubscriptionIpc } from './zcode-subscription-ipc';
+import { registerAntigravitySubscriptionIpc } from './antigravity-subscription-ipc';
+import { registerQoderSubscriptionIpc } from './qoder-subscription-ipc';
+import { registerMiniMaxSubscriptionIpc } from './minimax-subscription-ipc';
+import { registerDeepSeekSubscriptionIpc } from './deepseek-subscription-ipc';
+import { registerOpenCodeSubscriptionIpc } from './opencode-subscription-ipc';
+import { registerTraeSubscriptionIpc } from './trae-subscription-ipc';
+import { registerWorkBuddySubscriptionIpc } from './workbuddy-subscription-ipc';
 import {
   localApiRequest,
+  onLocalRuntimeSynced,
   pokeSyncOnForeground,
   resumeLocalRuntimeWatchdog,
   setLocalRuntimeQuitting,
@@ -41,6 +60,7 @@ import {
   syncDesktopPet,
   unregisterDesktopPetIpc,
 } from './DesktopPet';
+import { registerDesktopPetAssetProtocol } from './DesktopPetCatalog';
 import {
   applyDeepLinkConfig,
   findDeepLinkInArgv,
@@ -77,6 +97,19 @@ const SHARE_CARD_COPY_IMAGE_CHANNEL = 'share-card:copy-image';
 
 const windows = new Set<DesktopWindow>();
 let disposeLocalApiIpc: (() => void) | null = null;
+let disposeCodexSubscriptionIpc: (() => void) | null = null;
+let disposeClaudeSubscriptionIpc: (() => void) | null = null;
+let disposeCursorSubscriptionIpc: (() => void) | null = null;
+let disposeGrokSubscriptionIpc: (() => void) | null = null;
+let disposeKimiSubscriptionIpc: (() => void) | null = null;
+let disposeZcodeSubscriptionIpc: (() => void) | null = null;
+let disposeAntigravitySubscriptionIpc: (() => void) | null = null;
+let disposeQoderSubscriptionIpc: (() => void) | null = null;
+let disposeMiniMaxSubscriptionIpc: (() => void) | null = null;
+let disposeDeepSeekSubscriptionIpc: (() => void) | null = null;
+let disposeOpenCodeSubscriptionIpc: (() => void) | null = null;
+let disposeTraeSubscriptionIpc: (() => void) | null = null;
+let disposeWorkBuddySubscriptionIpc: (() => void) | null = null;
 let currentThemeMode: ThemeMode = 'system';
 let currentTheme: Theme = 'light';
 let pendingDeepLinkUrl: string | null = null;
@@ -188,6 +221,43 @@ function registerShareCardIpc(): void {
     clipboard.writeImage(image);
     return true;
   });
+}
+
+let disposeTrayUsageSync: (() => void) | null = null;
+let onPowerResumeListener: (() => void) | null = null;
+let trayUsageRefreshGeneration = 0;
+
+async function refreshTrayUsage(): Promise<void> {
+  if (process.platform !== 'darwin') return;
+  const generation = ++trayUsageRefreshGeneration;
+  try {
+    const [enabled, mode] = await Promise.all([
+      loadShowTrayUsage(),
+      loadTrayUsageMode(),
+    ]);
+    if (generation !== trayUsageRefreshGeneration) return;
+    if (!enabled) {
+      setTrayUsageTitle('');
+      return;
+    }
+    const res = await localApiRequest('/functions/tud-usage-summary');
+    if (generation !== trayUsageRefreshGeneration) return;
+    if (res.status === 200 && res.body && typeof res.body === 'object') {
+      const envelope = res.body as {
+        success?: boolean;
+        data?: {
+          todayCostUsd?: number;
+          todayTokens?: number;
+        };
+      };
+      if (envelope.success && envelope.data) {
+        const text = formatTrayUsage(envelope.data, mode);
+        setTrayUsageTitle(text);
+      }
+    }
+  } catch (err) {
+    console.debug('[tud-desktop] failed to refresh tray usage:', err);
+  }
 }
 
 function getMainWindow(): BrowserWindow | null {
@@ -407,7 +477,10 @@ void acquireDesktopInstanceLock().then((gotLock) => {
     pendingDeepLinkUrl = coldStartUrl;
   }
 
+  let shutdownPromise: Promise<void> | null = null;
+
   app.whenReady().then(async () => {
+    registerDesktopPetAssetProtocol();
     applyDevDockIcon();
 
     // Restore the persisted theme mode before any window / IPC is registered
@@ -444,6 +517,19 @@ void acquireDesktopInstanceLock().then((gotLock) => {
       triggerSync,
     });
     disposeLocalApiIpc = registerLocalApiIpc();
+    disposeCodexSubscriptionIpc = registerCodexSubscriptionIpc();
+    disposeClaudeSubscriptionIpc = registerClaudeSubscriptionIpc();
+    disposeCursorSubscriptionIpc = registerCursorSubscriptionIpc();
+    disposeGrokSubscriptionIpc = registerGrokSubscriptionIpc();
+    disposeKimiSubscriptionIpc = registerKimiSubscriptionIpc();
+    disposeZcodeSubscriptionIpc = registerZcodeSubscriptionIpc();
+    disposeAntigravitySubscriptionIpc = registerAntigravitySubscriptionIpc();
+    disposeQoderSubscriptionIpc = registerQoderSubscriptionIpc();
+    disposeMiniMaxSubscriptionIpc = registerMiniMaxSubscriptionIpc();
+    disposeDeepSeekSubscriptionIpc = registerDeepSeekSubscriptionIpc();
+    disposeOpenCodeSubscriptionIpc = registerOpenCodeSubscriptionIpc();
+    disposeTraeSubscriptionIpc = registerTraeSubscriptionIpc();
+    disposeWorkBuddySubscriptionIpc = registerWorkBuddySubscriptionIpc();
     try {
       await initAutostartOnLaunch();
     } catch (err) {
@@ -490,6 +576,20 @@ void acquireDesktopInstanceLock().then((gotLock) => {
       theme: currentTheme,
     });
 
+    if (process.platform === 'darwin') {
+      void refreshTrayUsage();
+      onTrayUsagePrefChanged(() => {
+        void refreshTrayUsage();
+      });
+      disposeTrayUsageSync = onLocalRuntimeSynced(() => {
+        void refreshTrayUsage();
+      });
+      onPowerResumeListener = () => {
+        void refreshTrayUsage();
+      };
+      powerMonitor.on('resume', onPowerResumeListener);
+    }
+
     // Cached updates can finish immediately. Start updating only after runtime
     // and windows are ready, so startup cannot restart services during install.
     await initializeAutoUpdate({
@@ -503,6 +603,7 @@ void acquireDesktopInstanceLock().then((gotLock) => {
       onInstallFailed: async () => {
         resetAppQuitting();
         resetTrayPopoverQuitting();
+        shutdownPromise = null;
         resumeLocalRuntimeWatchdog();
         // Keep the recovery UI accessible even when runtime startup fails.
         showMainWindow();
@@ -543,10 +644,15 @@ void acquireDesktopInstanceLock().then((gotLock) => {
   // Real exit is via tray "退出" or app:quit.
   app.on('window-all-closed', () => {});
 
-  app.on('before-quit', () => {
+  app.on('before-quit', (event) => {
+    if (shutdownPromise) return;
+    event.preventDefault();
     markAppQuitting();
+    markTrayPopoverQuitting();
     setLocalRuntimeQuitting(true);
-    void stopLocalRuntime();
+    shutdownPromise = stopLocalRuntime().finally(() => {
+      app.quit();
+    });
   });
 
   // before-quit/window close can be cancelled. Keep IPC and the update
@@ -561,8 +667,40 @@ void acquireDesktopInstanceLock().then((gotLock) => {
     unregisterDesktopPetIpc();
     disposeDesktopPet();
     disposeTrayPopover();
+    disposeTrayUsageSync?.();
+    disposeTrayUsageSync = null;
+    if (onPowerResumeListener) {
+      powerMonitor.removeListener('resume', onPowerResumeListener);
+      onPowerResumeListener = null;
+    }
     disposeLocalApiIpc?.();
     disposeLocalApiIpc = null;
+    disposeCodexSubscriptionIpc?.();
+    disposeCodexSubscriptionIpc = null;
+    disposeClaudeSubscriptionIpc?.();
+    disposeClaudeSubscriptionIpc = null;
+    disposeCursorSubscriptionIpc?.();
+    disposeCursorSubscriptionIpc = null;
+    disposeGrokSubscriptionIpc?.();
+    disposeGrokSubscriptionIpc = null;
+    disposeKimiSubscriptionIpc?.();
+    disposeKimiSubscriptionIpc = null;
+    disposeZcodeSubscriptionIpc?.();
+    disposeZcodeSubscriptionIpc = null;
+    disposeAntigravitySubscriptionIpc?.();
+    disposeAntigravitySubscriptionIpc = null;
+    disposeQoderSubscriptionIpc?.();
+    disposeQoderSubscriptionIpc = null;
+    disposeMiniMaxSubscriptionIpc?.();
+    disposeMiniMaxSubscriptionIpc = null;
+    disposeDeepSeekSubscriptionIpc?.();
+    disposeDeepSeekSubscriptionIpc = null;
+    disposeOpenCodeSubscriptionIpc?.();
+    disposeOpenCodeSubscriptionIpc = null;
+    disposeTraeSubscriptionIpc?.();
+    disposeTraeSubscriptionIpc = null;
+    disposeWorkBuddySubscriptionIpc?.();
+    disposeWorkBuddySubscriptionIpc = null;
     disposeAutoUpdate();
   });
 });

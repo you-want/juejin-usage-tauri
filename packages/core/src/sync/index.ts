@@ -4,6 +4,7 @@ import { CURSOR_POLL_MIN_FETCH_INTERVAL_MS, SYNC_SOURCE_GAP_MS, syncLogPath } fr
 import { measureCpuPhase } from '../debug-log.js';
 import { isSyncSourcePresent } from './source-presence.js';
 import { parseClaudeIncremental } from '../parsers/claude.js';
+import { parseCommandCodeIncremental } from '../parsers/command-code.js';
 import { parseCodexIncremental } from '../parsers/codex.js';
 import { parseCursorIncremental } from '../parsers/cursor.js';
 import { parseQoderIncremental } from '../parsers/qoder.js';
@@ -13,6 +14,7 @@ import { parseOpencodeIncremental } from '../parsers/opencode.js';
 import { parseCopilotIncremental } from '../parsers/copilot.js';
 import { parseAntigravityIncremental } from '../parsers/antigravity.js';
 import { parseOpenclawIncremental } from '../parsers/openclaw.js';
+import { parseAutoclawIncremental } from '../parsers/autoclaw.js';
 import { parseHermesIncremental } from '../parsers/hermes.js';
 import { parseZcodeIncremental } from '../parsers/zcode.js';
 import { parseDshIncremental } from '../parsers/dsh.js';
@@ -35,10 +37,12 @@ import { parseKilocodeIncremental } from '../parsers/kilocode.js';
 import { parseGooseIncremental } from '../parsers/goose.js';
 import { parseZedIncremental } from '../parsers/zed.js';
 import { parseWarpIncremental } from '../parsers/warp.js';
+import { parseQwenworkIncremental } from '../parsers/qwenwork.js';
 import {
   appendBuckets,
   loadBucketsForRange,
   loadCursors,
+  loadRecentBuckets,
   saveCursors,
   syncMutatedCursors,
 } from '../queue/index.js';
@@ -318,6 +322,123 @@ export async function syncOpenclaw(dataDir: string, config: TudConfig, opts?: Sy
   return syncSourceBuckets(dataDir, config, 'openclaw', parseOpenclawIncremental, { sharedCursors: opts?.sharedCursors });
 }
 
+/**
+ * AutoClaw sync carries a one-shot migration: legacy cursor state attributed
+ * events to the agent id, current state derives projects from tool-call paths
+ * (agent display name as fallback). When the parser re-reads its sources for
+ * that migration (`fullRescan`), its buckets are a full snapshot of the
+ * collect window, so rows replace instead of merge and stale keys of any
+ * legacy project value are zeroed.
+ */
+export async function syncAutoclaw(dataDir: string, config: TudConfig, opts?: SyncSourceOptions): Promise<SyncResult> {
+  const collectSince = resolveLocalCollectSince(config);
+  const shared = opts?.sharedCursors;
+  let cursors = shared ?? (await loadCursors(dataDir));
+  const statefulBefore = statefulCursorSlots(cursors);
+  const { result, cursors: nextCursors } = await parseAutoclawIncremental(cursors, collectSince);
+  cursors = nextCursors;
+
+  if (result.skipped) {
+    if (!shared) await saveCursors(dataDir, cursors);
+    return {
+      source: 'autoclaw',
+      eventsParsed: result.eventsParsed,
+      filesProcessed: result.filesProcessed,
+      bucketsWritten: 0,
+      writtenBuckets: [],
+      skipped: true,
+      error: result.error,
+    };
+  }
+
+  if (result.buckets.length === 0) {
+    if (!shared) await saveCursors(dataDir, cursors);
+    await setLastSyncAt(dataDir, config);
+    return {
+      source: 'autoclaw',
+      eventsParsed: result.eventsParsed,
+      filesProcessed: result.filesProcessed,
+      bucketsWritten: 0,
+      writtenBuckets: [],
+    };
+  }
+
+  const touchedMonths = Array.from(
+    new Set(result.buckets.map((bucket) => monthFromHourStart(bucket.hour_start))),
+  );
+  const existing = await loadBucketsForRange(dataDir, collectSince, touchedMonths);
+  const existingMap = new Map(existing.map((r) => [bucketKey(r), r]));
+
+  const snapshot = result.fullRescan === true || parsedFullRescan(statefulBefore, cursors);
+
+  const toAppend: QueueBucket[] = [];
+  const working = new Map(existingMap);
+  for (const delta of result.buckets) {
+    const key = bucketKey(delta);
+    const prev = working.get(key);
+    working.set(key, snapshot ? delta : prev ? mergeBuckets(prev, delta) : delta);
+  }
+  const touched = new Set(result.buckets.map((bucket) => unknownAlignGroupKey(bucket)));
+  const candidates = Array.from(working.values()).filter(
+    (row) => row.source === 'autoclaw' && touched.has(unknownAlignGroupKey(row)),
+  );
+  const aligned = alignUnknownIntoDominant(candidates, {
+    retractUnknown: true,
+    contextBuckets: Array.from(working.values()),
+  });
+  for (const bucket of aligned) {
+    const key = bucketKey(bucket);
+    const prev = existingMap.get(key);
+    if (!prev || bucketChanged(prev, bucket)) {
+      toAppend.push(bucket);
+      existingMap.set(key, bucket);
+    }
+  }
+
+  // Retract pre-migration rows: the full rescan re-derives those events with
+  // tool-path projects, so any old key (agent ids, earlier fallbacks) that the
+  // fresh snapshot does not emit must not keep counting.
+  if (result.fullRescan === true) {
+    const freshKeys = new Set(result.buckets.map((bucket) => bucketKey(bucket)));
+    for (const row of existing) {
+      if (row.source !== 'autoclaw') continue;
+      const key = bucketKey(row);
+      if (freshKeys.has(key)) continue;
+      const zeroed: QueueBucket = {
+        ...row,
+        input_tokens: 0,
+        output_tokens: 0,
+        cached_input_tokens: 0,
+        cache_creation_input_tokens: 0,
+        reasoning_output_tokens: 0,
+        total_tokens: 0,
+        conversation_count: 0,
+      };
+      const prev = existingMap.get(key);
+      if (!prev || bucketChanged(prev, zeroed)) {
+        toAppend.push(zeroed);
+        existingMap.set(key, zeroed);
+      }
+    }
+  }
+
+  if (toAppend.length > 0) {
+    await appendBuckets(dataDir, toAppend);
+    await saveCursors(dataDir, cursors);
+  } else if (!shared) {
+    await saveCursors(dataDir, cursors);
+  }
+  await setLastSyncAt(dataDir, config);
+
+  return {
+    source: 'autoclaw',
+    eventsParsed: result.eventsParsed,
+    filesProcessed: result.filesProcessed,
+    bucketsWritten: toAppend.length,
+    writtenBuckets: toAppend,
+  };
+}
+
 export async function syncHermes(dataDir: string, config: TudConfig, opts?: SyncSourceOptions): Promise<SyncResult> {
   return syncSourceBuckets(dataDir, config, 'hermes', parseHermesIncremental, { sharedCursors: opts?.sharedCursors });
 }
@@ -366,8 +487,156 @@ export async function syncCodebuddy(dataDir: string, config: TudConfig, opts?: S
   return syncSourceBuckets(dataDir, config, 'codebuddy', parseCodebuddyIncremental, { sharedCursors: opts?.sharedCursors });
 }
 
+function workbuddyUnknownRowsNeedMigration(
+  rows: QueueBucket[],
+  collectSince: string,
+): boolean {
+  const sinceMs = new Date(collectSince).getTime();
+  return rows.some(
+    (row) =>
+      row.source === 'workbuddy' &&
+      row.project === 'unknown' &&
+      row.total_tokens > 0 &&
+      new Date(row.hour_start).getTime() >= sinceMs,
+  );
+}
+
+/**
+ * WorkBuddy sync carries a one-shot migration when the local queue still has
+ * legacy `unknown` project rows. Users who already picked up cwd attribution
+ * without stale unknown rows skip the rescan; everyone else gets the marker so
+ * we do not re-check every round.
+ */
 export async function syncWorkbuddy(dataDir: string, config: TudConfig, opts?: SyncSourceOptions): Promise<SyncResult> {
-  return syncSourceBuckets(dataDir, config, 'workbuddy', parseWorkbuddyIncremental, { sharedCursors: opts?.sharedCursors });
+  const collectSince = resolveLocalCollectSince(config);
+  const shared = opts?.sharedCursors;
+  let cursors = shared ?? (await loadCursors(dataDir));
+  const statefulBefore = statefulCursorSlots(cursors);
+  const wbExt = cursors as CursorsFile & {
+    workbuddy?: { cwdProjects?: boolean };
+  };
+  let cursorMarkerJustSet = false;
+  let fullRescan = false;
+  if (wbExt.workbuddy?.cwdProjects !== true) {
+    const existingRows = await loadRecentBuckets(dataDir, collectSince);
+    fullRescan = workbuddyUnknownRowsNeedMigration(existingRows, collectSince);
+    if (!fullRescan) {
+      if (!wbExt.workbuddy) {
+        wbExt.workbuddy = {
+          seenIds: [],
+          fileOffsets: {},
+          sqliteSessions: {},
+          detailedSessions: {},
+        };
+      }
+      wbExt.workbuddy.cwdProjects = true;
+      cursorMarkerJustSet = true;
+    }
+  }
+
+  const { result, cursors: nextCursors } = await parseWorkbuddyIncremental(cursors, collectSince, {
+    fullRescan,
+  });
+  cursors = nextCursors;
+
+  if (result.skipped) {
+    if (!shared) await saveCursors(dataDir, cursors);
+    return {
+      source: 'workbuddy',
+      eventsParsed: result.eventsParsed,
+      filesProcessed: result.filesProcessed,
+      bucketsWritten: 0,
+      writtenBuckets: [],
+      skipped: true,
+      error: result.error,
+    };
+  }
+
+  if (result.buckets.length === 0) {
+    if (!shared) await saveCursors(dataDir, cursors);
+    await setLastSyncAt(dataDir, config);
+    return {
+      source: 'workbuddy',
+      eventsParsed: result.eventsParsed,
+      filesProcessed: result.filesProcessed,
+      bucketsWritten: 0,
+      writtenBuckets: [],
+    };
+  }
+
+  const touchedMonths = Array.from(
+    new Set(result.buckets.map((bucket) => monthFromHourStart(bucket.hour_start))),
+  );
+  const existing = await loadBucketsForRange(dataDir, collectSince, touchedMonths);
+  const existingMap = new Map(existing.map((r) => [bucketKey(r), r]));
+
+  const snapshot = result.fullRescan === true || parsedFullRescan(statefulBefore, cursors);
+
+  const toAppend: QueueBucket[] = [];
+  const working = new Map(existingMap);
+  for (const delta of result.buckets) {
+    const key = bucketKey(delta);
+    const prev = working.get(key);
+    working.set(key, snapshot ? delta : prev ? mergeBuckets(prev, delta) : delta);
+  }
+  const touched = new Set(result.buckets.map((bucket) => unknownAlignGroupKey(bucket)));
+  const candidates = Array.from(working.values()).filter(
+    (row) => row.source === 'workbuddy' && touched.has(unknownAlignGroupKey(row)),
+  );
+  const aligned = alignUnknownIntoDominant(candidates, {
+    retractUnknown: true,
+    contextBuckets: Array.from(working.values()),
+  });
+  for (const bucket of aligned) {
+    const key = bucketKey(bucket);
+    const prev = existingMap.get(key);
+    if (!prev || bucketChanged(prev, bucket)) {
+      toAppend.push(bucket);
+      existingMap.set(key, bucket);
+    }
+  }
+
+  // Retract pre-migration rows: the full rescan re-derives those events with
+  // real projects, so the old 'unknown'-project keys must not keep counting.
+  if (result.fullRescan === true) {
+    const freshKeys = new Set(result.buckets.map((bucket) => bucketKey(bucket)));
+    for (const row of existing) {
+      if (row.source !== 'workbuddy' || row.project !== 'unknown') continue;
+      const key = bucketKey(row);
+      if (freshKeys.has(key)) continue;
+      const zeroed: QueueBucket = {
+        ...row,
+        input_tokens: 0,
+        output_tokens: 0,
+        cached_input_tokens: 0,
+        cache_creation_input_tokens: 0,
+        reasoning_output_tokens: 0,
+        total_tokens: 0,
+        conversation_count: 0,
+      };
+      const prev = existingMap.get(key);
+      if (!prev || bucketChanged(prev, zeroed)) {
+        toAppend.push(zeroed);
+        existingMap.set(key, zeroed);
+      }
+    }
+  }
+
+  if (toAppend.length > 0) {
+    await appendBuckets(dataDir, toAppend);
+    await saveCursors(dataDir, cursors);
+  } else if (!shared || cursorMarkerJustSet) {
+    await saveCursors(dataDir, cursors);
+  }
+  await setLastSyncAt(dataDir, config);
+
+  return {
+    source: 'workbuddy',
+    eventsParsed: result.eventsParsed,
+    filesProcessed: result.filesProcessed,
+    bucketsWritten: toAppend.length,
+    writtenBuckets: toAppend,
+  };
 }
 
 export async function syncGrok(dataDir: string, config: TudConfig, opts?: SyncSourceOptions): Promise<SyncResult> {
@@ -404,6 +673,14 @@ export async function syncZed(dataDir: string, config: TudConfig, opts?: SyncSou
 
 export async function syncWarp(dataDir: string, config: TudConfig, opts?: SyncSourceOptions): Promise<SyncResult> {
   return syncSourceBuckets(dataDir, config, 'warp', parseWarpIncremental, { sharedCursors: opts?.sharedCursors });
+}
+
+export async function syncQwenwork(dataDir: string, config: TudConfig, opts?: SyncSourceOptions): Promise<SyncResult> {
+  return syncSourceBuckets(dataDir, config, 'qwenwork', parseQwenworkIncremental, { sharedCursors: opts?.sharedCursors });
+}
+
+export async function syncCommandCode(dataDir: string, config: TudConfig, opts?: SyncSourceOptions): Promise<SyncResult> {
+  return syncSourceBuckets(dataDir, config, 'command-code', parseCommandCodeIncremental, { sharedCursors: opts?.sharedCursors });
 }
 
 export async function syncCursor(
@@ -530,6 +807,7 @@ export const SYNC_SOURCE_IDS = [
   'copilot',
   'antigravity',
   'openclaw',
+  'autoclaw',
   'hermes',
   'zcode',
   'dsh',
@@ -552,9 +830,42 @@ export const SYNC_SOURCE_IDS = [
   'goose',
   'zed',
   'warp',
+  'qwenwork',
+  'command-code',
 ] as const;
 
 export type SyncSourceId = (typeof SYNC_SOURCE_IDS)[number];
+
+/** Accepted spellings that map onto a canonical source id (see syncOneSource). */
+const SYNC_SOURCE_ALIASES: Record<string, SyncSourceId> = {
+  'roo-code': 'roocode',
+  'qwen-code': 'qwen',
+  'grok-build': 'grok',
+  mimocode: 'mimo',
+  everycode: 'every-code',
+  kilo: 'kilo-cli',
+  'kilo-code': 'kilocode',
+};
+
+/**
+ * Normalize a user-supplied source filter (CLI `--source`, local API body).
+ *
+ * - missing / empty / `all` → `undefined`（全量同步）
+ * - known id or alias（大小写不敏感）→ canonical id
+ * - anything else → `null`; the caller must reject it instead of passing it
+ *   on, otherwise the sync silently runs zero parsers while reporting success.
+ */
+export function normalizeSyncSource(
+  raw: string | undefined | null,
+): SyncSourceId | undefined | null {
+  if (raw == null) return undefined;
+  const value = raw.trim().toLowerCase();
+  if (!value || value === 'all') return undefined;
+  if ((SYNC_SOURCE_IDS as readonly string[]).includes(value)) {
+    return value as SyncSourceId;
+  }
+  return SYNC_SOURCE_ALIASES[value] ?? null;
+}
 
 async function syncOneSource(
   dataDir: string,
@@ -583,6 +894,8 @@ async function syncOneSource(
       return syncAntigravity(dataDir, config, opts);
     case 'openclaw':
       return syncOpenclaw(dataDir, config, opts);
+    case 'autoclaw':
+      return syncAutoclaw(dataDir, config, opts);
     case 'hermes':
       return syncHermes(dataDir, config, opts);
     case 'zcode':
@@ -634,6 +947,11 @@ async function syncOneSource(
       return syncZed(dataDir, config, opts);
     case 'warp':
       return syncWarp(dataDir, config, opts);
+    case 'qwenwork':
+      return syncQwenwork(dataDir, config, opts);
+    case 'command-code':
+    case 'commandcode':
+      return syncCommandCode(dataDir, config, opts);
     default:
       return {
         source,
@@ -659,11 +977,15 @@ export async function syncAll(
   config: TudConfig,
   source?: string,
 ): Promise<SyncResult[]> {
-  if (source) {
-    if (source === 'omp' && ompAgentDirCollidesWithPi()) {
+  // CLI / local API validate and normalize before calling in; treat `all`
+  // as a full sweep here too so no direct caller can hit the
+  // unknown-source branch with it.
+  const filter = source === 'all' ? undefined : source;
+  if (filter) {
+    if (filter === 'omp' && ompAgentDirCollidesWithPi()) {
       return [];
     }
-    return [await syncOneSource(dataDir, config, source)];
+    return [await syncOneSource(dataDir, config, filter)];
   }
 
   // One cursors.json load/save per round instead of per channel.
@@ -815,6 +1137,10 @@ export function countAntigravityRows(rows: QueueBucket[]): number {
 
 export function countOpenclawRows(rows: QueueBucket[]): number {
   return rows.filter((r) => r.source === 'openclaw').length;
+}
+
+export function countAutoclawRows(rows: QueueBucket[]): number {
+  return rows.filter((r) => r.source === 'autoclaw').length;
 }
 
 export function countHermesRows(rows: QueueBucket[]): number {

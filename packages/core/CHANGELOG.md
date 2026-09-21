@@ -1,5 +1,35 @@
 # @juejin-opensource/jusage-core
 
+## 0.1.11
+
+### Patch Changes
+
+- 新增 AutoClaw 用量采集：读取 `~/.openclaw-autoclaw*`（或 `AUTOCLAW_STATE_DIR`）下的会话，与 OpenClaw 同格式；此前只设了 `OPENCLAW_STATE_DIR` 的用户，AutoClaw 数据无法被统计。
+- AutoClaw 项目归属改为从消息里的绝对路径向上找仓库根；没有路径时沿用上一项目，最后回退到 agent 显示名。
+- 修复 WorkBuddy 项目全部显示为「未知项目」：改为从会话工作目录归属项目（优先 git 仓库根目录名）；升级后会自动重扫一次历史 WorkBuddy / AutoClaw 数据。
+- 新增 `jusage doctor` 诊断：排查运行环境、数据目录权限、本地数据源探测、进程锁和云端连通性，异常时给出解决指引。
+- 设置中可校验本机与线上近 90 天用量是否一致，并以本地为准覆盖当前设备的差异。
+- 修复 Cursor App 与 Cursor CLI 登录了不同账号时，本地用量和额度卡停止更新的问题。
+- 内置定价表同步近期 Qwen 3.8 Flash、DeepSeek Flash 等官方渠道价格。
+
+## 0.1.10
+
+### Patch Changes
+
+- 新增 Command Code 用量采集：读取 `~/.commandcode/projects` 下的会话 JSONL，将 token 用量计入面板与排行榜。
+- 新增 QwenWork 用量采集：读取 `~/.qwenwork` 与 `~/.qwenworkcn` 会话日志，国内版/国际版一并计入。
+- Codex 会扫描已配置的 profile 目录，多官方账号以及 CC Switch 管理的 Codex 家目录用量都会纳入统计。
+- WorkBuddy 国际版 `~/.workbuddy-ai` 与国内版一并采集；同一会话在两边镜像时只计一次。
+- 修复 WorkBuddy 用量全部归到 `unknown` 项目的问题，改为按会话工作目录解析真实项目名。
+- 修复 Copilot CLI 增量续读把跨轮询会话归到 `unknown`、扩大时间范围后又与真实项目重复计数的问题。
+- 修复 OpenCode 会话项目名全部显示为 `unknown` 的问题。
+- 修复 DeepSeek Harness 用量采集：兼容 `session.v3.jsonl.zstd` 等带版本会话文件，并支持思考模型 Token。
+- `jusage sync --source` 与本地 API 的数据源参数有明确契约：`all` 等同全量；未知数据源 CLI 非零退出、API 返回 400，不再静默同步 0 条却显示成功。帮助列表补上 `dsh`。
+- 统一托盘、CLI 与 Desktop 面板的卡片汇总、工具筛选和趋势比较口径；趋势改为与紧邻的等长上一周期比较，今天按昨天同期计算。
+- 修复 Token 趋势「详细」视图在缓存远大于未缓存输入时把输入画成 0 的问题。
+- 修复 Windows：不再依赖已移除的 `wmic` 判断本地服务占用；`AI_USAGE_*_ROOTS` 不再在盘符冒号处被切断；并发写 `config.json` 会先重试再放弃。
+- 支持从共享的 `~/.ai-usage/pets` 目录发现、刷新并切换自定义 v2 桌面宠物。
+
 ## 0.1.9
 
 ### Patch Changes

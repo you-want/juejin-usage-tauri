@@ -1,6 +1,6 @@
 {
   "name": "@juejin-opensource/jusage-core",
-  "version": "0.1.9",
+  "version": "0.1.11",
   "description": "AI Agent Token 用量采集与本地 API 核心库（parsers / sync / hooks / pricing / upload）",
   "type": "module",
   "license": "MIT",
@@ -34,6 +34,10 @@
     "./daily-model-key": {
       "types": "./dist/daily-model-key.d.ts",
       "import": "./dist/daily-model-key.js"
+    },
+    "./dashboard-trend": {
+      "types": "./dist/dashboard-trend.d.ts",
+      "import": "./dist/dashboard-trend.js"
     },
     "./timezone": {
       "types": "./dist/timezone.d.ts",

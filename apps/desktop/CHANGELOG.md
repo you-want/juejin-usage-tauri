@@ -1,5 +1,33 @@
 # @juejin-opensource/jusage-desktop
 
+## 0.1.11
+
+### Patch Changes
+
+- macOS 菜单栏托盘默认同时显示今日 Token 和金额，随数据同步更新；可在「应用设置」中选择仅 Token、仅金额或两者，也可关闭显示。
+- 新增 AutoClaw 用量采集与项目归属；修复 WorkBuddy 项目全部显示为「未知项目」，升级后会自动重扫一次历史数据。
+- 设置中新增数据校验：对比本机与线上近 90 天用量，仅校准当前设备，可以本地为准覆盖线上差异。
+- AutoClaw 在「工具与模型用量」等统计图标处改用官方品牌图标。
+- 修复 Cursor App 与 Cursor CLI 登录了不同账号时，本地用量和额度卡停止更新的问题。
+- 修复 macOS 上开启桌面宠物后主窗口与 Dock 被隐藏、多桌面切换时宠物不跟随，以及 Cmd+Q / 托盘退出后进程仍残留的问题。
+- 修复设置面板「关于」「宠物」等标签页内容被裁切、无法滚动到底的问题。
+- 修复对本机已安装或应用内附带的 Codex、Claude、Grok CLI 订阅额度采集不完整的问题。
+- Updated dependencies
+  - @juejin-opensource/jusage-core@0.1.11
+
+## 0.1.10
+
+### Patch Changes
+
+- 新增 Command Code、QwenWork 用量采集与面板展示。
+- 设置中可添加、自动发现并切换自定义 v2 桌面宠物，支持从共享目录一键拉取安装社区宠物。
+- 桌面宠物同步新增用量后，可选提示本轮 Token、今日新高和连续活跃天数（默认关闭）。
+- macOS 托盘增加本机订阅/额度卡片：Codex、DeepSeek 余额、MiniMax Code、OpenCode Go、TRAE；WorkBuddy 卡片在官方额度接口确认前不会向外发送凭据。ZCode 可从 OpenCode `auth.json` 读取备用凭据。
+- 统一托盘与主面板的卡片汇总、工具筛选和趋势比较口径。
+- 修复 Token 趋势「详细」视图缓存过大时把输入画成 0；修复未勾选复选框在深色模式几乎不可见，以及白底徽章上 DeepSeek Harness 图标变空白。
+- Updated dependencies
+  - @juejin-opensource/jusage-core@0.1.10
+
 ## 0.1.9
 
 ### Patch Changes

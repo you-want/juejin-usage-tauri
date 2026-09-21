@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { tmpdir, homedir } from 'node:os';
 import { DatabaseSync } from 'node:sqlite';
 import test from 'node:test';
 
 import { parseOpenclawIncremental } from '../src/parsers/openclaw.js';
+import { parseAutoclawIncremental } from '../src/parsers/autoclaw.js';
 import { parsePiIncremental } from '../src/parsers/pi.js';
 import { parseHermesIncremental } from '../src/parsers/hermes.js';
 import { parseZcodeIncremental, isZcodeNativeMessage } from '../src/parsers/zcode.js';
@@ -22,6 +23,12 @@ test('isZcodeNativeMessage blocks anthropic/openai/google', () => {
   assert.equal(isZcodeNativeMessage({ providerID: 'anthropic' }), false);
   assert.equal(isZcodeNativeMessage({ providerID: 'openai-compat' }), false);
   assert.equal(isZcodeNativeMessage({ providerID: 'google-vertex' }), false);
+});
+
+test('isZcodeNativeMessage accepts renamed providerId field', () => {
+  assert.equal(isZcodeNativeMessage({ providerId: 'builtin:bigmodel' }), true);
+  assert.equal(isZcodeNativeMessage({ providerId: 'anthropic' }), false);
+  assert.equal(isZcodeNativeMessage({}), false);
 });
 
 test('parseOpenclawIncremental subtracts cache from input', async () => {
@@ -58,6 +65,123 @@ test('parseOpenclawIncremental subtracts cache from input', async () => {
   } finally {
     if (prev === undefined) delete process.env.OPENCLAW_STATE_DIR;
     else process.env.OPENCLAW_STATE_DIR = prev;
+  }
+});
+
+test('parseAutoclawIncremental reads openclaw-style sessions', async () => {
+  const home = await mkdtemp(join(tmpdir(), 'tud-ac-'));
+  const prev = process.env.AUTOCLAW_STATE_DIR;
+  process.env.AUTOCLAW_STATE_DIR = home;
+  try {
+    const sessions = join(home, 'agents', 'main', 'sessions');
+    await mkdir(sessions, { recursive: true });
+    const line = {
+      type: 'message',
+      timestamp: '2026-09-08T03:52:43.574Z',
+      message: {
+        role: 'assistant',
+        model: 'glm-5.3-flash',
+        usage: {
+          input: 25325,
+          output: 182,
+          cacheRead: 5504,
+          cacheWrite: 0,
+        },
+      },
+    };
+    await writeFile(join(sessions, 'a1.jsonl'), JSON.stringify(line) + '\n');
+
+    const { result } = await parseAutoclawIncremental({}, SINCE);
+    assert.equal(result.eventsParsed, 1);
+    assert.equal(result.buckets[0]!.source, 'autoclaw');
+    assert.equal(result.buckets[0]!.project, 'main');
+    assert.equal(result.buckets[0]!.model, 'glm-5.3-flash');
+    assert.equal(result.buckets[0]!.input_tokens, 19821);
+    assert.equal(result.buckets[0]!.cached_input_tokens, 5504);
+    assert.equal(result.buckets[0]!.output_tokens, 182);
+  } finally {
+    if (prev === undefined) delete process.env.AUTOCLAW_STATE_DIR;
+    else process.env.AUTOCLAW_STATE_DIR = prev;
+  }
+});
+
+test('parseAutoclawIncremental attributes projects from tool-call paths', async () => {
+  const home = await mkdtemp(join(tmpdir(), 'tud-ac2-'));
+  const repo = await mkdtemp(join(tmpdir(), 'tud-acrepo-'));
+  await mkdir(join(repo, '.git'), { recursive: true });
+  const prev = process.env.AUTOCLAW_STATE_DIR;
+  process.env.AUTOCLAW_STATE_DIR = home;
+  try {
+    const agentDir = join(home, 'agents', 'agent-x1');
+    const sessions = join(agentDir, 'sessions');
+    await mkdir(sessions, { recursive: true });
+    await mkdir(join(agentDir, 'workspace'), { recursive: true });
+    await writeFile(
+      join(agentDir, 'workspace', 'IDENTITY.md'),
+      '---\nsummary: "Agent identity record"\nagent.name: "代码助手"\n---\n',
+    );
+
+    const withTool = {
+      type: 'message',
+      timestamp: '2026-09-08T03:52:43.574Z',
+      message: {
+        role: 'assistant',
+        model: 'glm-5.3-flash',
+        usage: { input: 100, output: 10 },
+        content: [
+          { type: 'toolCall', name: 'read', arguments: { path: join(repo, 'src', 'A.java') } },
+        ],
+      },
+    };
+    // No tool call → carry forward the session's last project.
+    const noTool = {
+      type: 'message',
+      timestamp: '2026-09-08T03:53:43.574Z',
+      message: { role: 'assistant', model: 'glm-5.3-flash', usage: { input: 5, output: 1 } },
+    };
+    await writeFile(
+      join(sessions, 's1.jsonl'),
+      [withTool, noTool].map((e) => JSON.stringify(e)).join('\n') + '\n',
+    );
+
+    // Fresh agent without tool paths falls back to the identity display name.
+    const idleDir = join(home, 'agents', 'agent-y2');
+    await mkdir(join(idleDir, 'sessions'), { recursive: true });
+    await mkdir(join(idleDir, 'workspace'), { recursive: true });
+    await writeFile(
+      join(idleDir, 'workspace', 'IDENTITY.md'),
+      '---\nagent.name: "运维助手"\n---\n',
+    );
+    await writeFile(
+      join(idleDir, 'sessions', 's2.jsonl'),
+      JSON.stringify({
+        type: 'message',
+        timestamp: '2026-09-08T03:54:43.574Z',
+        message: { role: 'assistant', model: 'glm-5.3-flash', usage: { input: 7, output: 2 } },
+      }) + '\n',
+    );
+
+    const { result, cursors } = await parseAutoclawIncremental({}, SINCE);
+    assert.equal(result.fullRescan, true);
+    assert.equal(result.eventsParsed, 3);
+    const byProject = new Map<string, number>();
+    for (const b of result.buckets) {
+      byProject.set(b.project, (byProject.get(b.project) ?? 0) + b.total_tokens);
+    }
+    assert.equal(byProject.size, 2);
+    assert.equal(byProject.get(basename(repo)), 116);
+    assert.equal(byProject.get('运维助手'), 9);
+    assert.equal(
+      (cursors as { autoclaw?: { repoProjects?: boolean } }).autoclaw?.repoProjects,
+      true,
+    );
+
+    const second = await parseAutoclawIncremental(cursors, SINCE);
+    assert.notEqual(second.result.fullRescan, true);
+    assert.equal(second.result.eventsParsed, 0);
+  } finally {
+    if (prev === undefined) delete process.env.AUTOCLAW_STATE_DIR;
+    else process.env.AUTOCLAW_STATE_DIR = prev;
   }
 });
 
@@ -138,6 +262,8 @@ test('parseHermesIncremental emits session snapshot deltas', async () => {
     assert.equal(first.result.buckets[0]!.source, 'hermes');
     assert.equal(first.result.buckets[0]!.input_tokens, 100);
     assert.equal(first.result.buckets[0]!.cache_creation_input_tokens, 5);
+    // No `messages` table in this fixture → the legacy ended_at timeline.
+    assert.equal(first.result.buckets[0]!.hour_start, '2024-07-03T09:30:00.000Z');
 
     const db2 = new DatabaseSync(join(home, 'state.db'));
     db2.prepare(
@@ -149,6 +275,76 @@ test('parseHermesIncremental emits session snapshot deltas', async () => {
     assert.equal(second.result.eventsParsed, 1);
     assert.equal(second.result.buckets[0]!.input_tokens, 50);
     assert.equal(second.result.buckets[0]!.output_tokens, 20);
+  } finally {
+    if (prev === undefined) delete process.env.HERMES_HOME;
+    else process.env.HERMES_HOME = prev;
+  }
+});
+
+test('parseHermesIncremental dates deltas by session activity, not session start', async () => {
+  const home = await mkdtemp(join(tmpdir(), 'tud-hermes-activity-'));
+  const prev = process.env.HERMES_HOME;
+  process.env.HERMES_HOME = home;
+  try {
+    await mkdir(home, { recursive: true });
+    const db = new DatabaseSync(join(home, 'state.db'));
+    db.exec(`CREATE TABLE sessions (
+      id TEXT PRIMARY KEY,
+      model TEXT,
+      started_at REAL,
+      ended_at REAL,
+      input_tokens INTEGER,
+      output_tokens INTEGER,
+      cache_read_tokens INTEGER,
+      cache_write_tokens INTEGER,
+      reasoning_tokens INTEGER,
+      message_count INTEGER
+    )`);
+    db.exec(`CREATE TABLE messages (
+      session_id TEXT,
+      timestamp REAL
+    )`);
+    // Hermes keeps messaging sessions open, so this one stays `ended_at` NULL
+    // from 8-24 while the usage below happened on 9-16.
+    db.prepare(
+      `INSERT INTO sessions VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run(
+      's1',
+      'deepseek-v4-flash',
+      Date.parse('2026-08-24T06:37:39Z') / 1000,
+      null,
+      100,
+      50,
+      10,
+      5,
+      2,
+      3,
+    );
+    db.prepare(`INSERT INTO messages VALUES (?, ?)`).run(
+      's1',
+      Date.parse('2026-09-16T09:07:00Z') / 1000,
+    );
+    db.close();
+
+    const first = await parseHermesIncremental({}, SINCE);
+    assert.equal(first.result.eventsParsed, 1);
+    assert.equal(first.result.buckets[0]!.hour_start, '2026-09-16T09:00:00.000Z');
+
+    // Same open session, next day: the new delta must land on the new day.
+    const db2 = new DatabaseSync(join(home, 'state.db'));
+    db2.prepare(
+      `UPDATE sessions SET input_tokens = 180, message_count = 5 WHERE id = ?`,
+    ).run('s1');
+    db2.prepare(`INSERT INTO messages VALUES (?, ?)`).run(
+      's1',
+      Date.parse('2026-09-17T02:10:00Z') / 1000,
+    );
+    db2.close();
+
+    const second = await parseHermesIncremental(first.cursors, SINCE);
+    assert.equal(second.result.eventsParsed, 1);
+    assert.equal(second.result.buckets[0]!.hour_start, '2026-09-17T02:00:00.000Z');
+    assert.equal(second.result.buckets[0]!.input_tokens, 80);
   } finally {
     if (prev === undefined) delete process.env.HERMES_HOME;
     else process.env.HERMES_HOME = prev;
@@ -189,6 +385,169 @@ test('parseZcodeIncremental filters non-native providers', async () => {
     assert.equal(result.eventsParsed, 1);
     assert.equal(result.buckets[0]!.source, 'zcode');
     assert.equal(result.buckets[0]!.model, 'glm-4.6');
+  } finally {
+    if (prev === undefined) delete process.env.ZCODE_HOME;
+    else process.env.ZCODE_HOME = prev;
+  }
+});
+
+test('parseZcodeIncremental fallback accepts renamed providerId', async () => {
+  const home = await mkdtemp(join(tmpdir(), 'tud-zcode-'));
+  const prev = process.env.ZCODE_HOME;
+  process.env.ZCODE_HOME = home;
+  try {
+    const dbDir = join(home, 'cli', 'db');
+    await mkdir(dbDir, { recursive: true });
+    const db = new DatabaseSync(join(dbDir, 'db.sqlite'));
+    db.exec(`CREATE TABLE message (
+      id TEXT PRIMARY KEY,
+      session_id TEXT,
+      data TEXT
+    )`);
+    const native = {
+      role: 'assistant',
+      providerId: 'builtin:bigmodel',
+      modelId: 'GLM-5.3-Flash',
+      time: { created: Date.parse('2026-09-18T08:00:00.000Z') },
+      tokens: { input: 20, output: 10, reasoning: 0, cache: { read: 0, write: 0 } },
+      path: { root: '/tmp/z' },
+    };
+    db.prepare('INSERT INTO message VALUES (?, ?, ?)').run('m1', 'ses1', JSON.stringify(native));
+    db.close();
+
+    const { result } = await parseZcodeIncremental({}, SINCE);
+    assert.equal(result.eventsParsed, 1);
+    assert.equal(result.buckets[0]!.model, 'GLM-5.3-Flash');
+  } finally {
+    if (prev === undefined) delete process.env.ZCODE_HOME;
+    else process.env.ZCODE_HOME = prev;
+  }
+});
+
+test('parseZcodeIncremental reads model_usage table and dedupes', async () => {
+  const home = await mkdtemp(join(tmpdir(), 'tud-zcode-usage-'));
+  const prev = process.env.ZCODE_HOME;
+  process.env.ZCODE_HOME = home;
+  try {
+    const dbDir = join(home, 'cli', 'db');
+    await mkdir(dbDir, { recursive: true });
+    const db = new DatabaseSync(join(dbDir, 'db.sqlite'));
+    db.exec(`CREATE TABLE message (
+      id TEXT PRIMARY KEY,
+      session_id TEXT,
+      data TEXT
+    )`);
+    db.exec(`CREATE TABLE model_usage (
+      id TEXT PRIMARY KEY,
+      session_id TEXT,
+      assistant_message_id TEXT,
+      model_id TEXT,
+      started_at INTEGER,
+      completed_at INTEGER,
+      input_tokens INTEGER,
+      output_tokens INTEGER,
+      reasoning_tokens INTEGER,
+      cache_creation_input_tokens INTEGER,
+      cache_read_input_tokens INTEGER,
+      computed_total_tokens INTEGER
+    )`);
+    db.prepare('INSERT INTO message VALUES (?, ?, ?)').run(
+      'm1',
+      'ses1',
+      JSON.stringify({ role: 'assistant', path: { root: '/tmp/z' } }),
+    );
+    db.prepare('INSERT INTO model_usage VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').run(
+      'u1',
+      'ses1',
+      'm1',
+      'GLM-5.3-Flash',
+      Date.parse('2026-09-18T08:00:00.000Z'),
+      Date.parse('2026-09-18T08:00:10.000Z'),
+      100,
+      10,
+      0,
+      0,
+      80,
+      110,
+    );
+    db.close();
+
+    const first = await parseZcodeIncremental({}, SINCE);
+    assert.equal(first.result.eventsParsed, 1);
+    assert.equal(first.result.buckets[0]!.source, 'zcode');
+    assert.equal(first.result.buckets[0]!.model, 'GLM-5.3-Flash');
+    // ZCode input_tokens includes cache read; fresh input = 100 - 80.
+    assert.equal(first.result.buckets[0]!.input_tokens, 20);
+    assert.equal(first.result.buckets[0]!.cached_input_tokens, 80);
+    assert.equal(first.result.buckets[0]!.total_tokens, 110);
+
+    const second = await parseZcodeIncremental(first.cursors, SINCE);
+    assert.equal(second.result.eventsParsed, 0);
+  } finally {
+    if (prev === undefined) delete process.env.ZCODE_HOME;
+    else process.env.ZCODE_HOME = prev;
+  }
+});
+
+test('parseZcodeIncremental adds reasoning to the provider total (issue #181)', async () => {
+  const home = await mkdtemp(join(tmpdir(), 'tud-zcode-usage-reasoning-'));
+  const prev = process.env.ZCODE_HOME;
+  process.env.ZCODE_HOME = home;
+  try {
+    const dbDir = join(home, 'cli', 'db');
+    await mkdir(dbDir, { recursive: true });
+    const db = new DatabaseSync(join(dbDir, 'db.sqlite'));
+    db.exec(`CREATE TABLE message (
+      id TEXT PRIMARY KEY,
+      session_id TEXT,
+      data TEXT
+    )`);
+    db.exec(`CREATE TABLE model_usage (
+      id TEXT PRIMARY KEY,
+      session_id TEXT,
+      assistant_message_id TEXT,
+      model_id TEXT,
+      started_at INTEGER,
+      completed_at INTEGER,
+      input_tokens INTEGER,
+      output_tokens INTEGER,
+      reasoning_tokens INTEGER,
+      cache_creation_input_tokens INTEGER,
+      cache_read_input_tokens INTEGER,
+      computed_total_tokens INTEGER
+    )`);
+    db.prepare('INSERT INTO message VALUES (?, ?, ?)').run(
+      'm1',
+      'ses1',
+      JSON.stringify({ role: 'assistant', path: { root: '/tmp/z' } }),
+    );
+    // ZCode's computed_total_tokens = input + output (reasoning excluded):
+    // 100 + 10 = 110, with 7 reasoning tokens reported separately.
+    db.prepare('INSERT INTO model_usage VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').run(
+      'u1',
+      'ses1',
+      'm1',
+      'GLM-5.3-Flash',
+      Date.parse('2026-09-18T08:00:00.000Z'),
+      Date.parse('2026-09-18T08:00:10.000Z'),
+      100,
+      10,
+      7,
+      0,
+      80,
+      110,
+    );
+    db.close();
+
+    const { result } = await parseZcodeIncremental({}, SINCE);
+    assert.equal(result.eventsParsed, 1);
+    const bucket = result.buckets[0]!;
+    // Bucket five-field sum must equal the stored total so panel aggregates
+    // match the server's ingest recompute.
+    assert.equal(bucket.input_tokens, 20);
+    assert.equal(bucket.cached_input_tokens, 80);
+    assert.equal(bucket.reasoning_output_tokens, 7);
+    assert.equal(bucket.total_tokens, 117);
   } finally {
     if (prev === undefined) delete process.env.ZCODE_HOME;
     else process.env.ZCODE_HOME = prev;
@@ -371,6 +730,7 @@ test('bucketToIngestEvent maps all P1 sources', () => {
   const deviceId = '550e8400-e29b-41d4-a716-446655440000';
   for (const source of [
     'openclaw',
+    'autoclaw',
     'hermes',
     'zcode',
     'pi',

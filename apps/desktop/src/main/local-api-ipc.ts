@@ -1,4 +1,5 @@
 import { BrowserWindow, ipcMain } from 'electron';
+import type { PetSyncFeedback } from '../shared/pet-sync-feedback';
 import {
   localApiRequest,
   onLocalRuntimeSynced,
@@ -24,15 +25,30 @@ export function registerLocalApiIpc(): () => void {
   );
 
   let broadcastTimer: ReturnType<typeof setTimeout> | null = null;
-  const unsubscribe = onLocalRuntimeSynced(() => {
+  let pendingFeedback: PetSyncFeedback | null = null;
+  const unsubscribe = onLocalRuntimeSynced((feedback) => {
     // Trailing merge: rapid successive sync notifications (per-source syncs,
     // signal storms) collapse into a single renderer broadcast.
+    if (feedback) {
+      pendingFeedback = pendingFeedback
+        ? {
+            addedTokens: pendingFeedback.addedTokens + feedback.addedTokens,
+            isDailyRecord: pendingFeedback.isDailyRecord || feedback.isDailyRecord,
+            activeStreakDays: Math.max(
+              pendingFeedback.activeStreakDays,
+              feedback.activeStreakDays,
+            ),
+          }
+        : feedback;
+    }
     if (broadcastTimer) return;
     broadcastTimer = setTimeout(() => {
       broadcastTimer = null;
+      const payload = pendingFeedback;
+      pendingFeedback = null;
       for (const win of BrowserWindow.getAllWindows()) {
         if (!win.isDestroyed()) {
-          win.webContents.send(DATA_SYNCED_CHANNEL);
+          win.webContents.send(DATA_SYNCED_CHANNEL, payload);
         }
       }
     }, BROADCAST_MERGE_MS);

@@ -32,6 +32,7 @@ export const SUPPORTED_TOOLS: readonly SupportedToolLine[] = [
     variants: ['App', 'IDE', 'CLI'],
   },
   { name: 'OpenClaw', source: 'openclaw' },
+  { name: 'AutoClaw', source: 'autoclaw' },
   { name: 'Hermes', source: 'hermes' },
   { name: 'ZCode', source: 'zcode' },
   { name: 'DeepSeek Harness', source: 'dsh' },
@@ -54,6 +55,7 @@ export const SUPPORTED_TOOLS: readonly SupportedToolLine[] = [
   { name: 'Goose', source: 'goose' },
   { name: 'Zed', source: 'zed' },
   { name: 'Warp', source: 'warp' },
+  { name: 'Command Code', source: 'command-code' },
 ] as const;
 
 export function formatSupportedTool(line: SupportedToolLine): string {

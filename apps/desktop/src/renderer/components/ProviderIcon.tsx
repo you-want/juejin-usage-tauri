@@ -1,9 +1,11 @@
 import type { CSSProperties, ReactNode } from 'react';
 import antigravityIcon from '@lobehub/icons-static-svg/icons/antigravity-color.svg';
 import ampIcon from '@lobehub/icons-static-svg/icons/amp-color.svg';
+import autoClawIcon from '@/assets/brand-logos/autoclaw.svg';
 import claudeIcon from '@lobehub/icons-static-svg/icons/claude-color.svg';
 import clineIcon from '@lobehub/icons-static-svg/icons/cline.svg';
 import codeBuddyIcon from '@lobehub/icons-static-svg/icons/codebuddy-color.svg';
+import commandCodeIcon from '@/assets/brand-logos/command-code.svg';
 import codexIcon from '@lobehub/icons-static-svg/icons/codex.svg';
 import copilotIcon from '@lobehub/icons-static-svg/icons/copilot-color.svg';
 import cursorIcon from '@lobehub/icons-static-svg/icons/cursor.svg';
@@ -21,6 +23,7 @@ import openCodeIcon from '@lobehub/icons-static-svg/icons/opencode.svg';
 import piIcon from '@lobehub/icons-static-svg/icons/pi.svg';
 import qoderIcon from '@lobehub/icons-static-svg/icons/qoder-color.svg';
 import qwenIcon from '@lobehub/icons-static-svg/icons/qwen-color.svg';
+import qwenWorkIcon from '@/assets/brand-logos/qwenwork.ico';
 import roocodeIcon from '@lobehub/icons-static-svg/icons/roocode.svg';
 import traeIcon from '@lobehub/icons-static-svg/icons/trae-color.svg';
 import windsurfIcon from '@lobehub/icons-static-svg/icons/windsurf.svg';
@@ -35,9 +38,11 @@ interface ProviderIconAsset {
 const PROVIDER_ICON_MAP: Record<string, ProviderIconAsset> = {
   amp: { src: ampIcon },
   antigravity: { src: antigravityIcon },
+  autoclaw: { src: autoClawIcon },
   'claude-code': { src: claudeIcon },
   cline: { monochrome: true, src: clineIcon },
   codebuddy: { src: codeBuddyIcon },
+  'command-code': { monochrome: true, src: commandCodeIcon },
   codex: { monochrome: true, src: codexIcon },
   'every-code': { monochrome: true, src: codexIcon },
   copilot: { src: copilotIcon },
@@ -59,6 +64,7 @@ const PROVIDER_ICON_MAP: Record<string, ProviderIconAsset> = {
   qoder: { src: qoderIcon },
   qwen: { src: qwenIcon },
   'qwen-code': { src: qwenIcon },
+  qwenwork: { src: qwenWorkIcon },
   roocode: { monochrome: true, src: roocodeIcon },
   trae: { src: traeIcon },
   windsurf: { monochrome: true, src: windsurfIcon },
@@ -104,6 +110,7 @@ function normalizeProviderKey(provider: string): string {
   }
   if (key === 'opencode' || key.startsWith('opencode-')) return 'opencode';
   if (key.startsWith('antigravity')) return 'antigravity';
+  if (key === 'auto-claw' || key.startsWith('autoclaw')) return 'autoclaw';
   if (key.startsWith('openclaw')) return 'openclaw';
   if (key.startsWith('hermes')) return 'hermes';
   if (key.startsWith('kimi')) return 'kimi';
@@ -126,6 +133,7 @@ function normalizeProviderKey(provider: string): string {
   if (key.startsWith('qoder')) return 'qoder';
   if (key.startsWith('trae')) return 'trae';
   if (key.startsWith('amp')) return 'amp';
+  if (key.startsWith('qwenwork')) return 'qwenwork';
   if (key.startsWith('qwen')) return 'qwen-code';
   if (key.startsWith('codebuddy') || key === 'code-buddy') return 'codebuddy';
   if (key.startsWith('workbuddy')) return 'workbuddy';
@@ -138,6 +146,7 @@ function normalizeProviderKey(provider: string): string {
   if (key.startsWith('kilocode') || key === 'kilo-code') return 'kilocode';
   if (key.startsWith('zed')) return 'zed';
   if (key.startsWith('warp')) return 'warp';
+  if (key.startsWith('command-code') || key.startsWith('commandcode')) return 'command-code';
 
   return PROVIDER_ALIASES[key] ?? key;
 }
@@ -164,6 +173,9 @@ export function ProviderIcon({
 }: ProviderIconProps) {
   const key = normalizeProviderKey(provider);
   const asset = PROVIDER_ICON_MAP[key];
+  // Inline SVGs use currentColor. On light badges (e.g. bg-white in the tool
+  // usage card) force a dark fill so dark-mode foreground does not wash out.
+  const svgColor = color ?? (onLightBackground ? '#111827' : undefined);
 
   if (asset) {
     return (
@@ -192,7 +204,7 @@ export function ProviderIcon({
       <DroidIcon
         className={className}
         size={size}
-        style={{ color }}
+        style={{ color: svgColor }}
       />
     );
   }
@@ -202,7 +214,7 @@ export function ProviderIcon({
       <OmpIcon
         className={className}
         size={size}
-        style={{ color }}
+        style={{ color: svgColor }}
       />
     );
   }
@@ -212,7 +224,7 @@ export function ProviderIcon({
       <ZedIcon
         className={className}
         size={size}
-        style={{ color }}
+        style={{ color: svgColor }}
       />
     );
   }
@@ -222,7 +234,7 @@ export function ProviderIcon({
       <WarpIcon
         className={className}
         size={size}
-        style={{ color }}
+        style={{ color: svgColor }}
       />
     );
   }
@@ -232,12 +244,12 @@ export function ProviderIcon({
       <DeepSeekHarnessIcon
         className={className}
         size={size}
-        style={{ color }}
+        style={{ color: svgColor }}
       />
     );
   }
 
-  return <PlaceholderIcon className={className} size={size} style={{ color }} />;
+  return <PlaceholderIcon className={className} size={size} style={{ color: svgColor }} />;
 }
 
 function OmpIcon({
