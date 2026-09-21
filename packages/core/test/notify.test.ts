@@ -63,22 +63,43 @@ test('buildNotifySh chains original Codex notify via python3 when available', ()
   assert.match(script, /notify\.mjs/);
 });
 
+function withPlatform<T>(platform: NodeJS.Platform, fn: () => T): T {
+  const original = Object.getOwnPropertyDescriptor(process, 'platform')!;
+  Object.defineProperty(process, 'platform', { ...original, value: platform });
+  try {
+    return fn();
+  } finally {
+    Object.defineProperty(process, 'platform', original);
+  }
+}
+
 test('buildHookCommand uses bash and quotes paths with spaces', () => {
-  if (process.platform === 'win32') {
-    const cmd = buildHookCommand('C:\\Users\\test\\my notify\\notify.cmd', 'claude');
-    assert.match(cmd, /notify\.cmd/);
-    assert.match(cmd, /--source=claude/);
-    assert.doesNotMatch(cmd, /\bnode\b/);
-    // Claude Code runs hooks via Git Bash on Windows, which strips backslashes.
-    assert.equal(cmd, '"C:/Users/test/my notify/notify.cmd" --source=claude');
-  } else {
+  withPlatform('darwin', () => {
     const cmd = buildHookCommand('/tmp/my notify/notify.sh', 'claude');
     assert.match(cmd, /\/bin\/bash/);
     assert.match(cmd, /notify\.sh/);
     assert.match(cmd, /--source=claude/);
     assert.doesNotMatch(cmd, /\bnode\b/);
     assert.match(cmd, /'\/tmp\/my notify\/notify\.sh'/);
-  }
+  });
+});
+
+test('buildHookCommand uses forward slashes on Windows for Git Bash', () => {
+  withPlatform('win32', () => {
+    // Claude Code runs hooks via Git Bash on Windows, which treats backslashes as escapes.
+    assert.equal(
+      buildHookCommand('C:\\Users\\test\\my notify\\notify.cmd', 'claude'),
+      '"C:/Users/test/my notify/notify.cmd" --source=claude',
+    );
+    assert.equal(
+      buildHookCommand('C:\\Users\\test\\.ai-usage\\bin\\notify.cmd', 'codex'),
+      'C:/Users/test/.ai-usage/bin/notify.cmd --source=codex',
+    );
+    assert.doesNotMatch(
+      buildHookCommand('C:\\Users\\test\\.ai-usage\\bin\\notify.cmd', 'claude'),
+      /\\/,
+    );
+  });
 });
 
 test('notifyScriptPath is platform-native (no .mjs)', () => {
