@@ -1,5 +1,6 @@
 import {
   DEFAULT_PORT,
+  resolveLinkedUserId,
   SYNC_SOURCE_IDS,
   normalizeSyncSource,
 } from '@juejin-opensource/jusage-core';
@@ -9,6 +10,15 @@ export const DEFAULT_HOST = '127.0.0.1';
 /** `--source` 的合法取值提示，从 sync registry 生成，避免帮助与实现脱节。 */
 export function formatSyncSourceList(): string {
   return ['all', ...SYNC_SOURCE_IDS].join(' | ');
+}
+
+/** Describe cloud identity without exposing the upload credential. */
+export function formatUploadTokenStatus(
+  deviceId: string,
+  token: string | null | undefined,
+): string {
+  if (!token?.trim()) return '未配置';
+  return resolveLinkedUserId(deviceId, token) ? '已配置（已关联）' : '未关联';
 }
 
 /**
