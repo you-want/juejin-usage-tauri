@@ -1,11 +1,14 @@
-import { existsSync } from 'node:fs';
+import { existsSync, readdirSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
 import { resolveAntigravityBrainDirs } from '../parsers/antigravity.js';
 import { resolveAmpThreadsDir } from '../parsers/amp.js';
-import { resolveCodebuddyHome } from '../parsers/codebuddy.js';
 import { clineSessionDataDir, findClineExtensionDirs } from '../parsers/cline.js';
+import {
+  resolveCodebuddyExtensionRoots,
+  resolveCodebuddyHome,
+} from '../parsers/codebuddy.js';
 import { droidSessionsDirs } from '../parsers/droid.js';
 import { everyCodeHome } from '../parsers/every-code.js';
 import { gooseDbPath } from '../parsers/goose.js';
@@ -141,11 +144,22 @@ export function isSyncSourcePresent(source: string): boolean {
       return anyExists([resolveAmpThreadsDir()]);
     case 'qwen':
       return anyExists([qwenTmpDir()]);
-    case 'codebuddy':
-      return anyExists([
-        resolveCodebuddyHome(),
-        join(resolveCodebuddyHome(), 'projects'),
-      ]);
+    case 'codebuddy': {
+      // ~/.codebuddy alone proves nothing: the desktop app keeps its config
+      // there while usage lives under the extension data dir. Gate on the
+      // actual data dirs so an installed-but-unreadable setup reports
+      // "not installed" instead of "installed with zero usage".
+      const hasExtensionData = resolveCodebuddyExtensionRoots().some((root) => {
+        if (!existsSync(root)) return false;
+        try {
+          return readdirSync(root).length > 0;
+        } catch {
+          // Unreadable / not a directory counts as absent.
+          return false;
+        }
+      });
+      return hasExtensionData || anyExists([join(resolveCodebuddyHome(), 'projects')]);
+    }
     case 'workbuddy':
       // Domestic and international editions use separate homes; either is enough.
       return anyExists([
