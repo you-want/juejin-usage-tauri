@@ -27,6 +27,7 @@ process.title = 'tud-sync-worker';
  * 个进程，把僵死转化为宿主已有机制能处理的普通崩溃重启。
  */
 const WATCHDOG_FEED_MS = 30_000;
+const WATCHDOG_CHECK_MS = 15_000;
 const WATCHDOG_TIMEOUT_MS = 5 * 60_000;
 
 function startWatchdog(): void {
@@ -38,14 +39,13 @@ setInterval(() => {
   if (Date.now() - lastFeedAt > ${WATCHDOG_TIMEOUT_MS}) {
     process.kill(process.pid, 'SIGKILL');
   }
-}, 15_000);
+}, ${WATCHDOG_CHECK_MS});
 `;
   try {
     const watchdog = new Worker(workerSrc, { eval: true });
     watchdog.unref();
-    const feed = () => watchdog.postMessage('feed');
-    feed();
-    setInterval(feed, WATCHDOG_FEED_MS).unref();
+    // worker 侧以 spawn 时刻为基线，主循环每 30s 喂活一次。
+    setInterval(() => watchdog.postMessage('feed'), WATCHDOG_FEED_MS).unref();
   } catch {
     // 看门狗起不来只损失僵死自愈能力，不影响同步本身。
   }
