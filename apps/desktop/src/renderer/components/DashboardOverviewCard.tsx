@@ -1,4 +1,4 @@
-import { memo, useId, useMemo, useState } from 'react';
+import { memo, useId, useMemo, useState, type ReactNode } from 'react';
 import { CircleHelp } from 'lucide-react';
 import { Button, Card, Chip, Popover, Tooltip } from '@heroui/react';
 import { ActivityHeatmap } from '@/components/ActivityHeatmap';
@@ -30,6 +30,8 @@ interface DashboardOverviewCardProps {
   summary: DashboardUsageSummary;
   selectedDate?: string | null;
   onSelectDate?: (date: string) => void;
+  /** Local CLI/Desktop only: show request count + cache hit captions. */
+  showLocalMetrics?: boolean;
 }
 
 /** Four inline metrics and the daily heatmap, styled to match the tray overview. */
@@ -42,11 +44,19 @@ export const DashboardOverviewCard = memo(function DashboardOverviewCard({
   summary,
   selectedDate = null,
   onSelectDate,
+  showLocalMetrics = false,
 }: DashboardOverviewCardProps) {
   const metricTrendValues = useMemo(
     () => buildUsageMetricTrendValues(metricTrendRows),
     [metricTrendRows],
   );
+  const requestCaption = showLocalMetrics
+    ? formatRequestCaption(summary)
+    : null;
+  const cacheHitRate = showLocalMetrics
+    ? cacheHitRateFromSummary(summary)
+    : null;
+  const reserveCaption = showLocalMetrics;
   const metrics = [
     {
       id: 'cost',
@@ -54,6 +64,7 @@ export const DashboardOverviewCard = memo(function DashboardOverviewCard({
       value: summary.totalCostUsd,
       format: formatUsd,
       exactFormat: formatUsd,
+      caption: null as string | null,
       trend: {
         comparison: metricTrends.totalCostUsd,
         display: 'percent' as const,
@@ -66,6 +77,7 @@ export const DashboardOverviewCard = memo(function DashboardOverviewCard({
       value: summary.totalTokens,
       format: formatTokens,
       exactFormat: formatTokensExact,
+      caption: requestCaption,
       trend: {
         comparison: metricTrends.totalTokens,
         display: 'percent' as const,
@@ -78,6 +90,10 @@ export const DashboardOverviewCard = memo(function DashboardOverviewCard({
       value: summary.inputTokens,
       format: formatTokens,
       exactFormat: formatTokensExact,
+      caption:
+        cacheHitRate == null
+          ? null
+          : `缓存命中率 ${(cacheHitRate * 100).toFixed(1)}%`,
       trend: {
         comparison: metricTrends.inputTokens,
         display: 'tokens' as const,
@@ -90,6 +106,7 @@ export const DashboardOverviewCard = memo(function DashboardOverviewCard({
       value: summary.outputTokens,
       format: formatTokens,
       exactFormat: formatTokensExact,
+      caption: null as string | null,
       trend: {
         comparison: metricTrends.outputTokens,
         display: 'tokens' as const,
@@ -103,13 +120,23 @@ export const DashboardOverviewCard = memo(function DashboardOverviewCard({
       <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-4">
         {metrics.map((metric) => (
           <Card
-            className="h-[5.5rem] min-h-[5.5rem] min-w-0 overflow-hidden rounded-2xl p-3"
+            className={cn(
+              'min-w-0 overflow-hidden rounded-2xl p-3',
+              reserveCaption
+                ? 'h-[6.25rem] min-h-[6.25rem]'
+                : 'h-[5.5rem] min-h-[5.5rem]',
+            )}
             key={metric.id}
           >
             <Card.Content className="grid h-full grid-rows-[1.25rem_1fr] content-start gap-3 p-0">
               <div className="flex h-5 min-w-0 items-center justify-between gap-2">
                 {metric.id === 'total-tokens' ? (
-                  <TotalTokenLabel summary={summary} />
+                  <TotalTokenLabel
+                    showRequestHelp={showLocalMetrics}
+                    summary={summary}
+                  />
+                ) : metric.id === 'input-tokens' && showLocalMetrics ? (
+                  <InputTokenLabel />
                 ) : (
                   <p className="min-w-0 truncate text-xs font-medium leading-5 text-muted">
                     {metric.label}
@@ -125,12 +152,19 @@ export const DashboardOverviewCard = memo(function DashboardOverviewCard({
                 </div>
               </div>
               <div className="grid grid-cols-[minmax(0,1fr)_64px] items-end gap-2">
-                <NestedAnimatedValue
-                  exactFormat={metric.exactFormat}
-                  format={metric.format}
-                  label={metric.label}
-                  value={metric.value}
-                />
+                <div className="min-w-0">
+                  <NestedAnimatedValue
+                    exactFormat={metric.exactFormat}
+                    format={metric.format}
+                    label={metric.label}
+                    value={metric.value}
+                  />
+                  {reserveCaption ? (
+                    <p className="mt-0.5 h-4 truncate text-[10px] leading-4 text-muted tabular-nums">
+                      {metric.caption ?? '\u00a0'}
+                    </p>
+                  ) : null}
+                </div>
                 <MetricSparkline
                   isIncrease={(metric.trend.comparison?.changeValue ?? 0) >= 0}
                   label={`${metricTrendPeriodLabel}${metric.label}趋势`}
@@ -154,19 +188,44 @@ export const DashboardOverviewCard = memo(function DashboardOverviewCard({
   );
 });
 
-function TotalTokenLabel({ summary }: { summary: DashboardUsageSummary }) {
+/** Prefer complete count; fall back to known evidence without "至少" wording. */
+function formatRequestCaption(summary: DashboardUsageSummary): string | null {
+  const count = summary.requestCount ?? summary.knownRequestCount;
+  if (count == null) return null;
+  return `${count.toLocaleString('zh-CN')} 次请求`;
+}
+
+/** OpenUsage / Anthropic-style: cache_read / (input + cache_read + cache_write). */
+function cacheHitRateFromSummary(summary: DashboardUsageSummary): number | null {
+  const denom =
+    summary.inputTokens +
+    summary.cachedInputTokens +
+    summary.cacheCreationInputTokens;
+  return denom > 0 ? summary.cachedInputTokens / denom : null;
+}
+
+function MetricHelpLabel({
+  ariaLabel,
+  heading,
+  label,
+  panel,
+}: {
+  ariaLabel: string;
+  heading: string;
+  label: string;
+  panel: ReactNode;
+}) {
   const [open, setOpen] = useState(false);
-  const panel = <TokenBreakdownPanel summary={summary} />;
 
   return (
     <div className="flex min-w-0 items-center gap-0.5">
       <p className="min-w-0 truncate text-xs font-medium leading-5 text-muted">
-        总 Token
+        {label}
       </p>
       <Popover isOpen={open} onOpenChange={setOpen}>
         <Tooltip closeDelay={80} delay={120} isDisabled={open}>
           <Button
-            aria-label="总 Token 构成说明"
+            aria-label={ariaLabel}
             className="size-4 min-h-4 min-w-4 shrink-0 p-0 text-muted data-[hovered]:bg-transparent data-[hovered]:text-foreground"
             isIconOnly
             size="sm"
@@ -186,7 +245,7 @@ function TotalTokenLabel({ summary }: { summary: DashboardUsageSummary }) {
           placement="bottom"
         >
           <Popover.Dialog className="p-3 outline-none">
-            <Popover.Heading className="sr-only">总 Token 构成</Popover.Heading>
+            <Popover.Heading className="sr-only">{heading}</Popover.Heading>
             {panel}
           </Popover.Dialog>
         </Popover.Content>
@@ -195,7 +254,57 @@ function TotalTokenLabel({ summary }: { summary: DashboardUsageSummary }) {
   );
 }
 
-function TokenBreakdownPanel({ summary }: { summary: DashboardUsageSummary }) {
+function TotalTokenLabel({
+  showRequestHelp,
+  summary,
+}: {
+  showRequestHelp: boolean;
+  summary: DashboardUsageSummary;
+}) {
+  return (
+    <MetricHelpLabel
+      ariaLabel="总 Token 构成说明"
+      heading="总 Token 构成"
+      label="总 Token"
+      panel={
+        <TokenBreakdownPanel
+          showRequestHelp={showRequestHelp}
+          summary={summary}
+        />
+      }
+    />
+  );
+}
+
+function InputTokenLabel() {
+  return (
+    <MetricHelpLabel
+      ariaLabel="缓存命中率说明"
+      heading="缓存命中率"
+      label="输入 Token"
+      panel={<CacheHitRateHelpPanel />}
+    />
+  );
+}
+
+function CacheHitRateHelpPanel() {
+  return (
+    <div className="grid max-w-56 gap-1.5 text-xs">
+      <p className="font-medium text-foreground">缓存命中率</p>
+      <p className="leading-4 text-muted">
+        缓存读 ÷（输入 + 缓存读 + 缓存写）
+      </p>
+    </div>
+  );
+}
+
+function TokenBreakdownPanel({
+  showRequestHelp,
+  summary,
+}: {
+  showRequestHelp: boolean;
+  summary: DashboardUsageSummary;
+}) {
   const input = summary.inputTokens;
   const output = summary.outputTokens;
   const cacheRead = summary.cachedInputTokens;
@@ -204,6 +313,10 @@ function TokenBreakdownPanel({ summary }: { summary: DashboardUsageSummary }) {
     0,
     summary.totalTokens - input - output - cacheRead - cacheWrite,
   );
+  const requestIncomplete =
+    showRequestHelp &&
+    summary.requestCount == null &&
+    (summary.knownRequestCount ?? 0) > 0;
 
   return (
     <div className="grid min-w-44 gap-1.5 text-xs">
@@ -221,6 +334,15 @@ function TokenBreakdownPanel({ summary }: { summary: DashboardUsageSummary }) {
       <p className="pt-0.5 text-[10px] leading-4 text-muted">
         总 Token = 输入 + 输出 + 缓存读 + 缓存写 + 其它
       </p>
+      {showRequestHelp ? (
+        <p className="pt-1 text-[10px] leading-4 text-muted">
+          「请求数」来自本地解析累计
+          {requestIncomplete
+            ? '；部分来源缺少完整请求证据时，数字可能偏低'
+            : ''}
+          。
+        </p>
+      ) : null}
     </div>
   );
 }

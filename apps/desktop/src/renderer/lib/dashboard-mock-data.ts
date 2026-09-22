@@ -19,6 +19,10 @@ export interface DashboardHourlyUsageRow {
   totalTokens: number;
   costUsd: number;
   durationMinutes: number;
+  /** From API `localMetrics.requestCount`; null when incomplete. */
+  requestCount?: number | null;
+  /** Sum of known request evidence even when the total is incomplete. */
+  knownRequestCount?: number;
 }
 
 export interface DashboardDailyUsageRow {
@@ -33,6 +37,10 @@ export interface DashboardDailyUsageRow {
   totalTokens: number;
   costUsd: number;
   durationMinutes: number;
+  /** From API `localMetrics.requestCount`; null when incomplete. */
+  requestCount?: number | null;
+  /** Sum of known request evidence even when the total is incomplete. */
+  knownRequestCount?: number;
 }
 
 export interface DashboardUsageSummary {
@@ -43,6 +51,33 @@ export interface DashboardUsageSummary {
   totalTokens: number;
   totalCostUsd: number;
   totalDurationMinutes: number;
+  /** Aggregated local request count; null when any part is incomplete. */
+  requestCount?: number | null;
+  /** Sum of known request evidence even when the total is incomplete. */
+  knownRequestCount?: number;
+}
+
+/**
+ * Sum request counts. `undefined` parts are skipped; any `null` poisons the total.
+ */
+export function mergeRequestCount(
+  a: number | null | undefined,
+  b: number | null | undefined,
+): number | null | undefined {
+  if (a === undefined) return b;
+  if (b === undefined) return a;
+  if (a === null || b === null) return null;
+  return a + b;
+}
+
+/** Sum known request evidence; skips undefined. */
+export function mergeKnownRequestCount(
+  a: number | undefined,
+  b: number | undefined,
+): number | undefined {
+  if (a === undefined) return b;
+  if (b === undefined) return a;
+  return a + b;
 }
 
 export interface DashboardMetricChanges {
@@ -264,7 +299,7 @@ export function buildProjectModelUsage(
     .sort((a, b) => b.tokens - a.tokens);
 }
 
-export function aggregateUsage(rows: Array<Pick<DashboardHourlyUsageRow, 'inputTokens' | 'outputTokens' | 'cachedInputTokens' | 'totalTokens' | 'costUsd' | 'durationMinutes'>>): DashboardUsageSummary {
+export function aggregateUsage(rows: Array<Pick<DashboardHourlyUsageRow, 'inputTokens' | 'outputTokens' | 'cachedInputTokens' | 'totalTokens' | 'costUsd' | 'durationMinutes'> & { requestCount?: number | null; knownRequestCount?: number }>): DashboardUsageSummary {
   return rows.reduce<DashboardUsageSummary>((total, row) => ({
     inputTokens: total.inputTokens + row.inputTokens,
     outputTokens: total.outputTokens + row.outputTokens,
@@ -273,6 +308,11 @@ export function aggregateUsage(rows: Array<Pick<DashboardHourlyUsageRow, 'inputT
     totalTokens: total.totalTokens + row.totalTokens,
     totalCostUsd: total.totalCostUsd + row.costUsd,
     totalDurationMinutes: total.totalDurationMinutes + row.durationMinutes,
+    requestCount: mergeRequestCount(total.requestCount, row.requestCount),
+    knownRequestCount: mergeKnownRequestCount(
+      total.knownRequestCount,
+      row.knownRequestCount,
+    ),
   }), {
     inputTokens: 0,
     outputTokens: 0,
