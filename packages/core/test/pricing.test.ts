@@ -140,6 +140,30 @@ test('grok-4.7 resolves the current official xAI price', () => {
   assert.equal(p.cache_read, 0.5);
 });
 
+test('Xiaomi/Mimo v2.6 series resolves to current official prices', () => {
+  const flash = getModelPricing('mimo-v2.6-flash', { source: 'mimo' });
+  assert.equal(flash.input, 0.14);
+  assert.equal(flash.output, 0.28);
+  assert.equal(flash.cache_read, 0.0028);
+
+  const pro = getModelPricing('mimo-v2.6-pro', { source: 'mimo' });
+  assert.equal(pro.input, 0.435);
+  assert.equal(pro.output, 0.87);
+  assert.equal(pro.cache_read, 0.0036);
+
+  const ultra = getModelPricing('mimo-v2.6-pro-ultraspeed', { source: 'mimo' });
+  assert.equal(ultra.input, 4.35);
+  assert.equal(ultra.output, 8.7);
+  assert.equal(ultra.cache_read, 0.036);
+});
+
+test('mimo-v2.6-pro-ultraspeed does not fall through to the v2-pro catch-all', () => {
+  const p = getModelPricing('mimo-v2.6-pro-ultraspeed', { source: 'mimo' });
+  // v2-pro is 0.435/0.87 — guard against the catch-all shadow regression
+  assert.notEqual(p.input, 0.435);
+  assert.notEqual(p.output, 0.87);
+});
+
 test('GLM 5.3 Flash and FlashX resolve current official-channel prices', () => {
   const flash = getModelPricing('glm-5.3-flash');
   assert.equal(flash.input, 0.15);
