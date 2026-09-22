@@ -129,10 +129,10 @@ export function metricsFromBucket(row: QueueBucket): LocalUsageMetrics {
     valid && (evidence ? evidence.cacheReadComplete : legacyCache);
   const writeKnown =
     valid && (evidence ? evidence.cacheWriteComplete : legacyCache);
-  // Legacy buckets lack local_metrics evidence; conversation_count is a lower bound.
-  const legacyKnown =
+  // Prefer localEvidence (cc-switch-style). Else conversation_count
+  // (TokenTracker-style) is a known lower bound for any source that records it.
+  const conversationKnown =
     !countValid &&
-    legacyCache &&
     Number.isSafeInteger(row.conversation_count) &&
     row.conversation_count > 0
       ? row.conversation_count
@@ -148,7 +148,7 @@ export function metricsFromBucket(row: QueueBucket): LocalUsageMetrics {
       countValid && evidence.requestCountComplete
         ? evidence.requestCount
         : null,
-    knownRequestCount: countValid ? evidence.requestCount : legacyKnown,
+    knownRequestCount: countValid ? evidence.requestCount : conversationKnown,
     cacheHitRate: null,
     missingReasons: [
       ...new Set<LocalMetricMissingReason>([

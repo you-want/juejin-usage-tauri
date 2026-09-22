@@ -73,6 +73,26 @@ test('missing, invalid, legacy and zero usage remain distinct', () => {
     null,
   );
   assert.equal(
+    metricsFromBucket(
+      sampleBucket({
+        source: 'gemini',
+        local_metrics: undefined,
+        conversation_count: 3,
+      }),
+    ).knownRequestCount,
+    3,
+  );
+  assert.equal(
+    metricsFromBucket(
+      sampleBucket({
+        source: 'gemini',
+        local_metrics: undefined,
+        conversation_count: 3,
+      }),
+    ).requestCount,
+    null,
+  );
+  assert.equal(
     metricsFromBucket(sampleBucket({ input_tokens: -1 })).cacheReadTokens,
     null,
   );

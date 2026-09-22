@@ -336,10 +336,8 @@ function TokenBreakdownPanel({
       </p>
       {showRequestHelp ? (
         <p className="pt-1 text-[10px] leading-4 text-muted">
-          「请求数」来自本地解析累计
-          {requestIncomplete
-            ? '；部分来源缺少完整请求证据时，数字可能偏低'
-            : ''}
+          请求数优先用本地请求证据；无证据时按 conversation 累计
+          {requestIncomplete ? '，不完整时可能偏低' : ''}
           。
         </p>
       ) : null}
