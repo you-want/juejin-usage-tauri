@@ -32,6 +32,8 @@ interface DashboardOverviewCardProps {
   onSelectDate?: (date: string) => void;
   /** Local CLI/Desktop only: show request count + cache hit captions. */
   showLocalMetrics?: boolean;
+  /** Optional content rendered between the four metric cards and the heatmap. */
+  belowMetrics?: ReactNode;
 }
 
 /** Four inline metrics and the daily heatmap, styled to match the tray overview. */
@@ -45,6 +47,7 @@ export const DashboardOverviewCard = memo(function DashboardOverviewCard({
   selectedDate = null,
   onSelectDate,
   showLocalMetrics = false,
+  belowMetrics,
 }: DashboardOverviewCardProps) {
   const metricTrendValues = useMemo(
     () => buildUsageMetricTrendValues(metricTrendRows),
@@ -175,6 +178,8 @@ export const DashboardOverviewCard = memo(function DashboardOverviewCard({
           </Card>
         ))}
       </div>
+
+      {belowMetrics}
 
       <div className="mt-4 rounded-2xl border border-border/60 bg-surface p-4 sm:p-5">
         <HeatmapSection

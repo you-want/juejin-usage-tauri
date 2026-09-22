@@ -14,7 +14,7 @@ const INITIAL_SNAPSHOT: CodexSubscriptionSnapshot = {
   message: null,
 };
 
-/** Compact local ChatGPT/Codex allowance summary for the macOS tray. */
+/** Compact local ChatGPT/Codex allowance summary for macOS desktop surfaces. */
 export function CodexSubscriptionCard() {
   const [snapshot, setSnapshot] = useState<CodexSubscriptionSnapshot>(INITIAL_SNAPSHOT);
   const [loading, setLoading] = useState(true);
@@ -54,6 +54,7 @@ export function CodexSubscriptionCard() {
             remainingPercent: snapshot.fiveHour
               ? codexRemainingPercent(snapshot.fiveHour.usedPercent)
               : null,
+            resetsAt: snapshot.fiveHour?.resetsAt,
           },
           {
             color: '#2b7eff',
@@ -61,8 +62,10 @@ export function CodexSubscriptionCard() {
             remainingPercent: snapshot.weekly
               ? codexRemainingPercent(snapshot.weekly.usedPercent)
               : null,
+            resetsAt: snapshot.weekly?.resetsAt,
           },
         ],
+        planLabel: snapshot.planLabel,
         title: 'Codex',
       }}
       loading={loading}

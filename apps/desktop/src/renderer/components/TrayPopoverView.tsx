@@ -38,19 +38,7 @@ import {
 } from '@/lib/usage-filter';
 import { Check } from '@gravity-ui/icons';
 import { ThemeToggle } from './ThemeToggle';
-import { CodexSubscriptionCard } from './CodexSubscriptionCard';
-import { ClaudeSubscriptionCard } from './ClaudeSubscriptionCard';
-import { CursorSubscriptionCard } from './CursorSubscriptionCard';
-import { GrokSubscriptionCard } from './GrokSubscriptionCard';
-import { KimiSubscriptionCard } from './KimiSubscriptionCard';
-import { ZcodeSubscriptionCard } from './ZcodeSubscriptionCard';
-import { AntigravitySubscriptionCard } from './AntigravitySubscriptionCard';
-import { QoderSubscriptionCard } from './QoderSubscriptionCard';
-import { MiniMaxSubscriptionCard } from './MiniMaxSubscriptionCard';
-import { DeepSeekSubscriptionCard } from './DeepSeekSubscriptionCard';
-import { OpenCodeSubscriptionCard } from './OpenCodeSubscriptionCard';
-import { TraeSubscriptionGroup } from './TraeSubscriptionGroup';
-import { WorkBuddySubscriptionGroup } from './WorkBuddySubscriptionGroup';
+import { SubscriptionUsageGrid } from './SubscriptionUsageGrid';
 import { DEFAULT_DASHBOARD_RANGE } from '../../shared/dashboard-range';
 import './TrayPopoverView.css';
 
@@ -403,21 +391,7 @@ export function TrayPopoverView() {
           <h1 className="text-md text-foreground">用量概览</h1>
           <ThemeToggle />
         </div>
-        <section aria-label="订阅额度" className="grid grid-cols-2 gap-2.5 empty:hidden">
-          <CodexSubscriptionCard />
-          <ClaudeSubscriptionCard />
-          <CursorSubscriptionCard />
-          <GrokSubscriptionCard />
-          <KimiSubscriptionCard />
-          <ZcodeSubscriptionCard />
-          <AntigravitySubscriptionCard />
-          <QoderSubscriptionCard />
-          <MiniMaxSubscriptionCard />
-          <OpenCodeSubscriptionCard />
-          <DeepSeekSubscriptionCard />
-          <WorkBuddySubscriptionGroup />
-          <TraeSubscriptionGroup />
-        </section>
+        <SubscriptionUsageGrid className="grid-cols-2 gap-2.5" />
         <div className="flex min-w-0 items-center gap-2">
           <Tabs
             className="w-fit shrink-0 text-center"

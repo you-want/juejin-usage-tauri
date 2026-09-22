@@ -1,20 +1,30 @@
 import { WorkBuddySubscriptionCard } from './WorkBuddySubscriptionCard';
 import type { WorkBuddySubscriptionSnapshot } from '../../shared/workbuddy-subscription';
 
-/** Mounts Workbuddy and Workbuddy CN cards in the tray grid. */
-export function WorkBuddySubscriptionGroup() {
+/** Mounts Workbuddy and Workbuddy CN cards in a subscription grid. */
+export function WorkBuddySubscriptionGroup({
+  showGlobal = true,
+  showMainland = true,
+}: {
+  showGlobal?: boolean;
+  showMainland?: boolean;
+} = {}) {
   return (
     <>
-      <WorkBuddySubscriptionCard
-        region="global"
-        title="Workbuddy"
-        fetcher={() => window.tud.getWorkBuddyGlobalSubscription() as Promise<WorkBuddySubscriptionSnapshot>}
-      />
-      <WorkBuddySubscriptionCard
-        region="mainland"
-        title="Workbuddy CN"
-        fetcher={() => window.tud.getWorkBuddyMainlandSubscription() as Promise<WorkBuddySubscriptionSnapshot>}
-      />
+      {showGlobal ? (
+        <WorkBuddySubscriptionCard
+          region="global"
+          title="Workbuddy"
+          fetcher={() => window.tud.getWorkBuddyGlobalSubscription() as Promise<WorkBuddySubscriptionSnapshot>}
+        />
+      ) : null}
+      {showMainland ? (
+        <WorkBuddySubscriptionCard
+          region="mainland"
+          title="Workbuddy CN"
+          fetcher={() => window.tud.getWorkBuddyMainlandSubscription() as Promise<WorkBuddySubscriptionSnapshot>}
+        />
+      ) : null}
     </>
   );
 }

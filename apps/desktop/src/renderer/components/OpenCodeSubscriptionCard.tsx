@@ -15,7 +15,7 @@ const INITIAL_SNAPSHOT: OpenCodeSubscriptionSnapshot = {
   message: null,
 };
 
-/** Compact OpenCode Go subscription allowance summary for the macOS tray. */
+/** Compact OpenCode Go subscription allowance summary for macOS desktop surfaces. */
 export function OpenCodeSubscriptionCard() {
   const [snapshot, setSnapshot] = useState<OpenCodeSubscriptionSnapshot>(INITIAL_SNAPSHOT);
   const [loading, setLoading] = useState(true);
@@ -49,7 +49,9 @@ export function OpenCodeSubscriptionCard() {
           color: index === 0 && snapshot.limits.length > 1 ? '#7dcf00' : '#2b7eff',
           label: limit.label,
           remainingPercent: openCodeRemainingPercent(limit.usedPercent),
+          resetsAt: limit.resetsAt,
         })),
+        planLabel: snapshot.planLabel,
         stale: snapshot.stale,
         title: 'OpenCode',
       }}

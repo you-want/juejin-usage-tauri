@@ -16,7 +16,7 @@ const INITIAL_SNAPSHOT: MiniMaxSubscriptionSnapshot = {
   message: null,
 };
 
-/** Compact local MiniMax Code Coding Plan allowance summary for the macOS tray. */
+/** Compact local MiniMax Code Coding Plan allowance summary for macOS desktop surfaces. */
 export function MiniMaxSubscriptionCard() {
   const [snapshot, setSnapshot] = useState<MiniMaxSubscriptionSnapshot>(INITIAL_SNAPSHOT);
   const [loading, setLoading] = useState(true);
@@ -56,7 +56,9 @@ export function MiniMaxSubscriptionCard() {
           color: index === 0 && snapshot.limits.length > 1 ? '#ff6a00' : '#2b7eff',
           label: limit.label,
           remainingPercent: miniMaxRemainingPercent(limit.usedPercent),
+          resetsAt: limit.resetsAt,
         })),
+        planLabel: snapshot.planLabel,
         stale: snapshot.stale,
         title,
       }}

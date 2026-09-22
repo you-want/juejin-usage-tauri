@@ -23,7 +23,7 @@ interface TraeSubscriptionCardProps {
   fetcher: () => Promise<TraeSubscriptionSnapshot>;
 }
 
-/** Compact TRAE IDE entitlement summary for the macOS tray. */
+/** Compact TRAE IDE entitlement summary for macOS desktop surfaces. */
 export function TraeSubscriptionCard({ region, title, fetcher }: TraeSubscriptionCardProps) {
   const [snapshot, setSnapshot] = useState<TraeSubscriptionSnapshot>({
     ...INITIAL_SNAPSHOT,
@@ -60,7 +60,9 @@ export function TraeSubscriptionCard({ region, title, fetcher }: TraeSubscriptio
           color: ['#7dcf00', '#2b7eff', '#f59e0b'][index] ?? '#2b7eff',
           label: limit.label,
           remainingPercent: traeRemainingPercent(limit.usedPercent),
+          resetsAt: limit.resetsAt,
         })),
+        planLabel: snapshot.planLabel,
         stale: snapshot.stale,
         title,
       }}

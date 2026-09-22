@@ -51,8 +51,10 @@ export function ZcodeSubscriptionCard() {
             color: index === 0 && all.length > 1 ? '#7dcf00' : '#2b7eff',
             label: limit.label,
             remainingPercent: zcodeRemainingPercent(limit.usedPercent),
+            resetsAt: limit.resetsAt,
           })),
         stale: false,
+        planLabel: snapshot.planLabel,
         title: 'ZCode',
       }}
       loading={loading}
