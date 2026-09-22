@@ -1,5 +1,22 @@
 # @juejin-opensource/jusage-core
 
+## 0.1.12
+
+### Patch Changes
+
+- 支持读取 CodeBuddy 桌面应用与 VSCode / Cursor 插件的用量数据，并按项目目录归属；补充腾讯 hy4-preview 定价与 codebuddy「auto」模型别名。
+- Codex 会话迁入数据库后删除的历史文件用量，改为按线程账本累计总量补齐；历史文件仍在时按文件拆分，账本只补差额。
+- 修复 Desktop 同步 DSH 时 `tud-sync-worker` 100% CPU 永久卡死：多帧 zstd 改用纯 JS 解码器。首次同步大体积会话可能多花约十秒，日常增量不受影响。
+- 修复新版 Cline 用量无法采集：新增读取 `~/.cline/data/sessions` SDK 会话，同时保留旧版 VS Code globalStorage 逻辑。
+- 修复 Hermes Agent 用量被记到「会话开始那天」：改为按最后一次活动时间归集。已写入历史不会自动重排；扩大时间范围触发全量重扫时日分布可能变化。
+- 修复新版 ZCode 不再记录 token：兼容 `providerId`，并优先读取 `model_usage` 表（修正缓存 token 双倍计入）；旧版仍回退 message 表。
+- 修复 zcode「总 Token」少算 reasoning：面板按五项明细求和，并自愈存量 zcode 桶。
+- 修复同步撞上日志写入中途时，半截记录被跳过后永久丢失：游标停在最后一条完整记录。
+- 概览卡副文案展示请求数与缓存命中率；请求数优先用本地请求证据，其余渠道回退 conversation 计数。
+- 数据校对失败时，报错带上失败日期、本地事件数与服务端窗口。
+- 修复 Windows 上 Claude Code `notify.cmd: command not found`；旧 hook 下次启动时自动更正。
+- 内置定价表同步 models.dev 官方渠道价格，含 Grok 4.7 与近期 GLM 模型。
+
 ## 0.1.11
 
 ### Patch Changes

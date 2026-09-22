@@ -1,5 +1,19 @@
 # @juejin-opensource/jusage-desktop
 
+## 0.1.12
+
+### Patch Changes
+
+- 概览卡下方展示本机订阅额度卡片，可在设置中选择显示哪些渠道（默认开启；为空的渠道仍自动隐藏）；套餐档位与重置/到期时间展示更清晰。
+- 概览卡副文案展示请求数与缓存命中率。
+- 修复 Desktop 同步 DSH 时 worker 100% CPU 卡死；同步 worker 内置 5 分钟硬看门狗，卡死后自动重启。
+- 支持 CodeBuddy 扩展与新版 Cline SDK 用量；修复新版 ZCode 不记 token、以及 zcode 总 Token 少算 reasoning。
+- 修复 Hermes 用量日期、JSONL 半截行丢失，以及 Codex 账本补齐迁库后被删历史文件的用量。
+- 数据校对失败时带上失败日期与事件数。
+- 修复 Windows 上 Claude Code `notify.cmd: command not found`。
+- Updated dependencies
+  - @juejin-opensource/jusage-core@0.1.12
+
 ## 0.1.11
 
 ### Patch Changes

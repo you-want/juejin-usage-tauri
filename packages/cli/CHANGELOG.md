@@ -1,5 +1,16 @@
 # @juejin-opensource/jusage
 
+## 0.1.12
+
+### Patch Changes
+
+- 概览卡副文案展示请求数与缓存命中率。
+- 支持 CodeBuddy 扩展 / 新版 Cline；修复 DSH 同步卡死、Hermes 用量日期、ZCode 解析与 reasoning 合计、Codex 账本补齐、JSONL 半截行丢失。
+- 修复 Windows 上 Claude Code `notify.cmd: command not found`；旧 hook 下次启动时自动更正。
+- CLI 启动和状态输出不再显示完整云端上报 Token。
+- Updated dependencies
+  - @juejin-opensource/jusage-core@0.1.12
+
 ## 0.1.11
 
 ### Patch Changes
