@@ -136,6 +136,13 @@ export interface CursorsFile {
     files: Record<string, CodexFileCursor>;
     sessionIndex?: Record<string, CodexSessionIndexEntry>;
     seenHashes?: string[];
+    /**
+     * Lifetime upper bound already contributed for each Codex thread
+     * (precise JSONL rows plus any ledger gap). Missing on older cursors.
+     */
+    ledgerTotals?: Record<string, { tokens: number }>;
+    /** mtimeMs of each `state_*.sqlite` last read. */
+    dbMtimes?: Record<string, number>;
   };
   cursor?: {
     lastRecordTimestamp?: string | null;

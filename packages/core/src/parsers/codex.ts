@@ -2,6 +2,7 @@ import { localEvidence, validUsageFields } from '../local-metrics.js';
 import { createReadStream, type Stats } from 'node:fs';
 import { createInterface } from 'node:readline';
 import { stat } from 'node:fs/promises';
+import { basename } from 'node:path';
 import type {
   CodexFileCursor,
   CodexSessionFileMeta,
@@ -24,6 +25,11 @@ import {
   findJsonlFiles,
   type BucketAccumulator,
 } from './shared.js';
+import {
+  applyCodexLedger,
+  codexLedgerDbPaths,
+  type CodexRolloutScan,
+} from './codex-ledger.js';
 
 interface SessionMeta {
   id?: string;
@@ -181,6 +187,10 @@ export async function parseCodexIncremental(
   if (!codexCursor.files) codexCursor.files = {};
   const seenHashes = new Set(codexCursor.seenHashes ?? []);
   const bucketState: BucketAccumulator = new Map();
+  // Basenames already counted before this round. A file scanned now is not
+  // "already counted" — that would seed away a same-round ledger tail.
+  const priorRolloutNames = new Set(Object.keys(codexCursor.files).map((p) => basename(p)));
+  const rolloutScans = new Map<string, CodexRolloutScan>();
 
   const fileMeta = new Map<string, CodexSessionFileMeta>();
   const fileStats = new Map<string, Stats>();
@@ -232,6 +242,14 @@ export async function parseCodexIncremental(
     );
 
     if (sameInode && !truncated && startOffset >= st.size) continue;
+
+    const scan: CodexRolloutScan = {
+      emitted: 0,
+      lifetime: null,
+      observed: 0,
+      sessionId: meta.sessionId,
+    };
+    rolloutScans.set(basename(filePath), scan);
 
     const replayTokenCountToSkip = meta.forkedFromId
       ? (codexCursor.sessionIndex[meta.forkedFromId]?.tokenCount ?? 0)
@@ -295,6 +313,10 @@ export async function parseCodexIncremental(
       const prevTotals = prevTotalMap.get(modelKey);
       const rawUsage = pickDelta(lastUsage, totalUsage, prevTotals);
       if (totalUsage) prevTotalMap.set(modelKey, { ...totalUsage });
+      const cumulative = Number(totalUsage?.total_tokens);
+      if (Number.isFinite(cumulative) && cumulative > 0) {
+        scan.lifetime = scan.lifetime == null ? cumulative : Math.max(scan.lifetime, cumulative);
+      }
 
       const isReplayedHistory = tokenCountSeen < replayTokenCountToSkip;
       tokenCountSeen += 1;
@@ -316,10 +338,19 @@ export async function parseCodexIncremental(
         : undefined;
       const repeated = snapshot !== undefined && snapshot === lastUsageSnapshot;
       lastUsageSnapshot = snapshot;
-      if (isReplayedHistory || !rawUsage || repeated) continue;
+      if (isReplayedHistory || !rawUsage || repeated) {
+        // Fork replay is the parent's usage. Count it as seen so the ledger
+        // does not report it again, but do not emit it.
+        if (isReplayedHistory && rawUsage) {
+          const skipped = normalizeCodexUsage(rawUsage);
+          if (skipped) scan.observed += skipped.total_tokens;
+        }
+        continue;
+      }
 
       const delta = normalizeCodexUsage(rawUsage);
       if (!delta) continue;
+      scan.observed += delta.total_tokens;
 
       const ts = tokenEvent.timestamp;
       if (!ts) continue;
@@ -365,8 +396,11 @@ export async function parseCodexIncremental(
         hourStart,
         delta,
       );
+      scan.emitted += delta.total_tokens;
       eventsParsed += 1;
     }
+
+    scan.sessionId = sessionUuid ?? scan.sessionId;
 
     const prevTotalSave: CodexFileCursor['prevTotal'] = {};
     for (const [k, v] of prevTotalMap.entries()) {
@@ -386,6 +420,23 @@ export async function parseCodexIncremental(
   }
 
   codexCursor.seenHashes = Array.from(seenHashes);
+
+  // No ledger file: leave the cursor untouched so existing JSONL syncs stay
+  // byte-identical aside from the buckets they already produced.
+  if (codexLedgerDbPaths().length > 0) {
+    if (!codexCursor.ledgerTotals) codexCursor.ledgerTotals = {};
+    if (!codexCursor.dbMtimes) codexCursor.dbMtimes = {};
+    const ledger = applyCodexLedger({
+      dbMtimes: codexCursor.dbMtimes,
+      ledgerTotals: codexCursor.ledgerTotals,
+      priorRolloutNames,
+      scans: rolloutScans,
+      sinceMs,
+      bucketState,
+    });
+    eventsParsed += ledger.eventsParsed;
+    filesProcessed += ledger.filesProcessed;
+  }
 
   const buckets = bucketsFromState(bucketState, 'codex');
   return {
