@@ -300,6 +300,7 @@ type ReadSubscription = (
 
 - Desktop 用量页把订阅额度卡片放在顶部四个概览指标卡片下方、热力图上方；macOS 托盘弹层继续复用同一组卡片。
 - 设置 →「订阅」可按渠道开关是否允许展示；默认全部开启。偏好保存在 renderer 的 `localStorage`（`tud.subscriptionChannelVisibility`）。
+- 当前设置与网格仅包含已可本地读取额度的渠道；Trae / WorkBuddy 等尚未落地的适配器不进入开关列表，也不挂载卡片。
 - 渠道关闭后不挂载对应卡片；开启后仍遵循现有自动识别：加载中或无可展示额度时不占位。
 
 ## 5. 当前协议约束与演进原则

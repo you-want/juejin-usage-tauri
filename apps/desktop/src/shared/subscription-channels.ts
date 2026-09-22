@@ -6,6 +6,7 @@ export const SUBSCRIPTION_CHANNEL_VISIBILITY_KEY =
 export const SUBSCRIPTION_CHANNEL_VISIBILITY_EVENT =
   'tud:subscription-channel-visibility';
 
+/** Channels with a working local subscription adapter (excludes Trae / WorkBuddy stubs). */
 export const SUBSCRIPTION_CHANNELS = [
   { id: 'codex', label: 'Codex' },
   { id: 'claude', label: 'Claude' },
@@ -18,10 +19,6 @@ export const SUBSCRIPTION_CHANNELS = [
   { id: 'minimax', label: 'MiniMax' },
   { id: 'opencode', label: 'OpenCode' },
   { id: 'deepseek', label: 'DeepSeek' },
-  { id: 'workbuddy', label: 'Workbuddy' },
-  { id: 'workbuddy-cn', label: 'Workbuddy CN' },
-  { id: 'trae', label: 'TRAE' },
-  { id: 'trae-cn', label: 'TRAE CN' },
 ] as const;
 
 export type SubscriptionChannelId =

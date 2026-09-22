@@ -8,8 +8,6 @@ import { KimiSubscriptionCard } from './KimiSubscriptionCard';
 import { MiniMaxSubscriptionCard } from './MiniMaxSubscriptionCard';
 import { OpenCodeSubscriptionCard } from './OpenCodeSubscriptionCard';
 import { QoderSubscriptionCard } from './QoderSubscriptionCard';
-import { TraeSubscriptionGroup } from './TraeSubscriptionGroup';
-import { WorkBuddySubscriptionGroup } from './WorkBuddySubscriptionGroup';
 import { ZcodeSubscriptionCard } from './ZcodeSubscriptionCard';
 import { useSubscriptionChannelVisibility } from '@/hooks/useSubscriptionChannelVisibility';
 
@@ -37,14 +35,6 @@ export function SubscriptionUsageGrid({ className = '' }: SubscriptionUsageGridP
       {isEnabled('minimax') ? <MiniMaxSubscriptionCard /> : null}
       {isEnabled('opencode') ? <OpenCodeSubscriptionCard /> : null}
       {isEnabled('deepseek') ? <DeepSeekSubscriptionCard /> : null}
-      <WorkBuddySubscriptionGroup
-        showGlobal={isEnabled('workbuddy')}
-        showMainland={isEnabled('workbuddy-cn')}
-      />
-      <TraeSubscriptionGroup
-        showGlobal={isEnabled('trae')}
-        showMainland={isEnabled('trae-cn')}
-      />
     </section>
   );
 }
