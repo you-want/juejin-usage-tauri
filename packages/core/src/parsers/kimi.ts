@@ -9,8 +9,8 @@
  *   - kimiLegacyHome() / kimiLegacySessionsDir()
  *   - kimiCodeSessionIndexPath()
  */
-import { createReadStream, existsSync, readFileSync, readdirSync } from 'node:fs';
-import { createInterface } from 'node:readline';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { createJsonlLineReader } from './jsonl-tail.js';
 import { createHash } from 'node:crypto';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
@@ -303,10 +303,9 @@ async function parseKimiCodeWireFile(opts: {
   const project = kimiCodeProjectForWire(filePath, sessionIndex);
   let eventsParsed = 0;
 
-  const stream = createReadStream(filePath, { start: startOffset });
-  const rl = createInterface({ input: stream, crlfDelay: Infinity });
+  const reader = createJsonlLineReader(filePath, startOffset);
 
-  for await (const line of rl) {
+  for await (const line of reader) {
     if (!line.trim()) continue;
     let entry: Record<string, unknown>;
     try {
@@ -350,7 +349,13 @@ async function parseKimiCodeWireFile(opts: {
     eventsParsed += 1;
   }
 
-  fileOffsets[filePath] = { inode, size: st.size, mtimeMs: st.mtimeMs, offset: st.size, model: fileModel };
+  fileOffsets[filePath] = {
+    inode,
+    size: reader.nextOffset,
+    mtimeMs: st.mtimeMs,
+    offset: reader.nextOffset,
+    model: fileModel,
+  };
   return { eventsParsed, filesProcessed: 1 };
 }
 
@@ -382,10 +387,9 @@ async function parseKimiLegacyWireFile(opts: {
   let currentModel = defaultModel;
   let eventsParsed = 0;
 
-  const stream = createReadStream(filePath, { start: startOffset });
-  const rl = createInterface({ input: stream, crlfDelay: Infinity });
+  const reader = createJsonlLineReader(filePath, startOffset);
 
-  for await (const line of rl) {
+  for await (const line of reader) {
     if (!line.trim()) continue;
     let entry: Record<string, unknown>;
     try {
@@ -433,7 +437,12 @@ async function parseKimiLegacyWireFile(opts: {
     eventsParsed += 1;
   }
 
-  fileOffsets[filePath] = { inode, size: st.size, mtimeMs: st.mtimeMs, offset: st.size };
+  fileOffsets[filePath] = {
+    inode,
+    size: reader.nextOffset,
+    mtimeMs: st.mtimeMs,
+    offset: reader.nextOffset,
+  };
   return { eventsParsed, filesProcessed: 1 };
 }
 

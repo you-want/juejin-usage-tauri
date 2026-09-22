@@ -3,10 +3,10 @@
  *   openclawRoots(): string[]  — OPENCLAW_STATE_DIR or ~/.openclaw*, legacy clawdbot/moltbot/moldbot
  *   findOpenclawSessionFiles(roots?: string[]): string[]  — agents/<id>/sessions/*.jsonl
  */
-import { createReadStream, existsSync, readdirSync } from 'node:fs';
+import { existsSync, readdirSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, join } from 'node:path';
-import { createInterface } from 'node:readline';
+import { createJsonlLineReader } from './jsonl-tail.js';
 import { stat } from 'node:fs/promises';
 
 import type { CursorsFile, QueueBucket, TokenTotals } from '../types.js';
@@ -221,10 +221,9 @@ export async function parseOpenclawIncremental(
     if (sameInode && !truncated && startOffset >= st.size) continue;
 
     const project = projectFromPath(filePath);
-    const stream = createReadStream(filePath, { start: startOffset });
-    const rl = createInterface({ input: stream, crlfDelay: Infinity });
+    const reader = createJsonlLineReader(filePath, startOffset);
 
-    for await (const line of rl) {
+    for await (const line of reader) {
       if (!line.trim()) continue;
       if (!line.includes('"usage"')) continue;
 
@@ -274,7 +273,7 @@ export async function parseOpenclawIncremental(
       eventsParsed += 1;
     }
 
-    fileCursors[filePath] = { inode, offset: st.size };
+    fileCursors[filePath] = { inode, offset: reader.nextOffset };
     filesProcessed += 1;
   }
 

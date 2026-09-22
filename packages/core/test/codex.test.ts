@@ -332,3 +332,31 @@ test('parseCodexIncremental folds early unknown token_count into the later model
     assert.equal(result.buckets[0]?.total_tokens, 65);
   });
 });
+
+test('parseCodexIncremental does not lose a record written across two scans', async () => {
+  const tempHome = await mkdtemp(join(tmpdir(), 'ai-usage-codex-partial-'));
+  const sessionsDir = join(tempHome, '.codex', 'sessions', '2026', '06', '09');
+  await mkdir(sessionsDir, { recursive: true });
+  const filePath = join(sessionsDir, 'rollout-partial.jsonl');
+
+  const meta =
+    '{"type":"session_meta","timestamp":"2026-06-09T20:46:00.000Z","payload":{"id":"partial-session","cwd":"/Users/dev/my-app"}}';
+  const usage =
+    '{"type":"event_msg","timestamp":"2026-06-09T20:46:30.000Z","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":50,"cached_input_tokens":0,"output_tokens":10,"reasoning_output_tokens":0,"total_tokens":60},"model":"gpt-5.4"}}}';
+
+  await writeFile(filePath, `${meta}\n${usage.slice(0, 40)}`, 'utf8');
+
+  await withIsolatedCodexHome(tempHome, async () => {
+    const first = await parseCodexIncremental({}, '2026-01-01T00:00:00.000Z');
+    assert.equal(first.result.eventsParsed, 0);
+
+    await writeFile(filePath, `${meta}\n${usage}\n`, 'utf8');
+    const second = await parseCodexIncremental(first.cursors, '2026-01-01T00:00:00.000Z');
+    assert.equal(second.result.eventsParsed, 1);
+    assert.equal(second.result.buckets[0]?.input_tokens, 50);
+    assert.equal(second.result.buckets[0]?.output_tokens, 10);
+
+    const third = await parseCodexIncremental(second.cursors, '2026-01-01T00:00:00.000Z');
+    assert.equal(third.result.eventsParsed, 0);
+  });
+});

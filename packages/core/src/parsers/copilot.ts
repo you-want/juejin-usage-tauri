@@ -1,6 +1,6 @@
-import { existsSync, readdirSync, createReadStream } from 'node:fs';
+import { existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { createInterface } from 'node:readline';
+import { createJsonlLineReader } from './jsonl-tail.js';
 import { stat } from 'node:fs/promises';
 
 import type { CursorsFile, QueueBucket, TokenTotals } from '../types.js';
@@ -97,10 +97,9 @@ export async function parseCopilotIncremental(
     // resuming mid-file, restore it from the cursor instead of 'unknown'.
     let currentProject =
       startOffset > 0 ? (prev?.project ?? 'unknown') : 'unknown';
-    const stream = createReadStream(filePath, { start: startOffset });
-    const rl = createInterface({ input: stream, crlfDelay: Infinity });
+    const reader = createJsonlLineReader(filePath, startOffset);
 
-    for await (const line of rl) {
+    for await (const line of reader) {
       if (!line.trim()) continue;
       let obj: {
         type?: string;
@@ -152,7 +151,7 @@ export async function parseCopilotIncremental(
       }
     }
 
-    fileCursors[filePath] = { inode, offset: st.size, project: currentProject };
+    fileCursors[filePath] = { inode, offset: reader.nextOffset, project: currentProject };
     filesProcessed += 1;
   }
 
