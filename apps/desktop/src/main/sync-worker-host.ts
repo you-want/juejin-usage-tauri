@@ -40,6 +40,9 @@ function handleMessage(data: unknown): void {
     return;
   }
   if (msg.type === 'syncDone') {
+    // 在同步成功后清零，而非 ready：看门狗若在同步中途 SIGKILL，
+    // ready 清零会使 crashRestarts 永远无法累计到上限 5。
+    crashRestarts = 0;
     const waiter = pending.get(msg.id);
     if (!waiter) return;
     pending.delete(msg.id);
@@ -47,6 +50,8 @@ function handleMessage(data: unknown): void {
     return;
   }
   if (msg.type === 'syncError') {
+    // 业务错误时进程仍存活，视为一次健康周期结束。
+    crashRestarts = 0;
     const waiter = pending.get(msg.id);
     if (!waiter) return;
     pending.delete(msg.id);
@@ -137,7 +142,6 @@ export async function startSyncWorker(dataDir: string): Promise<boolean> {
     spawned.postMessage({ type: 'init', dataDir } satisfies SyncWorkerRequest);
     await waitReady;
     ready = true;
-    crashRestarts = 0;
     console.log(
       `[tud-desktop] sync utilityProcess ready pid=${spawned.pid ?? '?'}`,
     );

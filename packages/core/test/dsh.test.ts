@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import * as zlib from 'node:zlib';
@@ -392,6 +392,57 @@ test('parseDshIncremental parses session.v3.jsonl.zstd with reasoning tokens', a
     assert.equal(b.reasoning_output_tokens, 74);
     assert.equal(b.total_tokens, 8693 + 189 + 500 + 20);
     assert.equal(b.conversation_count, 1);
+  } finally {
+    if (prev === undefined) delete process.env.DSH_HOME;
+    else process.env.DSH_HOME = prev;
+  }
+});
+
+test('parseDshIncremental keeps completed frames when the trailing frame is truncated', async () => {
+  const home = mkdtempSync(join(tmpdir(), 'tud-dsh-trunc-'));
+  const prev = process.env.DSH_HOME;
+  process.env.DSH_HOME = home;
+  try {
+    const file = await writeSession(home, 'ws-a', 's1', '/tmp/proj/trunc', [
+      { model: 'deepseek-v4-pro', input: 10, output: 5, cacheRead: 20, id: 'm1', time: 1787830861590 },
+      { model: 'deepseek-v4-pro', input: 7, output: 3, cacheRead: 11, id: 'm2', time: 1787830862590 },
+      { model: 'glm-5.2', input: 8, output: 2, cacheRead: 9, id: 'm3', time: 1787830863590 },
+    ], { multiFrame: true });
+
+    const intact = readFileSync(file);
+    // 截断末帧中部，模拟写入中的半帧文件。
+    // writeSession 末帧为无用量的 tool/result；前缀应仍解析出 3 条 assistant 用量
+    //（整文件丢弃则会 eventsParsed=0）。
+    let offset = 0;
+    let lastStart = 0;
+    let lastLen = 0;
+    while (offset < intact.length) {
+      const res = zlib.zstdDecompressSync(intact.subarray(offset), { info: true }) as unknown as {
+        buffer: Buffer;
+        engine?: { bytesWritten?: number };
+      };
+      const consumed = res.engine?.bytesWritten ?? 0;
+      assert.ok(consumed > 0);
+      lastStart = offset;
+      lastLen = consumed;
+      offset += consumed;
+    }
+    assert.ok(lastLen > 8, 'expected a non-trivial trailing frame');
+    writeFileSync(file, intact.subarray(0, lastStart + Math.floor(lastLen / 2)));
+
+    const { result } = await parseDshIncremental(emptyCursors(), SINCE);
+    assert.equal(result.eventsParsed, 3);
+    assert.equal(result.filesProcessed, 1);
+    const totals = result.buckets.reduce(
+      (acc, b) => {
+        acc.input += b.input_tokens;
+        acc.output += b.output_tokens;
+        acc.cache += b.cached_input_tokens;
+        return acc;
+      },
+      { input: 0, output: 0, cache: 0 },
+    );
+    assert.deepEqual(totals, { input: 25, output: 10, cache: 40 });
   } finally {
     if (prev === undefined) delete process.env.DSH_HOME;
     else process.env.DSH_HOME = prev;

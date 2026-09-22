@@ -20,11 +20,13 @@ import type { SyncWorkerRequest, SyncWorkerResponse } from './sync-worker-protoc
 process.title = 'tud-sync-worker';
 
 /**
- * 硬看门狗：同步源里的原生故障（如 #187 的 zstd 多帧解码崩溃）可能把事件循环
- * wedge 成 100% CPU 自旋——此时本进程内的定时器永远不会触发，宿主的崩溃重启
- * （crashRestarts）也永远不生效，进程会僵死数小时。看门狗跑在独立事件循环的
- * worker 线程里，主线程定期喂活；超时未喂（事件循环卡死）就用 SIGKILL 结束整
- * 个进程，把僵死转化为宿主已有机制能处理的普通崩溃重启。
+ * 硬看门狗：主线程事件循环连续 5 分钟无法运行定时器时 SIGKILL 本进程。
+ *
+ * 问题：原生层故障（如 #187 zstd SIGTRAP）可能使事件循环自旋卡死，进程内
+ * 定时器永不触发，宿主 crashRestarts 因进程未退出而无法生效。
+ * 做法：看门狗跑在独立 worker 线程；主线程每 30s 喂活一次。超时未喂则
+ * SIGKILL，将僵死转为普通崩溃，由宿主按既有逻辑重启。正常长同步只要
+ * 事件循环仍可调度喂活，不会被终止。
  */
 const WATCHDOG_FEED_MS = 30_000;
 const WATCHDOG_CHECK_MS = 15_000;
@@ -44,10 +46,9 @@ setInterval(() => {
   try {
     const watchdog = new Worker(workerSrc, { eval: true });
     watchdog.unref();
-    // worker 侧以 spawn 时刻为基线，主循环每 30s 喂活一次。
     setInterval(() => watchdog.postMessage('feed'), WATCHDOG_FEED_MS).unref();
   } catch {
-    // 看门狗起不来只损失僵死自愈能力，不影响同步本身。
+    // 启动失败仅失去僵死自愈，同步逻辑不受影响。
   }
 }
 
