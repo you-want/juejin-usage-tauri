@@ -1,4 +1,15 @@
+import type {
+  LocalMetricEvidence,
+  LocalUsageMetrics,
+} from './local-metrics.js';
+export type {
+  LocalMetricEvidence,
+  LocalUsageMetrics,
+} from './local-metrics.js';
+
 export interface QueueBucket {
+  /** Local-only request/cache evidence. Never uploaded. */
+  local_metrics?: LocalMetricEvidence;
   hour_start: string;
   source: string;
   model: string;
@@ -22,6 +33,7 @@ export interface QueueBucket {
 }
 
 export interface TokenTotals {
+  local_metrics?: LocalMetricEvidence;
   input_tokens: number;
   output_tokens: number;
   cached_input_tokens: number;
@@ -73,17 +85,22 @@ export interface ClaudeFileCursor {
 }
 
 export interface CodexFileCursor {
+  /** Last cumulative snapshot, used to ignore repeated usage notifications. */
+  lastUsageSnapshot?: string;
   inode: number;
   offset: number;
   tokenCountSeen?: number;
-  prevTotal?: Record<string, {
-    input_tokens?: number;
-    output_tokens?: number;
-    cached_input_tokens?: number;
-    cache_creation_input_tokens?: number;
-    reasoning_output_tokens?: number;
-    total_tokens?: number;
-  }>;
+  prevTotal?: Record<
+    string,
+    {
+      input_tokens?: number;
+      output_tokens?: number;
+      cached_input_tokens?: number;
+      cache_creation_input_tokens?: number;
+      reasoning_output_tokens?: number;
+      total_tokens?: number;
+    }
+  >;
   /**
    * Model in effect at `offset`. Later tail scans restore this so
    * `token_count` events that omit `info.model` are not filed as `unknown`.
@@ -506,6 +523,7 @@ export interface ManifestFile {
 }
 
 export interface ModelUsageRow {
+  localMetrics?: LocalUsageMetrics;
   model: string;
   tokens: number;
   costUsd: number;
@@ -513,6 +531,7 @@ export interface ModelUsageRow {
 }
 
 export interface SourceUsageRow {
+  localMetrics?: LocalUsageMetrics;
   source: string;
   tokens: number;
   costUsd: number;
@@ -521,6 +540,10 @@ export interface SourceUsageRow {
 }
 
 export interface UsageSummary {
+  /** Aggregated local request/cache evidence across the summary window. */
+  localMetrics?: LocalUsageMetrics;
+  /** Same evidence restricted to the local "today" date. */
+  todayLocalMetrics?: LocalUsageMetrics;
   totalTokens: number;
   totalCostUsd: number;
   todayTokens: number;
@@ -548,6 +571,14 @@ export interface DailyUsageRow {
   outputTokens?: number;
   cachedInputTokens?: number;
   cacheCreationInputTokens?: number;
+  /** Per-source local evidence for this day (additive requestCount). */
+  sources?: Array<{
+    source: string;
+    tokens: number;
+    costUsd: number;
+    localMetrics: LocalUsageMetrics;
+  }>;
+  localMetrics?: LocalUsageMetrics;
 }
 
 export interface DailyUsageResponse {
@@ -565,6 +596,7 @@ export interface HourlyUsageRow {
   inputTokens: number;
   outputTokens: number;
   cachedInputTokens: number;
+  localMetrics?: LocalUsageMetrics;
 }
 
 export interface HourlyUsageResponse {
@@ -573,6 +605,7 @@ export interface HourlyUsageResponse {
 }
 
 export interface ModelBreakdownRow {
+  localMetrics?: LocalUsageMetrics;
   model: string;
   source: string;
   tokens: number;
@@ -581,6 +614,7 @@ export interface ModelBreakdownRow {
 }
 
 export interface ProjectModelBreakdownRow {
+  localMetrics?: LocalUsageMetrics;
   model: string;
   source: string;
   tokens: number;
@@ -590,6 +624,7 @@ export interface ProjectModelBreakdownRow {
 }
 
 export interface ProjectBreakdownRow {
+  localMetrics?: LocalUsageMetrics;
   project: string;
   tokens: number;
   costUsd: number;

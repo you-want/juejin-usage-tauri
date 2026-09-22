@@ -388,3 +388,59 @@ describe('buildToolModelDistributions', () => {
     assert.equal(modelSum, visibleSum);
   });
 });
+
+describe('summarizeTrendRows requestCount', () => {
+  it('sums requestCount without changing cache token columns', () => {
+    const summary = summarizeTrendRows({
+      dailyRows: [
+        {
+          ...dailyRow('2026-07-28', 1000),
+          inputTokens: 70,
+          cachedInputTokens: 10,
+          cacheCreationInputTokens: 5,
+          requestCount: 2,
+          knownRequestCount: 2,
+        },
+        {
+          ...dailyRow('2026-07-29', 500),
+          inputTokens: 30,
+          cachedInputTokens: 20,
+          cacheCreationInputTokens: 0,
+          requestCount: 1,
+          knownRequestCount: 1,
+        },
+      ],
+      hourlyRows: [],
+      hourly: false,
+    });
+
+    assert.equal(summary.requestCount, 3);
+    assert.equal(summary.knownRequestCount, 3);
+    assert.equal(summary.inputTokens, 100);
+    assert.equal(summary.cachedInputTokens, 30);
+    assert.equal(summary.cacheCreationInputTokens, 5);
+  });
+
+  it('keeps requestCount null when any row is incomplete', () => {
+    const summary = summarizeTrendRows({
+      dailyRows: [
+        {
+          ...dailyRow('2026-07-28', 1000),
+          requestCount: 2,
+          knownRequestCount: 2,
+        },
+        {
+          ...dailyRow('2026-07-29', 500),
+          requestCount: null,
+          knownRequestCount: 1,
+        },
+      ],
+      hourlyRows: [],
+      hourly: false,
+    });
+
+    assert.equal(summary.requestCount, null);
+    assert.equal(summary.knownRequestCount, 3);
+    assert.ok(summary.cachedInputTokens > 0);
+  });
+});

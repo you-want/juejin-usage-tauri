@@ -1,3 +1,5 @@
+import type { LocalUsageMetrics } from '@juejin-opensource/jusage-core/local-metrics';
+
 export interface ModelUsageRow {
   model: string;
   tokens: number;
@@ -116,6 +118,8 @@ export interface SourceUsageRow {
 }
 
 export interface UsageSummary {
+  localMetrics?: LocalUsageMetrics;
+  todayLocalMetrics?: LocalUsageMetrics;
   totalTokens: number;
   totalCostUsd: number;
   todayTokens: number;
@@ -140,6 +144,13 @@ export interface DailyUsageRow {
   outputTokens?: number;
   cachedInputTokens?: number;
   cacheCreationInputTokens?: number;
+  sources?: Array<{
+    source: string;
+    tokens: number;
+    costUsd: number;
+    localMetrics: LocalUsageMetrics;
+  }>;
+  localMetrics?: LocalUsageMetrics;
 }
 
 export interface DailyUsageResponse {
@@ -156,6 +167,7 @@ export interface HourlyUsageRow {
   inputTokens: number;
   outputTokens: number;
   cachedInputTokens: number;
+  localMetrics?: LocalUsageMetrics;
 }
 
 export interface HourlyUsageResponse {
