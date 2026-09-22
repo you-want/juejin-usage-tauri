@@ -9,8 +9,8 @@
  * rows stop reading 'unknown'.
  * SQLite fallback reads workbuddy.db session_usage when a session has no JSONL detail.
  */
-import { createReadStream, existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
-import { createInterface } from 'node:readline';
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
+import { createJsonlLineReader } from './jsonl-tail.js';
 import { homedir } from 'node:os';
 import { basename, join } from 'node:path';
 import { stat } from 'node:fs/promises';
@@ -263,10 +263,9 @@ export async function parseWorkbuddyIncremental(
     const startOffset = st.size < prevSize || inodeChanged ? 0 : prevSize;
     if (st.size <= startOffset) continue;
 
-    const stream = createReadStream(filePath, { start: startOffset });
-    const rl = createInterface({ input: stream, crlfDelay: Infinity });
+    const reader = createJsonlLineReader(filePath, startOffset);
 
-    for await (const line of rl) {
+    for await (const line of reader) {
       if (!line.trim()) continue;
       let entry: Record<string, unknown>;
       try {
@@ -347,7 +346,7 @@ export async function parseWorkbuddyIncremental(
 
     const postStat = await stat(filePath).catch(() => st);
     fileOffsets[filePath] = {
-      size: postStat.size,
+      size: reader.nextOffset,
       mtimeMs: postStat.mtimeMs,
       ino: postStat.ino,
     };

@@ -13,6 +13,7 @@ import type {
 import { codexSessionsDirs } from '../paths.js';
 import { resolveProjectName } from '../project-name.js';
 import { toUtcHalfHourStart } from '../queue/keys.js';
+import { createJsonlLineReader } from './jsonl-tail.js';
 import {
   modelFromRolloutEvent,
   readModel,
@@ -276,10 +277,9 @@ export async function parseCodexIncremental(
     }
     let sessionUuid: string | null = meta.sessionId;
 
-    const stream = createReadStream(filePath, { start: startOffset });
-    const rl = createInterface({ input: stream, crlfDelay: Infinity });
+    const reader = createJsonlLineReader(filePath, startOffset);
 
-    for await (const line of rl) {
+    for await (const line of reader) {
       if (!line.trim()) continue;
       let obj: Record<string, unknown>;
       try {
@@ -409,7 +409,7 @@ export async function parseCodexIncremental(
 
     codexCursor.files[filePath] = {
       inode,
-      offset: st.size,
+      offset: reader.nextOffset,
       tokenCountSeen,
       lastUsageSnapshot,
       prevTotal: prevTotalSave,

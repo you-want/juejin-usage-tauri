@@ -1,5 +1,5 @@
-import { createReadStream, existsSync } from 'node:fs';
-import { createInterface } from 'node:readline';
+import { existsSync } from 'node:fs';
+import { createJsonlLineReader } from './jsonl-tail.js';
 import { stat } from 'node:fs/promises';
 import { sep } from 'node:path';
 
@@ -201,10 +201,9 @@ async function parseTranscriptFiles(
       const startOffset = sameInode && !truncated ? (prev.offset ?? 0) : 0;
       if (sameInode && !truncated && startOffset >= st.size) continue;
 
-      const stream = createReadStream(filePath, { start: startOffset });
-      const rl = createInterface({ input: stream, crlfDelay: Infinity });
+      const reader = createJsonlLineReader(filePath, startOffset);
 
-      for await (const line of rl) {
+      for await (const line of reader) {
         if (!line.includes('"usage"')) continue;
         let obj: {
           type?: string;
@@ -256,7 +255,7 @@ async function parseTranscriptFiles(
         eventsParsed += 1;
       }
 
-      fileCursors[filePath] = { inode, offset: st.size };
+      fileCursors[filePath] = { inode, offset: reader.nextOffset };
       filesProcessed += 1;
     }
   }

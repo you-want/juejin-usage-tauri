@@ -13,6 +13,7 @@ import type {
 } from '../types.js';
 import { resolveProjectName } from '../project-name.js';
 import { toUtcHalfHourStart } from '../queue/keys.js';
+import { createJsonlLineReader } from './jsonl-tail.js';
 import {
   modelFromRolloutEvent,
   readModel,
@@ -263,10 +264,9 @@ export async function parseEveryCodeIncremental(
     }
     let sessionUuid: string | null = meta.sessionId;
 
-    const stream = createReadStream(filePath, { start: startOffset });
-    const rl = createInterface({ input: stream, crlfDelay: Infinity });
+    const reader = createJsonlLineReader(filePath, startOffset);
 
-    for await (const line of rl) {
+    for await (const line of reader) {
       if (!line.trim()) continue;
       let obj: Record<string, unknown>;
       try {
@@ -337,7 +337,7 @@ export async function parseEveryCodeIncremental(
 
     everyCodeCursor.files[filePath] = {
       inode,
-      offset: st.size,
+      offset: reader.nextOffset,
       tokenCountSeen,
       prevTotal: prevTotalSave,
       lastModel: turnContextModel,

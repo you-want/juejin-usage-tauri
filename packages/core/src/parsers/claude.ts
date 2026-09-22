@@ -13,6 +13,7 @@ import {
 } from '../paths.js';
 import { resolveProjectName } from '../project-name.js';
 import { toUtcHalfHourStart } from '../queue/keys.js';
+import { createJsonlLineReader } from './jsonl-tail.js';
 import {
   accumulateBucket,
   bucketsFromState,
@@ -336,12 +337,11 @@ export async function parseClaudeIncremental(
         : await resolveClaudeProject(filePath, relative);
     const collector = claudeCollectorForFile(filePath);
 
-    const stream = createReadStream(filePath, { start: startOffset });
-    const rl = createInterface({ input: stream, crlfDelay: Infinity });
+    const reader = createJsonlLineReader(filePath, startOffset);
     const keyedRows = new Map<string, PendingClaudeRow>();
     const unkeyedRows: PendingClaudeRow[] = [];
 
-    for await (const line of rl) {
+    for await (const line of reader) {
       if (!line.includes('"usage"')) continue;
       let obj: ClaudeMessage;
       try {
@@ -388,7 +388,7 @@ export async function parseClaudeIncremental(
       commitRow(row, null);
     }
 
-    claudeCursor.files[filePath] = { inode, offset: st.size, project };
+    claudeCursor.files[filePath] = { inode, offset: reader.nextOffset, project };
     filesProcessed += 1;
   }
 

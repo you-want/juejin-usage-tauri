@@ -31,7 +31,10 @@ test('parseClineIncremental reads api_req_started token columns', async () => {
   const root = await mkdtemp(join(tmpdir(), 'tud-cline-'));
   const extDir = join(root, 'cline-ext');
   const prev = process.env.AI_USAGE_CLINE_ROOTS;
+  const prevSessionDir = process.env.CLINE_SESSION_DATA_DIR;
   process.env.AI_USAGE_CLINE_ROOTS = extDir;
+  // SDK sessions fall back to ~/.cline when this is unset.
+  process.env.CLINE_SESSION_DATA_DIR = join(root, 'no-sdk-sessions');
   try {
     await mkdir(join(extDir, 'state'), { recursive: true });
     await mkdir(join(extDir, 'tasks', 'task-1'), { recursive: true });
@@ -71,6 +74,8 @@ test('parseClineIncremental reads api_req_started token columns', async () => {
   } finally {
     if (prev === undefined) delete process.env.AI_USAGE_CLINE_ROOTS;
     else process.env.AI_USAGE_CLINE_ROOTS = prev;
+    if (prevSessionDir === undefined) delete process.env.CLINE_SESSION_DATA_DIR;
+    else process.env.CLINE_SESSION_DATA_DIR = prevSessionDir;
   }
 });
 
