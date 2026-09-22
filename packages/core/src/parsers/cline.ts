@@ -1,12 +1,16 @@
 /**
- * Cline (VS Code extension) passive reader (source `cline`, collector `cline`).
+ * Cline passive reader (source `cline`, collector `cline`).
  *
- * Extension ID: saoudrizwan.claude-dev
- * Paths: …/globalStorage/saoudrizwan.claude-dev/state/taskHistory.json
- *        …/globalStorage/saoudrizwan.claude-dev/tasks/<id>/ui_messages.json
+ * Legacy VS Code paths:
+ *   …/globalStorage/saoudrizwan.claude-dev/state/taskHistory.json
+ *   …/globalStorage/saoudrizwan.claude-dev/tasks/<id>/ui_messages.json
+ * SDK session paths:
+ *   ~/.cline/data/sessions/<id>/<id>.json
+ *   ~/.cline/data/sessions/<id>/<id>.messages.json
  */
-import { existsSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, readFileSync, readdirSync, type Dirent } from 'node:fs';
+import { homedir } from 'node:os';
+import { isAbsolute, join, resolve } from 'node:path';
 import { stat } from 'node:fs/promises';
 
 import type { CursorsFile, QueueBucket, TokenTotals } from '../types.js';
@@ -42,6 +46,20 @@ export function findClineExtensionDirs(): string[] {
     if (existsSync(ext)) dirs.push(ext);
   }
   return dirs;
+}
+
+/** Resolve the shared Cline SDK session directory using Cline's own precedence. */
+export function clineSessionDataDir(): string {
+  const sessionDir = process.env.CLINE_SESSION_DATA_DIR?.trim();
+  if (sessionDir) return sessionDir;
+
+  const dataDir = process.env.CLINE_DATA_DIR?.trim();
+  if (dataDir) return join(dataDir, 'sessions');
+
+  const clineDir = process.env.CLINE_DIR?.trim();
+  if (clineDir) return join(clineDir, 'data', 'sessions');
+
+  return join(homedir(), '.cline', 'data', 'sessions');
 }
 
 function readJsonSafe(path: string): unknown {
@@ -96,6 +114,63 @@ export function resolveClineTaskTargets(): ClineTaskTarget[] {
     }
   }
   out.sort((a, b) => a.uiMessagesPath.localeCompare(b.uiMessagesPath));
+  return out;
+}
+
+export interface ClineSdkSessionTarget {
+  sessionId: string;
+  project: string;
+  fallbackModel: string;
+  messagesPath: string;
+}
+
+/** Locate v1 SDK message artifacts produced by current Cline clients. */
+export function resolveClineSdkSessionTargets(): ClineSdkSessionTarget[] {
+  const sessionsDir = clineSessionDataDir();
+  let entries: Dirent[];
+  try {
+    entries = readdirSync(sessionsDir, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+
+  const out: ClineSdkSessionTarget[] = [];
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    const sessionId = entry.name;
+    const sessionDir = join(sessionsDir, sessionId);
+    const manifest = readJsonSafe(join(sessionDir, `${sessionId}.json`));
+    const row = manifest && typeof manifest === 'object'
+      ? manifest as {
+          session_id?: unknown;
+          cwd?: unknown;
+          workspace_root?: unknown;
+          model?: unknown;
+          messages_path?: unknown;
+        }
+      : null;
+    if (row?.session_id && String(row.session_id) !== sessionId) continue;
+
+    const configuredPath = typeof row?.messages_path === 'string' && row.messages_path.trim()
+      ? row.messages_path.trim()
+      : null;
+    const projectPath = typeof row?.cwd === 'string' && row.cwd.trim()
+      ? row.cwd
+      : row?.workspace_root;
+    const messagesPath = configuredPath
+      ? (isAbsolute(configuredPath) ? configuredPath : resolve(sessionDir, configuredPath))
+      : join(sessionDir, `${sessionId}.messages.json`);
+    if (!existsSync(messagesPath)) continue;
+
+    out.push({
+      sessionId,
+      project: projectFromPath(projectPath),
+      fallbackModel:
+        typeof row?.model === 'string' && row.model.trim() ? row.model.trim() : 'unknown',
+      messagesPath,
+    });
+  }
+  out.sort((a, b) => a.messagesPath.localeCompare(b.messagesPath));
   return out;
 }
 
@@ -201,6 +276,91 @@ export async function parseClineIncremental(
     }
 
     fileOffsets[uiMessagesPath] = { size: st.size, mtimeMs: st.mtimeMs, ino: st.ino };
+    filesProcessed += 1;
+  }
+
+  for (const { sessionId, project, fallbackModel, messagesPath } of resolveClineSdkSessionTargets()) {
+    const st = await stat(messagesPath).catch(() => null);
+    if (!st?.isFile()) continue;
+
+    const prev = fileOffsets[messagesPath];
+    if (
+      prev &&
+      prev.size === st.size &&
+      prev.mtimeMs === st.mtimeMs &&
+      prev.ino === st.ino
+    ) {
+      continue;
+    }
+
+    const data = readJsonSafe(messagesPath);
+    if (!data || typeof data !== 'object') continue;
+    const version = (data as { version?: unknown }).version;
+    const messages = (data as { messages?: unknown }).messages;
+    if (version !== 1 || !Array.isArray(messages)) continue;
+
+    for (let index = 0; index < messages.length; index += 1) {
+      const message = messages[index];
+      if (!message || typeof message !== 'object') continue;
+      const row = message as {
+        id?: unknown;
+        role?: unknown;
+        ts?: unknown;
+        modelInfo?: { id?: unknown };
+        metrics?: {
+          inputTokens?: unknown;
+          outputTokens?: unknown;
+          cacheReadTokens?: unknown;
+          cacheWriteTokens?: unknown;
+        };
+      };
+      if (row.role !== 'assistant' || !row.metrics || typeof row.metrics !== 'object') continue;
+
+      const ts = Number(row.ts);
+      if (!Number.isFinite(ts) || ts <= 0) continue;
+      const messageId = typeof row.id === 'string' && row.id.trim()
+        ? row.id.trim()
+        : `${ts}:${index}`;
+      const dedupKey = `sdk:${sessionId}:${messageId}`;
+      if (seenIds.has(dedupKey)) continue;
+
+      const inputTokens = toNonNeg(row.metrics.inputTokens);
+      const outputTokens = toNonNeg(row.metrics.outputTokens);
+      const cacheReads = toNonNeg(row.metrics.cacheReadTokens);
+      const cacheWrites = toNonNeg(row.metrics.cacheWriteTokens);
+      if (inputTokens === 0 && outputTokens === 0 && cacheReads === 0 && cacheWrites === 0) {
+        continue;
+      }
+
+      const hourStart = toUtcHalfHourStart(new Date(ts).toISOString());
+      if (!hourStart || new Date(hourStart).getTime() < sinceMs) continue;
+
+      const deltaBody = {
+        input_tokens: inputTokens,
+        cached_input_tokens: cacheReads,
+        cache_creation_input_tokens: cacheWrites,
+        output_tokens: outputTokens,
+        reasoning_output_tokens: 0,
+      };
+      const explicitModel = typeof row.modelInfo?.id === 'string' ? row.modelInfo.id.trim() : '';
+      accumulateBucket(
+        bucketState,
+        'cline',
+        explicitModel || fallbackModel,
+        project,
+        hourStart,
+        {
+          ...deltaBody,
+          total_tokens: computeTotalTokens(deltaBody),
+          conversation_count: 1,
+        },
+        CLINE_COLLECTOR,
+      );
+      seenIds.add(dedupKey);
+      eventsParsed += 1;
+    }
+
+    fileOffsets[messagesPath] = { size: st.size, mtimeMs: st.mtimeMs, ino: st.ino };
     filesProcessed += 1;
   }
 

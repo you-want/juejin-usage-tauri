@@ -1,10 +1,10 @@
 /**
  * oh-my-pi (omp) passive JSONL reader — same on-disk format as pi-coding-agent.
  */
-import { createReadStream, existsSync, realpathSync, readdirSync } from 'node:fs';
+import { existsSync, realpathSync, readdirSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { createInterface } from 'node:readline';
+import { createJsonlLineReader } from './jsonl-tail.js';
 import { stat } from 'node:fs/promises';
 
 import type { CursorsFile, QueueBucket, TokenTotals } from '../types.js';
@@ -180,10 +180,9 @@ export async function parseOmpIncremental(
     if (sameInode && !truncated && startOffset >= st.size) continue;
 
     let project = extractProjectFromDir(filePath, sessionsDir);
-    const stream = createReadStream(filePath, { start: startOffset });
-    const rl = createInterface({ input: stream, crlfDelay: Infinity });
+    const reader = createJsonlLineReader(filePath, startOffset);
 
-    for await (const line of rl) {
+    for await (const line of reader) {
       if (!line.trim()) continue;
 
       let entry: {
@@ -259,7 +258,7 @@ export async function parseOmpIncremental(
       eventsParsed += 1;
     }
 
-    fileCursors[filePath] = { inode, offset: st.size };
+    fileCursors[filePath] = { inode, offset: reader.nextOffset };
     filesProcessed += 1;
   }
 

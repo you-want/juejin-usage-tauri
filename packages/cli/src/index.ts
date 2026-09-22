@@ -48,6 +48,7 @@ import {
   DEFAULT_HOST,
   formatListenUrl,
   isWildcardListenHost,
+  formatUploadTokenStatus,
   parseArgs,
   printHelp,
   resolveDaysAgo,
@@ -201,7 +202,9 @@ async function cmdStart(portArg?: number, hostArg?: string, daysAgo?: number): P
   await saveConfig(dir, config);
 
   console.log(`设备 UUID: ${config.deviceId}`);
-  console.log(`上报 Token: ${config.juejin.token ?? '(未配置)'}`);
+  console.log(
+    `上报 Token: ${formatUploadTokenStatus(config.deviceId, config.juejin.token)}`,
+  );
   console.log(`云端地址: ${config.juejin.apiUrl}`);
   console.log(`云端同步: ${config.juejin.enabled ? '已开启' : '未开启'}`);
 
@@ -437,7 +440,9 @@ async function cmdStatus(): Promise<void> {
   console.log(`面板: ${formatListenUrl(host, port)}`);
   console.log(`数据目录: ${dir}`);
   console.log(`设备 UUID: ${config.deviceId}`);
-  console.log(`上报 Token: ${config.juejin.token ?? '(未配置)'}`);
+  console.log(
+    `上报 Token: ${formatUploadTokenStatus(config.deviceId, config.juejin.token)}`,
+  );
   console.log(`statsSince: ${config.statsSince}`);
   console.log(`上次同步: ${config.lastSyncAt ?? '从未'}`);
   console.log(`Claude Hook: ${hooks.claude ? 'active' : 'poll 模式'}`);

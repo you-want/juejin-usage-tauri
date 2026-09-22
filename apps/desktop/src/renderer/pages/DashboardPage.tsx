@@ -35,7 +35,7 @@ import {
   filterTrendRowsBySources,
   summarizeTrendRows,
 } from '@/lib/usage-filter';
-import { LOCAL_RUNTIME_RECOVERING_HINT } from '@/lib/api';
+import { isCliBackend, LOCAL_RUNTIME_RECOVERING_HINT } from '@/lib/api';
 import {
   DASHBOARD_RANGE_LABELS,
   DEFAULT_DASHBOARD_RANGE,
@@ -316,6 +316,7 @@ export function DashboardPage() {
             modelRows={visibleModelRows}
             onSelectDate={handleSelectDate}
             selectedDate={selectedDate}
+            showLocalMetrics={isCliBackend()}
             summary={visibleSummary}
           />
 

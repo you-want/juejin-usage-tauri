@@ -13,10 +13,10 @@
  * without paths carry forward the session's last project; the final fallback
  * is the agent's display name from workspace/IDENTITY.md (`agent.name`).
  */
-import { createReadStream, existsSync, readdirSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, dirname, isAbsolute, join, normalize, relative } from 'node:path';
-import { createInterface } from 'node:readline';
+import { createJsonlLineReader } from './jsonl-tail.js';
 import { stat } from 'node:fs/promises';
 
 import type { CursorsFile, QueueBucket } from '../types.js';
@@ -323,10 +323,9 @@ export async function parseAutoclawIncremental(
 
     const agentName = autoclawAgentDisplayName(join(dirname(filePath), '..'));
     let lastProject = prev?.project ?? null;
-    const stream = createReadStream(filePath, { start: startOffset });
-    const rl = createInterface({ input: stream, crlfDelay: Infinity });
+    const reader = createJsonlLineReader(filePath, startOffset);
 
-    for await (const line of rl) {
+    for await (const line of reader) {
       if (!line.trim()) continue;
       if (!line.includes('"usage"')) continue;
 
@@ -380,7 +379,7 @@ export async function parseAutoclawIncremental(
       eventsParsed += 1;
     }
 
-    fileCursors[filePath] = { inode, offset: st.size, ...(lastProject ? { project: lastProject } : {}) };
+    fileCursors[filePath] = { inode, offset: reader.nextOffset, ...(lastProject ? { project: lastProject } : {}) };
     filesProcessed += 1;
   }
 

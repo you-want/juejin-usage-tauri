@@ -685,11 +685,17 @@ export async function applyCalibrateSelectedDates(
   let upserted = 0;
   let floored = 0;
   for (const batch of batches) {
-    const result = await postReconcileBatch(
-      target.apiUrl,
-      target.token,
-      batch,
-    );
+    let result: ReconcileBatchResult;
+    try {
+      result = await postReconcileBatch(target.apiUrl, target.token, batch);
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      const date = localDateAndHour(batch.from, DEFAULT_STATS_TIMEZONE).date;
+      throw new Error(
+        `${date} 校准失败（本地 ${batch.events.length} 条事件，窗口 ${batch.from} ~ ${batch.to}）：${reason}`,
+        { cause: error },
+      );
+    }
     deleted += result.deleted_count;
     upserted += result.upserted_count;
     floored += result.floored_count;

@@ -283,6 +283,7 @@ export function DashboardPage() {
             modelRows={visibleModelRows}
             onSelectDate={handleSelectDate}
             selectedDate={selectedDate}
+            showLocalMetrics={isCliBackend()}
             summary={visibleSummary}
           />
 
