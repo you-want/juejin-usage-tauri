@@ -133,6 +133,25 @@ test('grok-4.20 resolves to 1.25/2.5, not the grok-4 rule', () => {
   assert.equal(p.output, 2.5);
 });
 
+test('grok-4.7 resolves the current official xAI price', () => {
+  const p = getModelPricing('grok-4.7');
+  assert.equal(p.input, 2);
+  assert.equal(p.output, 6);
+  assert.equal(p.cache_read, 0.5);
+});
+
+test('GLM 5.3 Flash and FlashX resolve current official-channel prices', () => {
+  const flash = getModelPricing('glm-5.3-flash');
+  assert.equal(flash.input, 0.15);
+  assert.equal(flash.output, 0.5);
+  assert.equal(flash.cache_read, 0.03);
+
+  const flashx = getModelPricing('glm-5.3-flashx');
+  assert.equal(flashx.input, 0.37);
+  assert.equal(flashx.output, 1.25);
+  assert.equal(flashx.cache_read, 0.075);
+});
+
 test('kimi-k2.7-code resolves to 0.95/4, not the kimi-k2 rule', () => {
   const p = getModelPricing('kimi-k2.7-code');
   assert.equal(p.input, 0.95);
