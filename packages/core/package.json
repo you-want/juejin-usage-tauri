@@ -62,6 +62,7 @@
     "test:compile": "tsc -p tsconfig.test.json && node -e \"require('node:fs').copyFileSync('src/pricing/pricing.json','dist-test/src/pricing/pricing.json')\""
   },
   "dependencies": {
+    "fzstd": "^0.1.1",
     "hono": "^4.7.5",
     "proper-lockfile": "^4.1.2"
   },

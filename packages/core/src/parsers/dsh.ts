@@ -12,7 +12,8 @@
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import * as zlib from 'node:zlib';
+
+import { decompress as fzstdDecompress } from 'fzstd';
 
 import type { CursorsFile, QueueBucket, TokenTotals } from '../types.js';
 import { resolveProjectName } from '../project-name.js';
@@ -28,6 +29,83 @@ export const DSH_COLLECTOR = 'dsh';
 
 const MAX_DECODED_BYTES = 128 * 1024 * 1024;
 const MAX_SEEN_MESSAGES = 50_000;
+const ZSTD_MAGIC = 0xfd2fb528;
+
+/** 让出事件循环，使 sync-worker 看门狗喂活定时器可在逐文件解码间隙执行。 */
+function yieldEventLoop(): Promise<void> {
+  return new Promise((resolve) => setImmediate(resolve));
+}
+
+function readU24LE(buf: Buffer, offset: number): number {
+  return buf[offset]! | (buf[offset + 1]! << 8) | (buf[offset + 2]! << 16);
+}
+
+/**
+ * 解析单帧边界（只读帧头/块头，不解码）。
+ * 供尾帧截断时按完整帧切片；帧不完整或不合法返回 -1。
+ */
+function zstdFrameEnd(buf: Buffer, start: number): number {
+  if (start + 5 > buf.length) return -1;
+  if (buf.readUInt32LE(start) !== ZSTD_MAGIC) return -1;
+  const desc = buf[start + 4]!;
+  const fcsFlag = (desc >> 6) & 3;
+  const singleSegment = (desc >> 5) & 1;
+  const hasChecksum = ((desc >> 2) & 1) === 1;
+  const dictFlag = desc & 3;
+  let offset = start + 5;
+  if (!singleSegment) {
+    if (offset >= buf.length) return -1;
+    offset += 1; // Window_Descriptor
+  }
+  offset += [0, 1, 2, 4][dictFlag]!;
+  // FCS 长度：Single_Segment 且 FCS_Flag=0 为 1 字节，否则为 [0,2,4,8][flag]
+  offset += (singleSegment ? [1, 2, 4, 8] : [0, 2, 4, 8])[fcsFlag]!;
+  if (offset > buf.length) return -1;
+
+  for (;;) {
+    if (offset + 3 > buf.length) return -1;
+    const blockHeader = readU24LE(buf, offset);
+    const lastBlock = (blockHeader & 1) === 1;
+    const blockSize = blockHeader >> 3;
+    offset += 3;
+    if (offset + blockSize > buf.length) return -1;
+    offset += blockSize;
+    if (lastBlock) break;
+  }
+  if (hasChecksum) {
+    if (offset + 4 > buf.length) return -1;
+    offset += 4;
+  }
+  return offset;
+}
+
+/**
+ * 整文件 fzstd.decompress 失败时的回退路径。
+ * DSH 追加写入可能导致尾帧截断；fzstd 一次解整包会抛错并丢失已解内容。
+ * 按帧边界只解已完成帧，行为对齐旧的原生逐帧循环（中途失败保留前缀）。
+ */
+function decodeDshCompletedFrames(compressed: Buffer): string | null {
+  const chunks: Buffer[] = [];
+  let offset = 0;
+  let total = 0;
+  let frames = 0;
+  while (offset < compressed.length) {
+    const end = zstdFrameEnd(compressed, offset);
+    if (end <= offset) break;
+    try {
+      const out = fzstdDecompress(compressed.subarray(offset, end));
+      total += out.length;
+      if (total > MAX_DECODED_BYTES) return null;
+      chunks.push(Buffer.from(out));
+      frames += 1;
+      offset = end;
+    } catch {
+      break;
+    }
+  }
+  if (frames === 0) return null;
+  return Buffer.concat(chunks).toString('utf8');
+}
 
 /** DSH 单个消息的去重快照（last-wins，与 opencode/zcode 对齐）。 */
 type DshMessageTotals = Omit<TokenTotals, 'conversation_count'>;
@@ -153,56 +231,25 @@ function readSessionCwd(text: string): string | null {
   return null;
 }
 
-/** 解压单帧 zstd，返回 (解压内容, 消费的压缩字节数)。 */
-function zstdDecompressFrame(compressed: Buffer): { out: Buffer; consumed: number } | null {
-  try {
-    const res = zlib.zstdDecompressSync(compressed, { info: true }) as unknown as {
-      buffer: Buffer;
-      engine?: { bytesWritten?: number };
-    };
-    const consumed = res.engine?.bytesWritten ?? 0;
-    if (!consumed || consumed <= 0) return null;
-    return { out: res.buffer, consumed };
-  } catch {
-    return null;
-  }
-}
-
 /**
- * 解压 DSH 会话文件 → UTF-8 文本。
+ * 解压 DSH 多帧 zstd 会话为 UTF-8。
  *
- * DSH 的 session.jsonl.zstd 是流式追加写入的「多帧」zstd 文件，Node 内置的
- * zstdDecompressSync 只解压第一个帧。这里按帧循环解压并拼接：每次用
- * { info: true } 拿到 engine.bytesWritten（本帧消费的压缩字节数）推进偏移，
- * 直到覆盖整个 buffer。
+ * 背景（#187）：Electron 内置 Node 对无 content-size 的多帧 zstd 调用
+ * zstdDecompressSync({info:true}) 逐帧推进，累计约十余 MB 后 SIGTRAP，
+ * 并将 sync-worker 事件循环卡死为 100% CPU。升级 Electron 无效，故改用
+ * 纯 JS 的 fzstd，避免进入该原生路径。
+ *
+ * 完整文件一次 decompress；尾帧截断时回退到 decodeDshCompletedFrames，
+ * 保留已完成帧（写入中的会话仍可统计已落盘用量）。
  */
 function decodeDsh(compressed: Buffer): string | null {
-  if (typeof zlib.zstdDecompressSync !== 'function') {
-    throw new Error('zstdDecompressSync unavailable (Node >= 22.9 with zstd support required)');
+  try {
+    const out = fzstdDecompress(compressed);
+    if (out.length === 0 || out.length > MAX_DECODED_BYTES) return null;
+    return Buffer.from(out).toString('utf8');
+  } catch {
+    return decodeDshCompletedFrames(compressed);
   }
-  const chunks: Buffer[] = [];
-  let offset = 0;
-  let total = 0;
-  // 防御性上限，避免损坏文件导致死循环。
-  const guard = compressed.length + 1;
-  let frames = 0;
-  while (offset < compressed.length && frames < guard) {
-    const frame = zstdDecompressFrame(compressed.subarray(offset));
-    if (!frame) {
-      // 首帧就失败 → 整个文件损坏；中途失败 → 已解压部分仍可用。
-      if (frames === 0) return null;
-      break;
-    }
-    chunks.push(frame.out);
-    total += frame.out.length;
-    if (total > MAX_DECODED_BYTES) {
-      throw new Error(`decoded session exceeds ${MAX_DECODED_BYTES} bytes`);
-    }
-    offset += frame.consumed;
-    frames += 1;
-  }
-  if (chunks.length === 0) return null;
-  return Buffer.concat(chunks).toString('utf8');
 }
 
 function coerceEpochMs(value: unknown): number | null {
@@ -280,21 +327,13 @@ export async function parseDshIncremental(
     } catch {
       continue;
     }
-    let text: string | null;
-    try {
-      text = filePath.endsWith('.zstd') ? decodeDsh(contents) : contents.toString('utf8');
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      if (/zstdDecompressSync unavailable/i.test(msg)) {
-        return {
-          result: { buckets: [], eventsParsed: 0, filesProcessed: 0, skipped: true, error: msg },
-          cursors,
-        };
-      }
-      continue;
+    const text = filePath.endsWith('.zstd') ? decodeDsh(contents) : contents.toString('utf8');
+    if (filePath.endsWith('.zstd')) {
+      // fzstd 为同步解码；逐文件让出，避免连续大文件堵住看门狗喂活定时器。
+      await yieldEventLoop();
     }
     if (!text) {
-      // 解码失败（写入中的文件）—— 保留旧游标，下次重试。
+      // 首帧即失败：保留旧游标，下轮重试（可能仍在写入）。
       continue;
     }
 
