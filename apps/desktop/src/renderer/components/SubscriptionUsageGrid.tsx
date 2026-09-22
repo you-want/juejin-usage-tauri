@@ -11,6 +11,7 @@ import { QoderSubscriptionCard } from './QoderSubscriptionCard';
 import { TraeSubscriptionGroup } from './TraeSubscriptionGroup';
 import { WorkBuddySubscriptionGroup } from './WorkBuddySubscriptionGroup';
 import { ZcodeSubscriptionCard } from './ZcodeSubscriptionCard';
+import { useSubscriptionChannelVisibility } from '@/hooks/useSubscriptionChannelVisibility';
 
 interface SubscriptionUsageGridProps {
   className?: string;
@@ -18,24 +19,32 @@ interface SubscriptionUsageGridProps {
 
 /** Shared subscription allowance cards used by the macOS tray and dashboard. */
 export function SubscriptionUsageGrid({ className = '' }: SubscriptionUsageGridProps) {
+  const { isEnabled } = useSubscriptionChannelVisibility();
+
   return (
     <section
       aria-label="订阅额度"
       className={`grid empty:hidden ${className}`.trim()}
     >
-      <CodexSubscriptionCard />
-      <ClaudeSubscriptionCard />
-      <CursorSubscriptionCard />
-      <GrokSubscriptionCard />
-      <KimiSubscriptionCard />
-      <ZcodeSubscriptionCard />
-      <AntigravitySubscriptionCard />
-      <QoderSubscriptionCard />
-      <MiniMaxSubscriptionCard />
-      <OpenCodeSubscriptionCard />
-      <DeepSeekSubscriptionCard />
-      <WorkBuddySubscriptionGroup />
-      <TraeSubscriptionGroup />
+      {isEnabled('codex') ? <CodexSubscriptionCard /> : null}
+      {isEnabled('claude') ? <ClaudeSubscriptionCard /> : null}
+      {isEnabled('cursor') ? <CursorSubscriptionCard /> : null}
+      {isEnabled('grok') ? <GrokSubscriptionCard /> : null}
+      {isEnabled('kimi') ? <KimiSubscriptionCard /> : null}
+      {isEnabled('zcode') ? <ZcodeSubscriptionCard /> : null}
+      {isEnabled('antigravity') ? <AntigravitySubscriptionCard /> : null}
+      {isEnabled('qoder') ? <QoderSubscriptionCard /> : null}
+      {isEnabled('minimax') ? <MiniMaxSubscriptionCard /> : null}
+      {isEnabled('opencode') ? <OpenCodeSubscriptionCard /> : null}
+      {isEnabled('deepseek') ? <DeepSeekSubscriptionCard /> : null}
+      <WorkBuddySubscriptionGroup
+        showGlobal={isEnabled('workbuddy')}
+        showMainland={isEnabled('workbuddy-cn')}
+      />
+      <TraeSubscriptionGroup
+        showGlobal={isEnabled('trae')}
+        showMainland={isEnabled('trae-cn')}
+      />
     </section>
   );
 }

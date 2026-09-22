@@ -61,7 +61,6 @@ function useDeferredDashboardRange(range: DashboardRange): DashboardRange {
 
 /** HeroUI dashboard backed by the same usage dataset as the root route. */
 export function DashboardPage() {
-  const isMac = window.tud?.platform === 'darwin';
   const [range, setRange] = useLocalStorage<DashboardRange>(
     'tud.dashboardRange',
     DEFAULT_DASHBOARD_RANGE,
@@ -296,10 +295,6 @@ export function DashboardPage() {
         </div>
       )}
 
-      {isMac ? (
-        <SubscriptionUsageGrid className="mb-4 grid-cols-4 gap-2.5" />
-      ) : null}
-
       {loading ? (
         <div className="relative isolate min-h-48">
           <DashboardRangeSyncOverlay visible />
@@ -309,6 +304,9 @@ export function DashboardPage() {
         <div className="relative isolate min-h-48">
           <DashboardRangeSyncOverlay visible={refreshing} />
           <DashboardOverviewCard
+            belowMetrics={
+              <SubscriptionUsageGrid className="mt-4 grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-4" />
+            }
             heatmapDays={visibleHeatmapDays}
             metricTrendPeriodLabel={metricTrendPeriodLabel}
             metricTrendRows={metricTrendRows}
