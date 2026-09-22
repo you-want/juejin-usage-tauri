@@ -74,6 +74,152 @@ test('parseClineIncremental reads api_req_started token columns', async () => {
   }
 });
 
+test('parseClineIncremental reads current SDK session metrics incrementally', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'tud-cline-sdk-'));
+  const sessionsDir = join(root, 'sessions');
+  const sessionDir = join(sessionsDir, 'session-1');
+  const messagesPath = join(sessionDir, 'session-1.messages.json');
+  const prevSessionDir = process.env.CLINE_SESSION_DATA_DIR;
+  const prevLegacyRoots = process.env.AI_USAGE_CLINE_ROOTS;
+  process.env.CLINE_SESSION_DATA_DIR = sessionsDir;
+  process.env.AI_USAGE_CLINE_ROOTS = join(root, 'missing-legacy');
+
+  const messages = [
+    {
+      id: 'assistant-without-metrics',
+      role: 'assistant',
+      ts: Date.parse('2026-09-20T08:00:00.000Z'),
+      modelInfo: { id: 'deepseek-chat', provider: 'openai-compatible' },
+      content: [],
+    },
+    {
+      id: 'assistant-1',
+      role: 'assistant',
+      ts: Date.parse('2026-09-20T08:16:00.000Z'),
+      modelInfo: { id: 'deepseek-reasoner', provider: 'openai-compatible' },
+      metrics: {
+        inputTokens: 120,
+        outputTokens: 40,
+        cacheReadTokens: 30,
+        cacheWriteTokens: 10,
+        cost: 0.01,
+      },
+      content: [],
+    },
+  ];
+
+  try {
+    await mkdir(sessionDir, { recursive: true });
+    await writeFile(
+      join(sessionDir, 'session-1.json'),
+      JSON.stringify({
+        version: 1,
+        session_id: 'session-1',
+        cwd: '/Users/me/demo',
+        workspace_root: '/Users/me/fallback',
+        model: 'manifest-model',
+        messages_path: 'session-1.messages.json',
+      }),
+    );
+    await writeFile(
+      messagesPath,
+      JSON.stringify({ version: 1, updated_at: '2026-09-20T08:16:00.000Z', messages }),
+    );
+
+    assert.equal(isSyncSourcePresent('cline'), true);
+    const first = await parseClineIncremental({}, SINCE);
+    assert.equal(first.result.eventsParsed, 1);
+    assert.equal(first.result.filesProcessed, 1);
+    assert.deepEqual(first.result.buckets[0], {
+      source: 'cline',
+      collector: 'cline',
+      model: 'deepseek-reasoner',
+      project: 'demo',
+      hour_start: '2026-09-20T08:00:00.000Z',
+      input_tokens: 120,
+      output_tokens: 40,
+      cached_input_tokens: 30,
+      cache_creation_input_tokens: 10,
+      reasoning_output_tokens: 0,
+      total_tokens: 200,
+      conversation_count: 1,
+    });
+
+    const unchanged = await parseClineIncremental(first.cursors, SINCE);
+    assert.equal(unchanged.result.eventsParsed, 0);
+    assert.equal(unchanged.result.filesProcessed, 0);
+
+    messages.push({
+      id: 'assistant-2',
+      role: 'assistant',
+      ts: Date.parse('2026-09-20T08:31:00.000Z'),
+      modelInfo: { id: '', provider: 'openai-compatible' },
+      metrics: {
+        inputTokens: 20,
+        outputTokens: 5,
+        cacheReadTokens: 0,
+        cacheWriteTokens: 0,
+        cost: 0,
+      },
+      content: [],
+    });
+    await writeFile(
+      messagesPath,
+      JSON.stringify({ version: 1, updated_at: '2026-09-20T08:31:00.000Z', messages }),
+    );
+
+    const appended = await parseClineIncremental(first.cursors, SINCE);
+    assert.equal(appended.result.eventsParsed, 1);
+    assert.equal(appended.result.buckets[0]!.model, 'manifest-model');
+    assert.equal(appended.result.buckets[0]!.hour_start, '2026-09-20T08:30:00.000Z');
+    assert.equal(appended.result.buckets[0]!.total_tokens, 25);
+  } finally {
+    if (prevSessionDir === undefined) delete process.env.CLINE_SESSION_DATA_DIR;
+    else process.env.CLINE_SESSION_DATA_DIR = prevSessionDir;
+    if (prevLegacyRoots === undefined) delete process.env.AI_USAGE_CLINE_ROOTS;
+    else process.env.AI_USAGE_CLINE_ROOTS = prevLegacyRoots;
+  }
+});
+
+test('parseClineIncremental skips invalid SDK artifacts and events before statsSince', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'tud-cline-sdk-invalid-'));
+  const sessionsDir = join(root, 'sessions');
+  const prevSessionDir = process.env.CLINE_SESSION_DATA_DIR;
+  const prevLegacyRoots = process.env.AI_USAGE_CLINE_ROOTS;
+  process.env.CLINE_SESSION_DATA_DIR = sessionsDir;
+  process.env.AI_USAGE_CLINE_ROOTS = join(root, 'missing-legacy');
+  try {
+    const corruptDir = join(sessionsDir, 'corrupt');
+    const oldDir = join(sessionsDir, 'old');
+    await mkdir(corruptDir, { recursive: true });
+    await mkdir(oldDir, { recursive: true });
+    await writeFile(join(corruptDir, 'corrupt.messages.json'), '{');
+    await writeFile(
+      join(oldDir, 'old.messages.json'),
+      JSON.stringify({
+        version: 1,
+        messages: [{
+          id: 'old-message',
+          role: 'assistant',
+          ts: Date.parse('2025-01-01T00:00:00.000Z'),
+          modelInfo: { id: 'deepseek-chat' },
+          metrics: { inputTokens: 10, outputTokens: 5 },
+        }],
+      }),
+    );
+
+    const { result } = await parseClineIncremental({}, '2026-01-01T00:00:00.000Z');
+    assert.equal(result.eventsParsed, 0);
+    assert.equal(result.buckets.length, 0);
+    assert.equal(result.filesProcessed, 1);
+  } finally {
+    if (prevSessionDir === undefined) delete process.env.CLINE_SESSION_DATA_DIR;
+    else process.env.CLINE_SESSION_DATA_DIR = prevSessionDir;
+    if (prevLegacyRoots === undefined) delete process.env.AI_USAGE_CLINE_ROOTS;
+    else process.env.AI_USAGE_CLINE_ROOTS = prevLegacyRoots;
+  }
+});
+
 test('parseAmpIncremental reads usageLedger events', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'tud-amp-'));
   const prev = process.env.AMP_DATA_DIR;
