@@ -263,6 +263,26 @@ test('gpt-6-astra carries official cache read/write rates for every name variant
   }
 });
 
+test('new Claude and OpenAI models resolve their official bundled prices', () => {
+  const opus = getModelPricing('claude-opus-5-5', { source: 'claude' });
+  assert.equal(opus.input, 4);
+  assert.equal(opus.output, 20);
+  assert.equal(opus.cache_read, 0.2);
+  assert.equal(opus.cache_write, 5);
+
+  const sol = getModelPricing('gpt-6-sol', { source: 'codex' });
+  assert.equal(sol.input, 2);
+  assert.equal(sol.output, 10);
+  assert.equal(sol.cache_read, 0.2);
+  assert.equal(sol.cache_write, 2.5);
+
+  const luna = getModelPricing('gpt-6-luna', { source: 'codex' });
+  assert.equal(luna.input, 0.1);
+  assert.equal(luna.output, 0.5);
+  assert.equal(luna.cache_read, 0.01);
+  assert.equal(luna.cache_write, 0.125);
+});
+
 test('gpt-6-astra codex row bills cached input at the cache-read rate, not zero', () => {
   const row = makeRow({
     source: 'codex',
