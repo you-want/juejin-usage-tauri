@@ -74,6 +74,7 @@ async function until(condition: () => boolean) {
 
 beforeEach(async () => {
   userData = await mkdtemp(join(tmpdir(), 'jusage-auto-update-test-'));
+  delete process.env.PORTABLE_EXECUTABLE_FILE;
   sentStates.length = 0;
   app.isPackaged = true;
   updater.quitAndInstallCalled = false;
@@ -86,6 +87,7 @@ beforeEach(async () => {
 });
 afterEach(async () => {
   disposeAutoUpdate();
+  delete process.env.PORTABLE_EXECUTABLE_FILE;
   await rm(userData, { recursive: true, force: true });
 });
 
@@ -114,6 +116,19 @@ test('development never checks for updates or starts an installation', async () 
   await check();
   install();
   assert.equal(updater.checkForUpdates.mock.callCount(), 0);
+  assert.equal(updater.quitAndInstall.mock.callCount(), 0);
+});
+
+test('portable build requires manual updates instead of installing the NSIS package', async () => {
+  process.env.PORTABLE_EXECUTABLE_FILE = 'C:\\Downloads\\Juejin.Usage.Portable.exe';
+  await initializeAutoUpdate({ beforeInstall: async () => {}, onInstallFailed: async () => {} });
+  assert.equal(getState().status, 'unsupported');
+  assert.equal(
+    getState().message,
+    '便携版不支持自动更新，请从下载页手动下载新版本',
+  );
+  assert.equal(updater.checkForUpdates.mock.callCount(), 0);
+  install();
   assert.equal(updater.quitAndInstall.mock.callCount(), 0);
 });
 

@@ -18,6 +18,8 @@ const UPDATE_MARKER_FILENAME = 'auto-update.json';
 
 const UPDATE_FEED_URL =
   'https://gitee.com/juejin-cn/juejin-usage/raw/main/releases/';
+const PORTABLE_UPDATE_MESSAGE =
+  '便携版不支持自动更新，请从下载页手动下载新版本';
 
 let state: AutoUpdateState = {
   status: 'idle',
@@ -261,20 +263,25 @@ export async function initializeAutoUpdate(options: {
   clearInstallExitTimer();
   beforeInstall = options.beforeInstall;
   onInstallFailed = options.onInstallFailed;
-  const completedVersion = app.isPackaged
+  const isPortableExecutable = Boolean(process.env.PORTABLE_EXECUTABLE_FILE);
+  const automaticUpdatesSupported = app.isPackaged && !isPortableExecutable;
+  const unsupportedMessage = !app.isPackaged
+    ? '开发环境不检查更新，请安装正式构建包后测试'
+    : isPortableExecutable
+      ? PORTABLE_UPDATE_MESSAGE
+      : undefined;
+  const completedVersion = automaticUpdatesSupported
     ? await readCompletedVersion()
     : undefined;
   state = {
-    status: app.isPackaged ? 'idle' : 'unsupported',
+    status: automaticUpdatesSupported ? 'idle' : 'unsupported',
     currentVersion: app.getVersion(),
     ...(completedVersion ? { completedVersion } : {}),
-    ...(!app.isPackaged
-      ? { message: '开发环境不检查更新，请安装正式构建包后测试' }
-      : {}),
+    ...(unsupportedMessage ? { message: unsupportedMessage } : {}),
   };
   registerIpc();
 
-  if (!app.isPackaged) return;
+  if (!automaticUpdatesSupported) return;
 
   autoUpdater.setFeedURL({
     provider: 'generic',
