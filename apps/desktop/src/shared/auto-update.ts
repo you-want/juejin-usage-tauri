@@ -2,6 +2,7 @@ export type AutoUpdateStatus =
   | 'unsupported'
   | 'idle'
   | 'checking'
+  | 'available'
   | 'downloading'
   | 'downloaded'
   | 'installing'
@@ -32,7 +33,7 @@ export function shouldOfferUpdateRestart(status: AutoUpdateStatus): boolean {
   return status === 'downloaded' || status === 'installing';
 }
 
-/** 发现新版本后立即进入自动下载状态。 */
+/** 自动安装版发现新版本后进入下载状态；便携版只显示可用版本。 */
 export function isUpdateDownloadInProgress(status: AutoUpdateStatus): boolean {
   return status === 'downloading';
 }
@@ -46,6 +47,8 @@ export function getUpdateToolbarAction(state: AutoUpdateState | null): {
   request: 'install' | 'check' | null;
 } | null {
   switch (state?.status) {
+    case 'available':
+      return { label: '发现新版本', request: null };
     case 'downloading':
       return {
         label: state.percent == null
@@ -66,7 +69,7 @@ export function getUpdateToolbarAction(state: AutoUpdateState | null): {
 
 /** 有可用更新时返回独立版本行的值，无新版本时隐藏该行。 */
 export function getLatestUpdateVersion(state: AutoUpdateState | null): string | null {
-  if (!state || !['downloading', 'downloaded', 'installing'].includes(state.status)) return null;
+  if (!state || !['available', 'downloading', 'downloaded', 'installing'].includes(state.status)) return null;
   return state.version || null;
 }
 
@@ -78,6 +81,8 @@ export function updateStatusMessage(state: AutoUpdateState | null): string {
       return state.message ?? '开发环境不支持自动更新';
     case 'checking':
       return '正在检查新版本…';
+    case 'available':
+      return state.message ?? '发现新版本';
     case 'downloading':
     case 'downloaded':
     case 'installing':

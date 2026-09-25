@@ -19,7 +19,7 @@ const UPDATE_MARKER_FILENAME = 'auto-update.json';
 const UPDATE_FEED_URL =
   'https://gitee.com/juejin-cn/juejin-usage/raw/main/releases/';
 const PORTABLE_UPDATE_MESSAGE =
-  '便携版不支持自动更新，请从下载页手动下载新版本';
+  '发现新版本，请从下载页手动下载对应的便携版';
 
 let state: AutoUpdateState = {
   status: 'idle',
@@ -264,24 +264,21 @@ export async function initializeAutoUpdate(options: {
   beforeInstall = options.beforeInstall;
   onInstallFailed = options.onInstallFailed;
   const isPortableExecutable = Boolean(process.env.PORTABLE_EXECUTABLE_FILE);
-  const automaticUpdatesSupported = app.isPackaged && !isPortableExecutable;
-  const unsupportedMessage = !app.isPackaged
-    ? '开发环境不检查更新，请安装正式构建包后测试'
-    : isPortableExecutable
-      ? PORTABLE_UPDATE_MESSAGE
-      : undefined;
-  const completedVersion = automaticUpdatesSupported
+  const automaticInstallationSupported = app.isPackaged && !isPortableExecutable;
+  const completedVersion = automaticInstallationSupported
     ? await readCompletedVersion()
     : undefined;
   state = {
-    status: automaticUpdatesSupported ? 'idle' : 'unsupported',
+    status: app.isPackaged ? 'idle' : 'unsupported',
     currentVersion: app.getVersion(),
     ...(completedVersion ? { completedVersion } : {}),
-    ...(unsupportedMessage ? { message: unsupportedMessage } : {}),
+    ...(!app.isPackaged
+      ? { message: '开发环境不检查更新，请安装正式构建包后测试' }
+      : {}),
   };
   registerIpc();
 
-  if (!automaticUpdatesSupported) return;
+  if (!app.isPackaged) return;
 
   autoUpdater.setFeedURL({
     provider: 'generic',
@@ -291,7 +288,9 @@ export async function initializeAutoUpdate(options: {
   // channel setter forces allowDowngrade=true; turn it back off so a
   // mis-published older yml cannot overwrite a newer install.
   autoUpdater.allowDowngrade = false;
-  autoUpdater.autoDownload = true;
+  // Portable builds can use the shared feed to announce a newer version, but
+  // downloading that feed's NSIS package would convert them into an install.
+  autoUpdater.autoDownload = !isPortableExecutable;
   // We install explicitly after releasing the local runtime owner.
   autoUpdater.autoInstallOnAppQuit = false;
   autoUpdater.autoRunAppAfterInstall = true;
@@ -306,10 +305,11 @@ export async function initializeAutoUpdate(options: {
   autoUpdater.on('update-available', (info) => {
     const checkedAt = new Date().toISOString();
     setState({
-      status: 'downloading',
+      status: isPortableExecutable ? 'available' : 'downloading',
       currentVersion: app.getVersion(),
       version: info.version,
       checkedAt,
+      ...(isPortableExecutable ? { message: PORTABLE_UPDATE_MESSAGE } : {}),
     });
   });
   autoUpdater.on('update-not-available', (info) => {
@@ -333,6 +333,7 @@ export async function initializeAutoUpdate(options: {
     });
   });
   autoUpdater.on('update-downloaded', (info) => {
+    if (isPortableExecutable) return;
     if (installAttempt || downloadedVersion === info.version) return;
     downloadedVersion = info.version;
     setState(

@@ -75,7 +75,7 @@ test('settings are silent when no newer version is available', () => {
 });
 
 test('settings retain the aligned latest version throughout download and install', () => {
-  for (const status of ['downloading', 'downloaded', 'installing'] as const) {
+  for (const status of ['available', 'downloading', 'downloaded', 'installing'] as const) {
     assert.equal(getLatestUpdateVersion({
       status,
       currentVersion: '0.1.8',
@@ -111,6 +111,13 @@ test('settings retain error messages', () => {
 });
 
 test('toolbar progress and installation states cannot start another action', () => {
+  assert.deepEqual(getUpdateToolbarAction({
+    status: 'available',
+    currentVersion: '0.1.8',
+    version: '0.1.9',
+  }), {
+    label: '发现新版本', request: null,
+  });
   assert.deepEqual(getUpdateToolbarAction({ status: 'downloading', currentVersion: '0.1.8', percent: 36.6 }), {
     label: '下载 37%', request: null,
   });

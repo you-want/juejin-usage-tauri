@@ -119,15 +119,18 @@ test('development never checks for updates or starts an installation', async () 
   assert.equal(updater.quitAndInstall.mock.callCount(), 0);
 });
 
-test('portable build requires manual updates instead of installing the NSIS package', async () => {
+test('portable build reports new versions without downloading the NSIS package', async () => {
   process.env.PORTABLE_EXECUTABLE_FILE = 'C:\\Downloads\\Juejin.Usage.Portable.exe';
   await initializeAutoUpdate({ beforeInstall: async () => {}, onInstallFailed: async () => {} });
-  assert.equal(getState().status, 'unsupported');
+  assert.equal(updater.autoDownload, false);
+  assert.equal(updater.checkForUpdates.mock.callCount(), 1);
+  updater.emit('update-available', { version: '0.1.9' });
+  assert.equal(getState().status, 'available');
+  assert.equal(getState().version, '0.1.9');
   assert.equal(
     getState().message,
-    '便携版不支持自动更新，请从下载页手动下载新版本',
+    '发现新版本，请从下载页手动下载对应的便携版',
   );
-  assert.equal(updater.checkForUpdates.mock.callCount(), 0);
   install();
   assert.equal(updater.quitAndInstall.mock.callCount(), 0);
 });
