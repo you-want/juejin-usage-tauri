@@ -111,13 +111,6 @@ test('settings retain error messages', () => {
 });
 
 test('toolbar progress and installation states cannot start another action', () => {
-  assert.deepEqual(getUpdateToolbarAction({
-    status: 'available',
-    currentVersion: '0.1.8',
-    version: '0.1.9',
-  }), {
-    label: '发现新版本', request: null,
-  });
   assert.deepEqual(getUpdateToolbarAction({ status: 'downloading', currentVersion: '0.1.8', percent: 36.6 }), {
     label: '下载 37%', request: null,
   });
@@ -129,7 +122,14 @@ test('toolbar progress and installation states cannot start another action', () 
   });
 });
 
-test('toolbar retains restart and check retries without opening a dialog', () => {
+test('toolbar retains restart, check retries, and portable release download', () => {
+  assert.deepEqual(getUpdateToolbarAction({
+    status: 'available',
+    currentVersion: '0.1.8',
+    version: '0.1.9',
+  }), {
+    label: '发现新版本', request: 'open-releases',
+  });
   assert.deepEqual(getUpdateToolbarAction(createDownloadedUpdateState('0.1.8', '0.1.9', undefined, 'Restart timed out')), {
     label: '更新并重启', request: 'install',
   });

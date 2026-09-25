@@ -19,7 +19,7 @@ const UPDATE_MARKER_FILENAME = 'auto-update.json';
 const UPDATE_FEED_URL =
   'https://gitee.com/juejin-cn/juejin-usage/raw/main/releases/';
 const PORTABLE_UPDATE_MESSAGE =
-  '发现新版本，请从下载页手动下载对应的便携版';
+  '点击前往 Gitee Release 下载便携版';
 
 let state: AutoUpdateState = {
   status: 'idle',

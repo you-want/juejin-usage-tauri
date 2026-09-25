@@ -22,6 +22,10 @@ export type AutoUpdateState = {
   completedVersion?: string;
 };
 
+/** Portable builds cannot use the shared NSIS feed; send users to Gitee assets. */
+export const PORTABLE_RELEASES_URL =
+  'https://gitee.com/juejin-cn/juejin-usage/releases';
+
 export const AUTO_UPDATE_GET_STATE_CHANNEL = 'auto-update:get-state';
 export const AUTO_UPDATE_CHECK_CHANNEL = 'auto-update:check';
 export const AUTO_UPDATE_INSTALL_CHANNEL = 'auto-update:install';
@@ -44,11 +48,12 @@ export function updateDownloadPercent(percent: number | undefined): number {
 
 export function getUpdateToolbarAction(state: AutoUpdateState | null): {
   label: string;
-  request: 'install' | 'check' | null;
+  request: 'install' | 'check' | 'open-releases' | null;
 } | null {
   switch (state?.status) {
     case 'available':
-      return { label: '发现新版本', request: null };
+      // Only portable builds enter `available`; click opens Gitee for the Portable asset.
+      return { label: '发现新版本', request: 'open-releases' };
     case 'downloading':
       return {
         label: state.percent == null

@@ -129,7 +129,7 @@ test('portable build reports new versions without downloading the NSIS package',
   assert.equal(getState().version, '0.1.9');
   assert.equal(
     getState().message,
-    '发现新版本，请从下载页手动下载对应的便携版',
+    '点击前往 Gitee Release 下载便携版',
   );
   install();
   assert.equal(updater.quitAndInstall.mock.callCount(), 0);
