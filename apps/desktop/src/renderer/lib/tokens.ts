@@ -38,6 +38,7 @@ export const SOURCE_COLORS: Record<string, string> = {
   warp: 'var(--source-warp)',
   qwenwork: 'var(--source-qwenwork)',
   'command-code': 'var(--source-command-code)',
+  'minimax-code': 'var(--source-minimax-code)',
 };
 
 const SOURCE_LABELS: Record<string, string> = {
@@ -76,6 +77,7 @@ const SOURCE_LABELS: Record<string, string> = {
   warp: 'Warp',
   qwenwork: 'QwenWork',
   'command-code': 'Command Code',
+  'minimax-code': 'MiniMax Code',
 };
 
 /** Local `claude` ↔ Server ingest `claude-code` (and similar aliases). */
@@ -126,6 +128,7 @@ function canonicalSource(source: string): string {
   if (key.startsWith('zed')) return 'zed';
   if (key.startsWith('warp')) return 'warp';
   if (key.startsWith('command-code') || key.startsWith('commandcode')) return 'command-code';
+  if (key.startsWith('minimax-code') || key === 'mcode') return 'minimax-code';
   return key;
 }
 

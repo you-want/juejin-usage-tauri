@@ -39,6 +39,7 @@ import { parseGooseIncremental } from '../parsers/goose.js';
 import { parseZedIncremental } from '../parsers/zed.js';
 import { parseWarpIncremental } from '../parsers/warp.js';
 import { parseQwenworkIncremental } from '../parsers/qwenwork.js';
+import { parseMiniMaxCodeIncremental } from '../parsers/minimax-code.js';
 import {
   appendBuckets,
   loadBucketsForRange,
@@ -844,6 +845,7 @@ export const SYNC_SOURCE_IDS = [
   'warp',
   'qwenwork',
   'command-code',
+  'minimax-code',
 ] as const;
 
 export type SyncSourceId = (typeof SYNC_SOURCE_IDS)[number];
@@ -857,6 +859,8 @@ const SYNC_SOURCE_ALIASES: Record<string, SyncSourceId> = {
   everycode: 'every-code',
   kilo: 'kilo-cli',
   'kilo-code': 'kilocode',
+  minimax: 'minimax-code',
+  mcode: 'minimax-code',
 };
 
 /**
@@ -890,6 +894,8 @@ async function syncOneSource(
       return syncClaude(dataDir, config, opts);
     case 'codex':
       return syncCodex(dataDir, config, opts);
+    case 'minimax-code':
+      return syncSourceBuckets(dataDir, config, 'minimax-code', parseMiniMaxCodeIncremental, { sharedCursors: opts?.sharedCursors });
     case 'cursor':
       return syncCursor(dataDir, config, opts);
     case 'qoder':
