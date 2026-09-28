@@ -379,8 +379,42 @@ export function readCodebuddyExtensionMessage(filePath: string): CodebuddyExtens
 }
 
 /**
+ * Token split from `extra.statsSnapshot` — the preferred source.
+ *
+ * One assistant message is a whole agent loop: every step (tool call, re-read,
+ * rewrite) re-sends the full context, so the real cost of a reply is the sum
+ * over all its steps. `statsSnapshot` holds that sum (`inputTokens` already
+ * includes `cachedInputTokens`); `lastStep*` only describes the final call and
+ * under-reports usage by roughly 7x.
+ */
+function usageFromCodebuddySnapshot(
+  snapshot: Record<string, unknown>,
+): Omit<TokenTotals, 'conversation_count'> | null {
+  const inputTotal = toNonNeg(snapshot.inputTokens);
+  const output = toNonNeg(snapshot.outputTokens);
+  const cached = toNonNeg(snapshot.cachedInputTokens);
+  const cacheWrite = toNonNeg(snapshot.cacheWriteTokens);
+  const reasoning = toNonNeg(snapshot.thinkingTokens);
+  if (inputTotal === 0 && output === 0 && cached === 0 && cacheWrite === 0) return null;
+
+  // `cacheMissTokens` is the newly billed part of the prompt; older records
+  // omit it and it falls back to `input - cached` (same as the CLI channel).
+  const cacheMiss = toNonNeg(snapshot.cacheMissTokens) || Math.max(0, inputTotal - cached);
+  const body = {
+    input_tokens: cacheMiss,
+    cached_input_tokens: cached,
+    cache_creation_input_tokens: cacheWrite,
+    output_tokens: output,
+    reasoning_output_tokens: reasoning,
+  };
+  return { ...body, total_tokens: computeTotalTokens(body) };
+}
+
+/**
  * Token split for the extension channel.
  *
+ * Prefers `statsSnapshot` (whole-loop total, what the CodeBuddy UI shows) and
+ * falls back to `lastStep*` for records written before snapshots existed.
  * `lastStepInputTokens` is the prompt size of that step (full context), and
  * `lastStepCachedInputTokens` the cache-hit part of it, so — same as the CLI
  * channel — the billed new input is `input - cached`. Steps without any usage
@@ -389,6 +423,12 @@ export function readCodebuddyExtensionMessage(filePath: string): CodebuddyExtens
 function usageFromCodebuddyExtra(
   extra: Record<string, unknown>,
 ): Omit<TokenTotals, 'conversation_count'> | null {
+  const snapshot = extra.statsSnapshot;
+  if (snapshot && typeof snapshot === 'object') {
+    const fromSnapshot = usageFromCodebuddySnapshot(snapshot as Record<string, unknown>);
+    if (fromSnapshot) return fromSnapshot;
+  }
+
   const rawInput = toNonNeg(extra.lastStepInputTokens);
   const rawOutput = toNonNeg(extra.lastStepOutputTokens);
   const cached = toNonNeg(extra.lastStepCachedInputTokens);
