@@ -4,6 +4,7 @@ import CodeBuddy from '@lobehub/icons/es/CodeBuddy';
 import Codex from '@lobehub/icons/es/Codex';
 import Cursor from '@lobehub/icons/es/Cursor';
 import DeepSeek from '@lobehub/icons/es/DeepSeek';
+import GithubCopilot from '@lobehub/icons/es/GithubCopilot';
 import Grok from '@lobehub/icons/es/Grok';
 import Kimi from '@lobehub/icons/es/Kimi';
 import Minimax from '@lobehub/icons/es/Minimax';
@@ -13,7 +14,7 @@ import Trae from '@lobehub/icons/es/Trae';
 import ZAI from '@lobehub/icons/es/ZAI';
 
 export type SubscriptionBrand =
-  | 'antigravity' | 'claude' | 'codebuddy' | 'codex' | 'cursor' | 'deepseek'
+  | 'antigravity' | 'claude' | 'codebuddy' | 'codex' | 'copilot' | 'cursor' | 'deepseek'
   | 'grok' | 'kimi' | 'minimax' | 'opencode' | 'qoder' | 'trae' | 'zcode';
 
 const iconClassName = 'size-6 shrink-0';
@@ -26,6 +27,7 @@ export function SubscriptionBrandIcon({ brand }: { brand: SubscriptionBrand }) {
     case 'claude': return <Claude.Color aria-hidden className={iconClassName} size={24} />;
     case 'codebuddy': return <CodeBuddy.Color aria-hidden className={iconClassName} size={24} />;
     case 'codex': return <Codex.Color aria-hidden className={iconClassName} size={24} />;
+    case 'copilot': return <GithubCopilot aria-hidden className={monoIconClassName} size={24} />;
     case 'cursor': return <Cursor aria-hidden className={monoIconClassName} size={24} />;
     case 'deepseek': return <DeepSeek.Color aria-hidden className={iconClassName} size={24} />;
     case 'grok': return <Grok aria-hidden className={monoIconClassName} size={24} />;

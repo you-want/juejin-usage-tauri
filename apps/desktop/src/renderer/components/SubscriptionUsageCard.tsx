@@ -110,7 +110,7 @@ function SubscriptionProgressBars({
             </div>
             <div className="flex min-w-0 items-center gap-3">
               <ProgressBar
-                aria-label={`${title} ${metric.label}剩余 ${Math.round(metric.remainingPercent)}%${resetLabel ? `，${timeKind}${resetLabel}` : ''}`}
+                aria-label={`${title} ${metric.label} ${metric.valueText ?? `剩余 ${Math.round(metric.remainingPercent)}%`}${resetLabel ? `，${timeKind}${resetLabel}` : ''}`}
                 className="min-w-0 flex-1"
                 maxValue={100}
                 size="sm"

@@ -36,6 +36,9 @@ declare global {
       getCursorSubscription: () => Promise<
         import('../shared/cursor-subscription').CursorSubscriptionSnapshot
       >;
+      getCopilotSubscription: () => Promise<
+        import('../shared/copilot-subscription').CopilotSubscriptionSnapshot
+      >;
       getGrokSubscription: () => Promise<
         import('../shared/grok-subscription').GrokSubscriptionSnapshot
       >;
