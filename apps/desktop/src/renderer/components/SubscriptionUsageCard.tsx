@@ -28,12 +28,15 @@ export interface SubscriptionUsageCardData {
 interface SubscriptionUsageCardProps {
   data: SubscriptionUsageCardData;
   loading: boolean;
+  /** Optional feedback keeps a failed channel visible even without metrics. */
+  feedback?: ReactNode;
 }
 
 /** Shared desktop presentation for subscription allowance progress bars. */
 export function SubscriptionUsageCard({
   data,
   loading,
+  feedback,
 }: SubscriptionUsageCardProps) {
   const visiblePlanLabel = visibleSubscriptionPlanLabel(data.planLabel);
   const visibleMetrics = data.metrics.filter(
@@ -41,13 +44,12 @@ export function SubscriptionUsageCard({
       metric.remainingPercent !== null,
   );
 
-  // Keep subscription surfaces focused on usable allowance data. Empty or
-  // in-flight channels do not reserve a card-sized gap in their grid.
-  if (loading || visibleMetrics.length === 0) return null;
+  // Channels without explicit feedback retain the existing empty/loading behavior.
+  if (!feedback && (loading || visibleMetrics.length === 0)) return null;
 
   return (
     <Card className="min-w-0 overflow-hidden rounded-2xl p-3">
-      <Card.Content className="grid grid-rows-[auto_auto] gap-3 p-0">
+      <Card.Content className="grid content-start gap-3 p-0">
         <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-3">
           <div className="flex min-w-0 items-center gap-2.5">
             {data.icon}
@@ -64,7 +66,10 @@ export function SubscriptionUsageCard({
             </Chip>
           ) : null}
         </div>
-        <SubscriptionProgressBars metrics={visibleMetrics} title={data.title} />
+        {visibleMetrics.length > 0 ? (
+          <SubscriptionProgressBars metrics={visibleMetrics} title={data.title} />
+        ) : null}
+        {feedback}
       </Card.Content>
     </Card>
   );

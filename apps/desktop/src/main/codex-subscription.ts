@@ -9,6 +9,8 @@ import {
 } from '../shared/codex-subscription';
 
 const REQUEST_TIMEOUT_MS = 10_000;
+const CLI_CHECK_HINT = '请在终端运行 codex --version 检查；若出现系统安全警告，请从官方渠道升级 Codex CLI 后重试。';
+const RATE_LIMIT_FAILURE = '暂时无法读取 Codex 订阅额度，请确认登录状态和网络后重试';
 
 type JsonRpcMessage = { id?: number; result?: unknown; error?: { message?: unknown } };
 type AccountResult = { account?: { type?: unknown; planType?: unknown } | null };
@@ -73,23 +75,36 @@ export function readCodexSubscription(): Promise<CodexSubscriptionSnapshot> {
       resolve(snapshot);
     };
     const fail = (message: string) => finish(unavailable('unavailable', message, planLabel));
-    const send = (message: object) => child.stdin.write(`${JSON.stringify(message)}\n`);
-    const timeout = setTimeout(() => fail('读取限额超时，请稍后重试'), REQUEST_TIMEOUT_MS);
+    const failCli = (reason: string) => fail(`${reason}。${CLI_CHECK_HINT}`);
+    const send = (message: object) => {
+      if (settled) return;
+      try {
+        child.stdin.write(`${JSON.stringify(message)}\n`);
+      } catch {
+        failCli('与本机 Codex CLI 的连接已中断');
+      }
+    };
+    const timeout = setTimeout(() => failCli('读取 Codex 订阅额度超时，请检查网络后重试'), REQUEST_TIMEOUT_MS);
 
     child.once('error', (error) => {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-        finish(unavailable('not-installed', '未检测到本机 Codex CLI'));
+        finish(unavailable('not-installed', '未检测到本机 Codex CLI，请先从官方渠道安装后重试'));
       } else {
-        fail('无法启动本机 Codex CLI');
+        failCli('无法启动本机 Codex CLI');
       }
     });
-    child.once('exit', () => { if (!settled) fail('Codex CLI 意外退出'); });
+    child.once('exit', () => failCli('Codex CLI 在读取订阅额度时意外退出'));
+    // A blocked or exiting CLI can close stdin before an RPC write completes.
+    // Keep the listener after settlement to absorb late stream errors as well.
+    child.stdin.on('error', () => failCli('与本机 Codex CLI 的连接已中断'));
     // The protocol is stdout-only; drain diagnostics so a noisy CLI cannot
     // block while the tray is waiting for its small account response.
     child.stderr.resume();
     child.stdout.on('data', (chunk: Buffer) => {
+      if (settled) return;
       stdout += chunk.toString('utf8');
       for (;;) {
+        if (settled) return;
         const newline = stdout.indexOf('\n');
         if (newline < 0) break;
         const line = stdout.slice(0, newline);
@@ -97,8 +112,9 @@ export function readCodexSubscription(): Promise<CodexSubscriptionSnapshot> {
         if (!line.trim()) continue;
         let message: JsonRpcMessage;
         try { message = JSON.parse(line) as JsonRpcMessage; } catch { continue; }
+        if (!message || typeof message !== 'object') continue;
         if (message.id === 1) {
-          if (message.error) { fail('本机 Codex CLI 不支持订阅读取'); continue; }
+          if (message.error) { fail('Codex CLI 初始化失败，请从官方渠道升级 Codex CLI 后重试'); continue; }
           send({ jsonrpc: '2.0', method: 'initialized', params: {} });
           send({ jsonrpc: '2.0', id: 2, method: 'account/read', params: {} });
           continue;
@@ -113,7 +129,7 @@ export function readCodexSubscription(): Promise<CodexSubscriptionSnapshot> {
           continue;
         }
         if (message.id === 3) {
-          if (message.error) { finish(unavailable('unavailable', '暂时无法读取 Codex 限额', planLabel)); continue; }
+          if (message.error) { fail(RATE_LIMIT_FAILURE); continue; }
           const rateLimits = (message.result as RateLimitResult | undefined)?.rateLimits;
           const windows = mapCodexRateLimitWindows({
             primary: asRecord(rateLimits?.primary),
@@ -122,7 +138,7 @@ export function readCodexSubscription(): Promise<CodexSubscriptionSnapshot> {
           finish({
             status: windows.fiveHour || windows.weekly ? 'ready' : 'unavailable',
             planLabel, ...windows,
-            message: windows.fiveHour || windows.weekly ? null : '暂时无法读取 Codex 限额',
+            message: windows.fiveHour || windows.weekly ? null : RATE_LIMIT_FAILURE,
           });
         }
       }
