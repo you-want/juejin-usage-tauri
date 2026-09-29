@@ -413,7 +413,7 @@ export async function createAggregateCache(
   if (cache.sealedDayCount() === 0 && rows.length > 0) {
     await cache.rebuildFromRows(rows);
   } else {
-    await cache.onBucketsChanged(rows, []);
+    await cache.onBucketsChanged(rows, [], true);
   }
   return cache;
 }
