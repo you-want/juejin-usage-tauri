@@ -27,6 +27,7 @@ import qwenWorkIcon from '@/assets/brand-logos/qwenwork.ico';
 import roocodeIcon from '@lobehub/icons-static-svg/icons/roocode.svg';
 import traeIcon from '@lobehub/icons-static-svg/icons/trae-color.svg';
 import windsurfIcon from '@lobehub/icons-static-svg/icons/windsurf.svg';
+import wpsComateIcon from '@/assets/brand-logos/wps-comate.svg';
 import xiaomiMimoIcon from '@lobehub/icons-static-svg/icons/xiaomimimo.svg';
 import zaiIcon from '@lobehub/icons-static-svg/icons/zai.svg';
 
@@ -69,6 +70,7 @@ const PROVIDER_ICON_MAP: Record<string, ProviderIconAsset> = {
   trae: { src: traeIcon },
   windsurf: { monochrome: true, src: windsurfIcon },
   workbuddy: { src: codeBuddyIcon },
+  'wps-comate': { src: wpsComateIcon },
   zcode: { monochrome: true, src: zaiIcon },
 };
 
@@ -147,6 +149,9 @@ function normalizeProviderKey(provider: string): string {
   if (key.startsWith('zed')) return 'zed';
   if (key.startsWith('warp')) return 'warp';
   if (key.startsWith('command-code') || key.startsWith('commandcode')) return 'command-code';
+  if (key.startsWith('wps-comate') || key.startsWith('wpscomate')) {
+    return 'wps-comate';
+  }
 
   return PROVIDER_ALIASES[key] ?? key;
 }
