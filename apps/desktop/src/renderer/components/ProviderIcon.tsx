@@ -147,7 +147,7 @@ function normalizeProviderKey(provider: string): string {
   if (key.startsWith('zed')) return 'zed';
   if (key.startsWith('warp')) return 'warp';
   if (key.startsWith('command-code') || key.startsWith('commandcode')) return 'command-code';
-  if (key.startsWith('wps-comate') || key.startsWith('wpscomate') || key.startsWith('comate')) {
+  if (key.startsWith('wps-comate') || key.startsWith('wpscomate')) {
     return 'wps-comate';
   }
 

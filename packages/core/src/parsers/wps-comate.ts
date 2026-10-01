@@ -11,7 +11,7 @@
  */
 import { existsSync, readdirSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { stat } from 'node:fs/promises';
 import { createJsonlLineReader } from './jsonl-tail.js';
 
@@ -215,7 +215,7 @@ export async function parseWpsComateIncremental(
     }
 
     const reader = createJsonlLineReader(filePath, startOffset);
-    const fileTag = filePath.split('/').pop() ?? filePath;
+    const fileTag = basename(filePath);
 
     for await (const line of reader) {
       if (!line.includes('"usage"')) continue;

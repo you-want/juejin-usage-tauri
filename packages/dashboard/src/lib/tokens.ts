@@ -128,7 +128,7 @@ function canonicalSource(source: string): string {
   if (key.startsWith('zed')) return 'zed';
   if (key.startsWith('warp')) return 'warp';
   if (key.startsWith('command-code') || key.startsWith('commandcode')) return 'command-code';
-  if (key === 'wps-comate' || key === 'wpscomate' || key.startsWith('wps-comate')) return 'wps-comate';
+  if (key.startsWith('wps-comate') || key.startsWith('wpscomate')) return 'wps-comate';
   return key;
 }
 
