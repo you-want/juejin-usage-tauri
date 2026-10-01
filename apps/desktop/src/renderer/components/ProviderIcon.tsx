@@ -27,6 +27,7 @@ import qwenWorkIcon from '@/assets/brand-logos/qwenwork.ico';
 import roocodeIcon from '@lobehub/icons-static-svg/icons/roocode.svg';
 import traeIcon from '@lobehub/icons-static-svg/icons/trae-color.svg';
 import windsurfIcon from '@lobehub/icons-static-svg/icons/windsurf.svg';
+import wpsComateIcon from '@/assets/brand-logos/wps-comate.svg';
 import xiaomiMimoIcon from '@lobehub/icons-static-svg/icons/xiaomimimo.svg';
 import zaiIcon from '@lobehub/icons-static-svg/icons/zai.svg';
 
@@ -69,6 +70,7 @@ const PROVIDER_ICON_MAP: Record<string, ProviderIconAsset> = {
   trae: { src: traeIcon },
   windsurf: { monochrome: true, src: windsurfIcon },
   workbuddy: { src: codeBuddyIcon },
+  'wps-comate': { src: wpsComateIcon },
   zcode: { monochrome: true, src: zaiIcon },
 };
 
@@ -242,16 +244,6 @@ export function ProviderIcon({
     );
   }
 
-  if (key === 'wps-comate') {
-    return (
-      <WpsComateIcon
-        className={className}
-        size={size}
-        style={{ color: svgColor }}
-      />
-    );
-  }
-
   if (key === 'dsh') {
     return (
       <DeepSeekHarnessIcon
@@ -342,41 +334,6 @@ function WarpIcon({
       width={size}
     >
       <path d="M4.2 5.5h3.1l2.05 8.2 2.15-8.2h2.9l2.15 8.2 2.05-8.2h3.1L17.3 18.5h-3.05L12 10.2l-2.25 8.3H6.7L4.2 5.5Z" />
-    </svg>
-  );
-}
-
-function WpsComateIcon({
-  className,
-  size,
-  style,
-}: {
-  className: string;
-  size: number;
-  style?: CSSProperties;
-}): ReactNode {
-  // WPS Comate: rounded square badge with a "C" spark, echoing the WPS red.
-  return (
-    <svg
-      aria-hidden
-      className={`shrink-0 ${className}`}
-      fill="none"
-      height={size}
-      style={style}
-      viewBox="0 0 24 24"
-      width={size}
-    >
-      <rect height="18" rx="4.5" stroke="currentColor" strokeWidth="1.8" width="18" x="3" y="3" />
-      <path
-        d="M15.2 9.1a4.1 4.1 0 1 0 0 5.8"
-        stroke="currentColor"
-        strokeLinecap="round"
-        strokeWidth="1.8"
-      />
-      <path
-        d="M17.6 6.4l.5 1.3 1.3.5-1.3.5-.5 1.3-.5-1.3-1.3-.5 1.3-.5z"
-        fill="currentColor"
-      />
     </svg>
   );
 }
