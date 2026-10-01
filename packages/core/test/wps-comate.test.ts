@@ -8,7 +8,10 @@ import {
   findWpsComateSessionFiles,
   parseWpsComateIncremental,
   wpsComateModelName,
+  wpsComateSessionsDir,
 } from '../src/parsers/wps-comate.js';
+import { isSyncSourcePresent } from '../src/sync/source-presence.js';
+import { bucketToIngestEvent } from '../src/upload/events.js';
 import { isolateAgentHome } from './platform-fixtures.js';
 import type { CursorsFile } from '../src/types.js';
 
@@ -303,6 +306,117 @@ test('parseWpsComateIncremental attributes unknown project when the header is mi
     const cursors: CursorsFile = {};
     const { result } = await parseWpsComateIncremental(cursors, SINCE);
     assert.equal(result.buckets[0]!.project, 'unknown');
+  } finally {
+    restore();
+    await rm(home, { recursive: true, force: true });
+  }
+});
+
+test('parseWpsComateIncremental is a no-op when WPS Comate is not installed', async () => {
+  const home = await mkdtemp(join(tmpdir(), 'tud-wps-comate-'));
+  const restore = isolateAgentHome(home);
+  try {
+    assert.equal(findWpsComateSessionFiles().length, 0);
+
+    const cursors: CursorsFile = {};
+    const { result } = await parseWpsComateIncremental(cursors, SINCE);
+    assert.equal(result.eventsParsed, 0);
+    assert.equal(result.filesProcessed, 0);
+    assert.equal(result.buckets.length, 0);
+  } finally {
+    restore();
+    await rm(home, { recursive: true, force: true });
+  }
+});
+
+test('isSyncSourcePresent skips wps-comate when the sessions dir is missing', async () => {
+  const home = await mkdtemp(join(tmpdir(), 'tud-wps-comate-'));
+  const restore = isolateAgentHome(home);
+  try {
+    assert.equal(isSyncSourcePresent('wps-comate'), false);
+    assert.ok(wpsComateSessionsDir().endsWith(join('.wpscomate', 'agent', 'task-sessions')));
+  } finally {
+    restore();
+    await rm(home, { recursive: true, force: true });
+  }
+});
+
+test('isSyncSourcePresent enables wps-comate once the sessions dir exists', async () => {
+  const home = await mkdtemp(join(tmpdir(), 'tud-wps-comate-'));
+  const restore = isolateAgentHome(home);
+  try {
+    assert.equal(isSyncSourcePresent('wps-comate'), false);
+    await seedSessionFile(home, 'session-a.jsonl', [
+      sessionEntry('/Users/dev/my-app'),
+      assistantEntry(),
+    ]);
+    assert.equal(isSyncSourcePresent('wps-comate'), true);
+  } finally {
+    restore();
+    await rm(home, { recursive: true, force: true });
+  }
+});
+
+test('bucketToIngestEvent maps wps-comate source and collector', () => {
+  const event = bucketToIngestEvent(
+    {
+      hour_start: '2026-06-09T20:30:00.000Z',
+      source: 'wps-comate',
+      model: 'glm-5.3',
+      collector: 'wps-comate',
+      input_tokens: 100,
+      output_tokens: 20,
+      cached_input_tokens: 10,
+      cache_creation_input_tokens: 5,
+      reasoning_output_tokens: 0,
+      total_tokens: 135,
+      conversation_count: 1,
+    },
+    '550e8400-e29b-41d4-a716-446655440000',
+  );
+  assert.equal(event?.integration, 'wps-comate');
+  assert.equal(event?.collector, 'wps-comate');
+});
+
+test('parseWpsComateIncremental records collector on buckets', async () => {
+  const home = await mkdtemp(join(tmpdir(), 'tud-wps-comate-'));
+  const restore = isolateAgentHome(home);
+  try {
+    await seedSessionFile(home, 'session-a.jsonl', [
+      sessionEntry('/Users/dev/my-app'),
+      assistantEntry(),
+    ]);
+
+    const cursors: CursorsFile = {};
+    const { result } = await parseWpsComateIncremental(cursors, SINCE);
+    assert.equal(result.buckets[0]!.collector, 'wps-comate');
+  } finally {
+    restore();
+    await rm(home, { recursive: true, force: true });
+  }
+});
+
+test('parseWpsComateIncremental skips assistant entries without an id', async () => {
+  const home = await mkdtemp(join(tmpdir(), 'tud-wps-comate-'));
+  const restore = isolateAgentHome(home);
+  try {
+    await seedSessionFile(home, 'session-a.jsonl', [
+      sessionEntry('/Users/dev/my-app'),
+      {
+        id: '',
+        type: 'message',
+        timestamp: '2026-06-09T20:46:30.000Z',
+        message: {
+          role: 'assistant',
+          responseModel: 'glm-5.3',
+          usage: { input: 10, output: 2, cacheRead: 0, cacheWrite: 0, reasoning: 0 },
+        },
+      },
+    ]);
+
+    const cursors: CursorsFile = {};
+    const { result } = await parseWpsComateIncremental(cursors, SINCE);
+    assert.equal(result.eventsParsed, 0);
   } finally {
     restore();
     await rm(home, { recursive: true, force: true });
