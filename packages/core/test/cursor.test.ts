@@ -1,4 +1,8 @@
 import assert from 'node:assert/strict';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import test from 'node:test';
 
 import {
@@ -6,6 +10,7 @@ import {
   parseCursorCsv,
   parseCursorIncremental,
   recordsToBuckets,
+  resetCursorCookieCache,
 } from '../src/parsers/cursor.js';
 
 const SAMPLE_CSV = `Date,Kind,Model,Max Mode,Input (w/ Cache Write),Input (w/o Cache Write),Cache Read,Output Tokens,Total Tokens,Cost
@@ -35,6 +40,70 @@ test('parseCursorIncremental skips the remote fetch when lastSyncAt is fresh', a
   assert.match(result.error ?? '', /节流/);
   // Throttling is not a failure: lastError must stay untouched.
   assert.equal(cursors.cursor.lastError, null);
+});
+
+test('parseCursorIncremental treats a response-body timeout as a skipped sync', async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), 'jusage-cursor-timeout-'));
+  const stateDbPath = join(tempDir, 'state.vscdb');
+  const header = Buffer.from(JSON.stringify({ alg: 'none' })).toString('base64url');
+  const payload = Buffer.from(JSON.stringify({ sub: 'auth0|user_timeout' })).toString('base64url');
+  const accessToken = `${header}.${payload}.sig`;
+  const stateDb = new DatabaseSync(stateDbPath);
+  stateDb.exec('CREATE TABLE ItemTable (key TEXT PRIMARY KEY, value TEXT)');
+  stateDb.prepare('INSERT INTO ItemTable VALUES (?, ?)').run('cursorAuth/accessToken', accessToken);
+  stateDb.close();
+
+  const originalCursorStateDbPath = process.env.CURSOR_STATE_DB_PATH;
+  const originalCursorFetchTimeoutMs = process.env.JUSAGE_CURSOR_FETCH_TIMEOUT_MS;
+  const originalFetch = globalThis.fetch;
+  const originalAbortSignalTimeout = AbortSignal.timeout;
+
+  try {
+    process.env.CURSOR_STATE_DB_PATH = stateDbPath;
+    delete process.env.JUSAGE_CURSOR_FETCH_TIMEOUT_MS;
+    resetCursorCookieCache();
+
+    let observedTimeoutMs = 0;
+    Object.defineProperty(AbortSignal, 'timeout', {
+      configurable: true,
+      value: (timeoutMs: number) => {
+        observedTimeoutMs = timeoutMs;
+        return new AbortController().signal;
+      },
+    });
+    globalThis.fetch = async () =>
+      new Response(
+        new ReadableStream({
+          start(controller) {
+            controller.error(new DOMException('The operation was aborted due to timeout', 'TimeoutError'));
+          },
+        }),
+        { status: 200 },
+      );
+
+    const firstAttempt = await parseCursorIncremental({}, '2026-01-01T00:00:00.000Z');
+    assert.equal(observedTimeoutMs, 180_000);
+    assert.equal(firstAttempt.result.skipped, true);
+    assert.match(firstAttempt.result.error ?? '', /timeout/);
+
+    process.env.JUSAGE_CURSOR_FETCH_TIMEOUT_MS = '240000';
+    const configuredAttempt = await parseCursorIncremental({}, '2026-01-01T00:00:00.000Z');
+    assert.equal(observedTimeoutMs, 240_000);
+    assert.equal(configuredAttempt.result.skipped, true);
+    assert.match(configuredAttempt.result.error ?? '', /timeout/);
+  } finally {
+    if (originalCursorStateDbPath === undefined) delete process.env.CURSOR_STATE_DB_PATH;
+    else process.env.CURSOR_STATE_DB_PATH = originalCursorStateDbPath;
+    if (originalCursorFetchTimeoutMs === undefined) delete process.env.JUSAGE_CURSOR_FETCH_TIMEOUT_MS;
+    else process.env.JUSAGE_CURSOR_FETCH_TIMEOUT_MS = originalCursorFetchTimeoutMs;
+    globalThis.fetch = originalFetch;
+    Object.defineProperty(AbortSignal, 'timeout', {
+      configurable: true,
+      value: originalAbortSignalTimeout,
+    });
+    resetCursorCookieCache();
+    rmSync(tempDir, { recursive: true, force: true });
+  }
 });
 
 test('collectCursorSessionUserIds prefers the JWT subject over a stale CLI authId', () => {
