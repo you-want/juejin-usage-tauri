@@ -18,7 +18,6 @@ import { normalizeProjectName } from './project-label.js';
 import { roundCostUsd } from './pricing/index.js';
 import {
   DEFAULT_STATS_TIMEZONE,
-  addLocalDays,
   localDateAndHour,
   localDateDaysAgo,
   localDateNow,
@@ -339,11 +338,12 @@ export class AggregateCache {
 
   /**
    * After BucketStore.apply / reload: reseal touched historical dates and
-   * roll yesterday into sealed when the calendar day advances.
+   * seal any missing historical dates when the calendar day advances.
    */
   async onBucketsChanged(
     allRows: QueueBucket[],
     touchedBuckets: QueueBucket[] = [],
+    reconcileHistory = false,
   ): Promise<void> {
     await this.ensureLoaded();
     const today = localDateNow(this.timeZone);
@@ -354,19 +354,18 @@ export class AggregateCache {
       return;
     }
 
-    // Cross-midnight: seal yesterday if still missing.
-    if (this.sealedAsOf && this.sealedAsOf < today) {
-      const yesterday = addLocalDays(today, -1);
-      if (!this.days.has(yesterday)) {
-        const entry = buildSealedDay(allRows, yesterday, this.timeZone);
-        if (entry) {
-          this.days.set(yesterday, entry);
-          this.dirty = true;
-        }
+    // Startup also repairs gaps left by older versions. A sleeping app can
+    // resume several days later, so sealing only yesterday misses earlier days.
+    if (reconcileHistory || (this.sealedAsOf && this.sealedAsOf < today)) {
+      for (const date of touchedLocalDates(allRows, this.timeZone)) {
+        if (date >= today || this.days.has(date)) continue;
+        const entry = buildSealedDay(allRows, date, this.timeZone);
+        if (!entry) continue;
+        this.days.set(date, entry);
+        this.dirty = true;
       }
-      this.sealedAsOf = today;
-      this.dirty = true;
-    } else if (!this.sealedAsOf) {
+    }
+    if (this.sealedAsOf !== today) {
       this.sealedAsOf = today;
       this.dirty = true;
     }
