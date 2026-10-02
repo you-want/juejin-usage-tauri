@@ -12,10 +12,11 @@ import OpenCode from '@lobehub/icons/es/OpenCode';
 import Qoder from '@lobehub/icons/es/Qoder';
 import Trae from '@lobehub/icons/es/Trae';
 import ZAI from '@lobehub/icons/es/ZAI';
+import workBuddyIcon from '@/assets/brand-logos/workbuddy.svg';
 
 export type SubscriptionBrand =
   | 'antigravity' | 'claude' | 'codebuddy' | 'codex' | 'copilot' | 'cursor' | 'deepseek'
-  | 'grok' | 'kimi' | 'minimax' | 'opencode' | 'qoder' | 'trae' | 'zcode';
+  | 'grok' | 'kimi' | 'minimax' | 'opencode' | 'qoder' | 'trae' | 'workbuddy' | 'zcode';
 
 const iconClassName = 'size-6 shrink-0';
 const monoIconClassName = `${iconClassName} text-foreground`;
@@ -36,6 +37,17 @@ export function SubscriptionBrandIcon({ brand }: { brand: SubscriptionBrand }) {
     case 'opencode': return <OpenCode aria-hidden className={monoIconClassName} size={24} />;
     case 'qoder': return <Qoder.Color aria-hidden className={iconClassName} size={24} />;
     case 'trae': return <Trae.Color aria-hidden className={iconClassName} size={24} />;
+    case 'workbuddy':
+      return (
+        <img
+          alt=""
+          aria-hidden
+          className={`${iconClassName} object-contain`}
+          height={24}
+          src={workBuddyIcon}
+          width={24}
+        />
+      );
     case 'zcode': return <ZAI aria-hidden className={monoIconClassName} size={24} />;
   }
 }

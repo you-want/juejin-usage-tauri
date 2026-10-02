@@ -55,7 +55,7 @@ export function WorkBuddySubscriptionCard({ region, title, fetcher }: WorkBuddyS
   return (
     <SubscriptionUsageCard
       data={{
-        icon: <SubscriptionBrandIcon brand="codebuddy" />,
+        icon: <SubscriptionBrandIcon brand="workbuddy" />,
         metrics: snapshot.limits.slice(0, 2).map((limit, index) => ({
           color: index === 0 && snapshot.limits.length > 1 ? '#7dcf00' : '#2b7eff',
           label: workBuddyLabel(region, limit.label),
