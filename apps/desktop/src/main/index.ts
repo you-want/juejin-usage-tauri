@@ -70,6 +70,8 @@ import {
   type OpenSettingsPayload,
 } from './deep-link';
 import { disposeAutoUpdate, initializeAutoUpdate } from './auto-update';
+import { createMainWindowLauncher } from './main-window-launcher';
+import { restoreNativeTrapHandler } from './native-crash-signals';
 import { isThemeMode, resolveTheme, type ThemeMode } from '../shared/theme';
 import {
   DEFAULT_DATA_DIR,
@@ -78,6 +80,8 @@ import {
   readRuntimeHeartbeat,
   touchRuntimeHeartbeat,
 } from '@juejin-opensource/jusage-core';
+
+restoreNativeTrapHandler();
 
 type Theme = DesktopWindowTheme;
 
@@ -92,8 +96,7 @@ const SHARE_CARD_COPY_IMAGE_CHANNEL = 'share-card:copy-image';
 /**
  * jusage-desktop main entry.
  *
- * Starts the shared ~/.ai-usage Core runtime (sync + BucketStore + in-memory
- * local-api), then opens the renderer window.
+ * Opens the desktop UI while the shared ~/.ai-usage Core runtime starts.
  */
 
 const windows = new Set<DesktopWindow>();
@@ -117,6 +120,9 @@ let currentTheme: Theme = 'light';
 let pendingDeepLinkUrl: string | null = null;
 let runtimeReady = false;
 let pendingConfigResetNotice = false;
+const mainWindowLauncher = createMainWindowLauncher(showMainWindowNow, () => {
+  if (process.platform === 'darwin') app.dock?.hide();
+});
 
 async function acquireDesktopInstanceLock(): Promise<boolean> {
   const dir = DEFAULT_DATA_DIR;
@@ -277,32 +283,11 @@ function getMainWindow(): BrowserWindow | null {
   return null;
 }
 
-async function showMainWindowAsync(): Promise<void> {
+async function showMainWindowNow(): Promise<void> {
   // Hide tray popover first so its blur→hide does not race with activation and
   // hand focus back to the previously frontmost app on macOS.
   hideTrayPopover();
   pokeSyncOnForeground();
-  const w = getMainWindow();
-  if (!w) {
-    // Window was destroyed on close (tray-resident app). Rebuild it. On
-    // macOS the dock was hidden at close; await the accessory→regular
-    // transform so the freshly built window is not hidden by macOS mid-flight.
-    if (process.platform === 'darwin' && app.dock && !app.dock.isVisible()) {
-      try {
-        await app.dock.show();
-      } catch {
-        // ignore: window is still created below even if the dock stays hidden
-      }
-    }
-    createWindow();
-    if (process.platform === 'darwin') {
-      // Rebuilt window shows on ready-to-show; activate the app so it lands
-      // in the foreground like the existing-window path below.
-      app.focus({ steal: true });
-    }
-    flushPendingConfigResetNotice();
-    return;
-  }
   if (process.platform === 'darwin' && app.dock && !app.dock.isVisible()) {
     // The dock icon was hidden (accessory mode, set on main-window close).
     // `dock.show()` transforms the activation policy asynchronously and any
@@ -313,17 +298,29 @@ async function showMainWindowAsync(): Promise<void> {
       // ignore: window is still shown below even if the dock stays hidden
     }
   }
-  if (w.isMinimized()) w.restore();
-  w.show();
-  w.focus();
+  // Re-check after the Dock transition: the previous window may have closed.
+  const w = getMainWindow();
+  if (w) {
+    if (w.isMinimized()) w.restore();
+    w.show();
+    w.focus();
+  } else {
+    createWindow();
+  }
   if (process.platform === 'darwin') {
     app.focus({ steal: true });
   }
   flushPendingConfigResetNotice();
 }
 
+function showMainWindowAsync(): Promise<void> {
+  return mainWindowLauncher.show();
+}
+
 function showMainWindow(): void {
-  void showMainWindowAsync();
+  void showMainWindowAsync().catch((err) => {
+    console.error('[tud-desktop] failed to show main window:', err);
+  });
 }
 
 /** Same as in-app / tray「同步数据」→ POST tud-trigger-sync. */
@@ -482,6 +479,13 @@ void acquireDesktopInstanceLock().then((gotLock) => {
   let shutdownPromise: Promise<void> | null = null;
 
   app.whenReady().then(async () => {
+    // Listen before preferences or services can yield. The hidden-login flag
+    // controls only the default first window, never a subsequent user open.
+    app.on('activate', showMainWindow);
+    app.on('browser-window-focus', () => {
+      pokeSyncOnForeground();
+    });
+
     registerDesktopPetAssetProtocol();
     applyDevDockIcon();
 
@@ -542,6 +546,18 @@ void acquireDesktopInstanceLock().then((gotLock) => {
       );
     }
 
+    // IPC and theme are ready. Service initialization must not delay opening
+    // the app; localApiRequest already waits for/retries runtime startup.
+    await mainWindowLauncher.initialize(shouldStartHidden()).catch((err) => {
+      console.error('[tud-desktop] failed to open initial window:', err);
+    });
+    createTrayPopover({
+      showMainWindow,
+      openSettings: () => openSettings(),
+      triggerSync,
+      theme: currentTheme,
+    });
+
     try {
       await touchRuntimeHeartbeat({ kind: 'desktop', pid: process.pid });
       const started = await startLocalRuntime();
@@ -551,6 +567,7 @@ void acquireDesktopInstanceLock().then((gotLock) => {
         !started.recoveredFromCorrupt.tokenSalvaged
       ) {
         pendingConfigResetNotice = true;
+        flushPendingConfigResetNotice();
       }
     } catch (err) {
       console.error(
@@ -559,25 +576,6 @@ void acquireDesktopInstanceLock().then((gotLock) => {
       );
     }
     resumeLocalRuntimeWatchdog();
-
-    // Login autostart (openAsHidden): stay tray-only. Creating a window just
-    // to destroy it on ready-to-show still pays for a full dashboard load and
-    // drops IPC (config-reset / deep-link) aimed at that doomed window.
-    if (shouldStartHidden()) {
-      if (process.platform === 'darwin') {
-        app.dock?.hide();
-      }
-    } else {
-      createWindow();
-      flushPendingConfigResetNotice();
-    }
-    await syncDesktopPet();
-    createTrayPopover({
-      showMainWindow,
-      openSettings: () => openSettings(),
-      triggerSync,
-      theme: currentTheme,
-    });
 
     if (process.platform === 'darwin') {
       void refreshTrayUsage();
@@ -592,6 +590,23 @@ void acquireDesktopInstanceLock().then((gotLock) => {
       };
       powerMonitor.on('resume', onPowerResumeListener);
     }
+
+    if (pendingDeepLinkUrl) {
+      const url = pendingDeepLinkUrl;
+      pendingDeepLinkUrl = null;
+      if (runtimeReady) {
+        void handleDeepLinkUrl(url);
+      } else {
+        void notifyJuejinLinkResult({
+          ok: false,
+          message: '本地服务未就绪，无法完成关联',
+        });
+      }
+    }
+
+    await syncDesktopPet().catch((err) => {
+      console.error('[tud-desktop] failed to initialize desktop pet:', err);
+    });
 
     // Cached updates can finish immediately. Start updating only after runtime
     // and windows are ready, so startup cannot restart services during install.
@@ -613,33 +628,8 @@ void acquireDesktopInstanceLock().then((gotLock) => {
         await startLocalRuntime();
         await syncDesktopPet();
       },
-    });
-
-    if (pendingDeepLinkUrl) {
-      const url = pendingDeepLinkUrl;
-      pendingDeepLinkUrl = null;
-      if (runtimeReady) {
-        void handleDeepLinkUrl(url);
-      } else {
-        void notifyJuejinLinkResult({
-          ok: false,
-          message: '本地服务未就绪，无法完成关联',
-        });
-      }
-    }
-
-    app.on('activate', () => {
-      // macOS emits activate at login launch as well as dock-click. A silent
-      // login start has no window yet; creating one here would undo tray-only
-      // startup. Dock is hidden in that mode — later opens go through the tray.
-      if (shouldStartHidden() && !getMainWindow()) return;
-      showMainWindow();
-    });
-
-    // User clicked back into an already-visible window (alt-tab etc.):
-    // restore the fast poll cadence and refresh stale data.
-    app.on('browser-window-focus', () => {
-      pokeSyncOnForeground();
+    }).catch((err) => {
+      console.error('[tud-desktop] failed to initialize auto update:', err);
     });
   });
 
