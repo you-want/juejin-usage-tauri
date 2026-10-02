@@ -20,7 +20,6 @@ const unavailable: CodexSubscriptionSnapshot = {
 
 test('a first failure is visible without inventing allowance data', () => {
   const state = updateCodexSubscriptionState(INITIAL_CODEX_SUBSCRIPTION_STATE, unavailable, 100);
-  assert.equal(state.hasDetectedCodex, true);
   assert.equal(state.snapshot, unavailable);
   assert.equal(state.lastUpdatedAt, null);
 });
@@ -43,15 +42,33 @@ test('transient and repeated failures retain the last allowance and success time
   assert.equal(recovered.lastUpdatedAt, 400);
 });
 
-test('sign-out, unsupported accounts and missing CLI clear previously loaded allowance', () => {
+test('sign-out, unsupported accounts and missing CLI hide the card and clear stale allowance', () => {
   const loaded = updateCodexSubscriptionState(INITIAL_CODEX_SUBSCRIPTION_STATE, ready, 100);
+  const failed = updateCodexSubscriptionState(loaded, unavailable, 150);
   for (const status of ['not-signed-in', 'unsupported-account', 'not-installed'] as const) {
-    const cleared = updateCodexSubscriptionState(loaded, { ...unavailable, status }, 200);
-    assert.equal(cleared.snapshot?.fiveHour, null);
-    assert.equal(cleared.snapshot?.weekly, null);
-    assert.equal(cleared.lastUpdatedAt, null);
-    assert.equal(cleared.hasDetectedCodex, true);
-    assert.equal(updateCodexSubscriptionState(cleared, unavailable, 300).snapshot?.fiveHour, null);
+    for (const previous of [INITIAL_CODEX_SUBSCRIPTION_STATE, loaded, failed]) {
+      const cleared = updateCodexSubscriptionState(previous, { ...unavailable, status }, 200);
+      assert.deepEqual(cleared, INITIAL_CODEX_SUBSCRIPTION_STATE, status);
+      const repeated = updateCodexSubscriptionState(cleared, { ...unavailable, status }, 300);
+      assert.deepEqual(repeated, INITIAL_CODEX_SUBSCRIPTION_STATE, status);
+      const laterFailure = updateCodexSubscriptionState(cleared, unavailable, 400);
+      assert.equal(laterFailure.snapshot?.fiveHour, null);
+      assert.equal(laterFailure.snapshot?.weekly, null);
+      assert.equal(laterFailure.lastUpdatedAt, null);
+    }
+  }
+});
+
+test('a ChatGPT subscription becomes visible after a hidden account or missing CLI', () => {
+  for (const status of ['not-signed-in', 'unsupported-account', 'not-installed'] as const) {
+    const hidden = updateCodexSubscriptionState(INITIAL_CODEX_SUBSCRIPTION_STATE, { ...unavailable, status }, 100);
+    const loaded = updateCodexSubscriptionState(hidden, ready, 200);
+    assert.equal(loaded.snapshot, ready);
+    assert.equal(loaded.lastUpdatedAt, 200);
+    const failed = updateCodexSubscriptionState(hidden, { ...unavailable, planLabel: 'Plus' }, 300);
+    assert.equal(failed.snapshot?.status, 'unavailable');
+    assert.equal(failed.snapshot?.planLabel, 'Plus');
+    assert.equal(failed.lastUpdatedAt, null);
   }
 });
 
@@ -60,11 +77,4 @@ test('a changed plan cannot reuse previous allowance', () => {
   const changed = updateCodexSubscriptionState(loaded, { ...unavailable, planLabel: 'Pro' }, 200);
   assert.equal(changed.snapshot?.fiveHour, null);
   assert.equal(changed.lastUpdatedAt, null);
-});
-
-test('a machine without Codex keeps its initial card hidden', () => {
-  const absent = updateCodexSubscriptionState(
-    INITIAL_CODEX_SUBSCRIPTION_STATE, { ...unavailable, status: 'not-installed' }, 100,
-  );
-  assert.equal(absent.hasDetectedCodex, false);
 });

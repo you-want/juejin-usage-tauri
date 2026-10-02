@@ -54,9 +54,9 @@ export function CodexSubscriptionCard() {
     return () => window.removeEventListener('focus', onFocus);
   }, [reload]);
 
-  const { snapshot, lastUpdatedAt, hasDetectedCodex } = state;
-  if (!snapshot || !hasDetectedCodex) return null;
-  const failed = snapshot.status !== 'ready';
+  const { snapshot, lastUpdatedAt } = state;
+  if (!snapshot) return null;
+  const failed = snapshot.status === 'unavailable';
   const stale = failed && lastUpdatedAt !== null;
 
   return (
@@ -99,9 +99,7 @@ export function CodexSubscriptionCard() {
             <p className="text-muted">订阅额度与本地 Token 统计分开读取。</p>
           </div>
           <div className="flex items-center justify-between gap-3">
-            <span className="text-muted">
-              {snapshot.status === 'unavailable' ? '自动重试已暂停' : '修复后可重试'}
-            </span>
+            <span className="text-muted">自动重试已暂停</span>
             <Button
               aria-label="重试读取 Codex 订阅额度"
               isDisabled={loading}
