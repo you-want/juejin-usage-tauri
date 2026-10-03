@@ -16,6 +16,9 @@ import {
   type TudConfig,
 } from '@juejin-opensource/jusage-core';
 import type { SyncWorkerRequest, SyncWorkerResponse } from './sync-worker-protocol';
+import { restoreNativeTrapHandler } from './native-crash-signals';
+
+restoreNativeTrapHandler();
 
 process.title = 'tud-sync-worker';
 
