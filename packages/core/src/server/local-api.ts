@@ -97,6 +97,33 @@ function isValidApiUrl(url: string): boolean {
   }
 }
 
+interface JuejinProfile {
+  userName: string;
+  avatarLarge: string;
+}
+
+async function fetchJuejinProfile(userId: string): Promise<JuejinProfile | null> {
+  try {
+    const url = new URL('https://api.juejin.cn/user_api/v1/user/get');
+    url.searchParams.set('user_id', userId);
+    const response = await fetch(url, { signal: AbortSignal.timeout(2_000) });
+    if (!response.ok) return null;
+    const body = await response.json() as {
+      err_no?: unknown;
+      data?: { user_id?: unknown; user_name?: unknown; avatar_large?: unknown };
+    } | null;
+    if (body?.err_no !== 0 || body.data?.user_id !== userId) return null;
+    const userName = typeof body.data.user_name === 'string'
+      ? body.data.user_name.trim() : '';
+    const avatarLarge = typeof body.data.avatar_large === 'string'
+      ? body.data.avatar_large.trim() : '';
+    if (!userName || !isValidApiUrl(avatarLarge)) return null;
+    return { userName, avatarLarge };
+  } catch {
+    return null;
+  }
+}
+
 const LEADERBOARD_DEFAULT_DAYS = 30;
 
 function parseClampedInteger(
@@ -249,6 +276,38 @@ function mapUpstreamError(
 
 export function createLocalApiApp(deps: LocalApiDeps): Hono {
   const app = new Hono();
+  let profileCache: {
+    userId: string;
+    expiresAt: number;
+    profile: Promise<JuejinProfile | null>;
+  } | null = null;
+
+  // Keep display-only refreshes out of config writes so they cannot race logout.
+  async function getConfigView(config: TudConfig, refresh = false): Promise<TudConfigView> {
+    const view = toConfigView(config);
+    const userId = view.juejin.originUserId;
+    if (!view.juejin.userId || !userId || !looksLikePlainJuejinUserId(userId)) return view;
+    if (refresh && (
+      !profileCache || profileCache.userId !== userId || profileCache.expiresAt <= Date.now()
+    )) {
+      const previous = profileCache?.userId === userId ? profileCache.profile : null;
+      profileCache = {
+        userId,
+        expiresAt: Date.now() + 5 * 60_000,
+        profile: fetchJuejinProfile(userId).then((profile) => profile ?? previous),
+      };
+    }
+    const cached = profileCache;
+    if (!cached || cached.userId !== userId) return view;
+    const profile = await cached.profile;
+    // A login/logout or settings write may have completed during the request.
+    const current = toConfigView(deps.getConfig());
+    if (profile && profileCache === cached &&
+      current.juejin.userId === view.juejin.userId && current.juejin.originUserId === userId) {
+      Object.assign(current.juejin, profile);
+    }
+    return current;
+  }
 
   app.use('*', cors());
 
@@ -490,7 +549,7 @@ export function createLocalApiApp(deps: LocalApiDeps): Hono {
   });
 
   app.get('/functions/tud-config', async (c) => {
-    return c.json(ok(toConfigView(deps.getConfig())));
+    return c.json(ok(await getConfigView(deps.getConfig(), true)));
   });
 
   app.put('/functions/tud-config', async (c) => {
@@ -551,6 +610,12 @@ export function createLocalApiApp(deps: LocalApiDeps): Hono {
     // provide an onConfigChange callback.
     activeConfig.juejin = config.juejin;
     deps.onConfigChange?.(activeConfig);
+    if (body.juejin && (
+      body.juejin.token !== undefined || body.juejin.originUserId !== undefined ||
+      body.juejin.userName !== undefined || body.juejin.avatarLarge !== undefined
+    )) {
+      profileCache = null;
+    }
 
     const nextApiUrl = normalizeApiUrl(config.juejin.apiUrl ?? '');
     const nextToken = config.juejin.token?.trim() || null;
@@ -568,7 +633,7 @@ export function createLocalApiApp(deps: LocalApiDeps): Hono {
       });
     }
 
-    return c.json(ok(toConfigView(config)));
+    return c.json(ok(await getConfigView(config)));
   });
 
   app.post('/functions/tud-trigger-sync', async (c) => {
