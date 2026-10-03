@@ -125,6 +125,11 @@ export interface CodexSessionIndexEntry {
 }
 
 export interface CursorsFile {
+  minimaxCode?: {
+    databases: Record<string, number>;
+    files: Record<string, { offset: number; inode?: number }>;
+    seenMessageIds?: string[];
+  };
   claude?: {
     files: Record<string, ClaudeFileCursor>;
     /** Legacy first-wins keys; still honored so already-ingested rows are not double-counted. */

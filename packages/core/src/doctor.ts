@@ -86,6 +86,7 @@ const SYNC_ID_TO_CATALOG_KEY: Record<string, string> = {
 const SYNC_ID_DISPLAY_FALLBACK: Record<string, string> = {
   qwenwork: 'QwenWork',
   'command-code': 'Command Code',
+  'minimax-code': 'MiniMax Code',
 };
 
 function collectorDisplayName(sourceId: string): string {

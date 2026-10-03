@@ -38,6 +38,7 @@ const SOURCE_TO_INTEGRATION: Record<string, string> = {
   zed: 'zed',
   warp: 'warp',
   qwenwork: 'qwenwork',
+  'minimax-code': 'minimax-code',
   'wps-comate': 'wps-comate',
 };
 
@@ -78,6 +79,7 @@ const INTEGRATION_TO_COLLECTOR: Record<string, string> = {
   zed: 'zed',
   warp: 'warp',
   qwenwork: 'qwenwork',
+  'minimax-code': 'minimax-code',
   'wps-comate': 'wps-comate',
 };
 

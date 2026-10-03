@@ -16,6 +16,7 @@ import gooseIcon from '@lobehub/icons-static-svg/icons/goose.svg';
 import grokIcon from '@lobehub/icons-static-svg/icons/grok.svg';
 import hermesIcon from '@lobehub/icons-static-svg/icons/hermesagent.svg';
 import kimiIcon from '@lobehub/icons-static-svg/icons/kimi-color.svg';
+import minimaxIcon from '@lobehub/icons-static-svg/icons/minimax-color.svg';
 import kilocodeIcon from '@lobehub/icons-static-svg/icons/kilocode.svg';
 import kiroIcon from '@lobehub/icons-static-svg/icons/kiro-color.svg';
 import openClawIcon from '@lobehub/icons-static-svg/icons/openclaw-color.svg';
@@ -56,6 +57,7 @@ const PROVIDER_ICON_MAP: Record<string, ProviderIconAsset> = {
   goose: { monochrome: true, src: gooseIcon },
   hermes: { monochrome: true, src: hermesIcon },
   kimi: { src: kimiIcon },
+  'minimax-code': { src: minimaxIcon },
   'kilo-cli': { monochrome: true, src: kilocodeIcon },
   kilocode: { monochrome: true, src: kilocodeIcon },
   kiro: { src: kiroIcon },
@@ -117,6 +119,7 @@ function normalizeProviderKey(provider: string): string {
   if (key.startsWith('openclaw')) return 'openclaw';
   if (key.startsWith('hermes')) return 'hermes';
   if (key.startsWith('kimi')) return 'kimi';
+  if (key === 'mcode' || key.startsWith('minimax-code')) return 'minimax-code';
   if (key.startsWith('kiro')) return 'kiro';
   if (key === 'roo-code' || key.startsWith('roocode') || key.startsWith('roo-')) {
     return 'roocode';

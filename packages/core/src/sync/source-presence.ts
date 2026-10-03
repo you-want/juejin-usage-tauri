@@ -27,6 +27,7 @@ import { zcodeDbPath } from '../parsers/zcode.js';
 import { dshHome } from '../parsers/dsh.js';
 import { zedDbPath } from '../parsers/zed.js';
 import { warpDbPaths } from '../parsers/warp.js';
+import { miniMaxCodeDataPaths } from '../parsers/minimax-code.js';
 import { wpsComateSessionsDir } from '../parsers/wps-comate.js';
 import {
   codexHomeCandidates,
@@ -90,6 +91,8 @@ export function isSyncSourcePresent(source: string): boolean {
       return anyExists(
         codexHomeCandidates().flatMap((home) => [home, join(home, 'sessions')]),
       );
+    case 'minimax-code':
+      return anyExists(miniMaxCodeDataPaths());
     case 'cursor':
       return anyExists([cursorStateVscdbPath()]);
     case 'qoder':
