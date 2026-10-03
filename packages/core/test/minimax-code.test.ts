@@ -45,6 +45,53 @@ test('MiniMax Code reads shared mcode/desktop usage projection incrementally', a
   }
 });
 
+test('MiniMax Code backfills jsonl model when sqlite model is null without double counting', async () => {
+  const home = await mkdtemp(join(tmpdir(), 'minimax-code-'));
+  const restore = isolateAgentHome(home);
+  try {
+    const relativeDir = '2026/10/03/session-alpha';
+    const sessionDir = join(home, '.minimax', 'v2', 'sessions', ...relativeDir.split('/'));
+    await mkdir(sessionDir, { recursive: true });
+    await mkdir(join(home, '.minimax', 'v2', 'sqlite'), { recursive: true });
+    await writeFile(
+      join(sessionDir, 'messages.jsonl'),
+      `${JSON.stringify({
+        message_id: 'm1',
+        turn_id: 'turn_1',
+        message: {
+          role: 'assistant',
+          model: 'deepseek-v4.1-flash',
+          timestamp: 1785578161917,
+          usage: { input: 14678, output: 44, cacheRead: 0, cacheWrite: 0 },
+        },
+      })}\n`,
+    );
+    const db = new DatabaseSync(join(home, '.minimax', 'v2', 'sqlite', 'runtime-state.sqlite'));
+    try {
+      db.exec(`CREATE TABLE local_runtime_sessions (
+        session_id TEXT PRIMARY KEY, workspace_dir TEXT, project_workspace_dir TEXT, history_relative_dir TEXT);
+        CREATE TABLE local_runtime_token_usage (
+        id INTEGER PRIMARY KEY, session_id TEXT, model TEXT, ts INTEGER, turn_id TEXT,
+        input_tokens INTEGER, output_tokens INTEGER, reasoning_tokens INTEGER,
+        cache_read_tokens INTEGER, cache_write_tokens INTEGER);`);
+      db.exec(`INSERT INTO local_runtime_sessions VALUES ('s1', '/work/flash-card-demos', '/work/flash-card-demos', '${relativeDir}');
+        INSERT INTO local_runtime_token_usage VALUES (1, 's1', NULL, 1785578161917, 'turn_1', 14678, 44, 0, 0, 0);`);
+      const first = await parseMiniMaxCodeIncremental({}, SINCE);
+      assert.equal(first.result.eventsParsed, 1);
+      assert.equal(first.result.buckets.length, 1);
+      assert.equal(first.result.buckets[0]?.model, 'deepseek-v4.1-flash');
+      assert.equal(first.result.buckets[0]?.project, 'flash-card-demos');
+      assert.equal(first.result.buckets[0]?.total_tokens, 14722);
+      assert.equal((await parseMiniMaxCodeIncremental(first.cursors, SINCE)).result.eventsParsed, 0);
+    } finally {
+      db.close();
+    }
+  } finally {
+    restore();
+    await rm(home, { recursive: true, force: true });
+  }
+});
+
 test('MiniMax Code falls back to legacy message usage without a projection table', async () => {
   const home = await mkdtemp(join(tmpdir(), 'minimax-code-'));
   const restore = isolateAgentHome(home);

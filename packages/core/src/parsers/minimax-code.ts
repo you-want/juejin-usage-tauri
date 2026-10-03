@@ -52,6 +52,17 @@ function usageTotals(input: unknown, output: unknown, reasoning: unknown, cacheR
   return { input_tokens, output_tokens, reasoning_output_tokens, cached_input_tokens, cache_creation_input_tokens, total_tokens, conversation_count: 1 };
 }
 
+function stringModel(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  return trimmed ? trimmed : null;
+}
+
+function jsonlAssistantModel(record: Record<string, unknown>): string | null {
+  const message = asObject(record.message) ?? record;
+  return stringModel(message.model) ?? stringModel(message.responseModel) ?? stringModel(record.model);
+}
+
 function recordBucket(state: BucketAccumulator, model: unknown, project: unknown, timestamp: unknown, sinceMs: number, totals: TokenTotals | null): boolean {
   if (!totals) return false;
   const ts = typeof timestamp === 'number' ? timestamp : typeof timestamp === 'string' && /^\d+$/.test(timestamp)
@@ -59,7 +70,7 @@ function recordBucket(state: BucketAccumulator, model: unknown, project: unknown
   if (!Number.isFinite(ts) || ts < sinceMs) return false;
   const hour = toUtcHalfHourStart(new Date(ts).toISOString());
   if (!hour) return false;
-  accumulateBucket(state, MINIMAX_CODE_SOURCE, typeof model === 'string' && model.trim() ? model : 'unknown',
+  accumulateBucket(state, MINIMAX_CODE_SOURCE, stringModel(model) ?? 'unknown',
     typeof project === 'string' && project.trim() ? resolveProjectName(project) : 'unknown', hour, totals, MINIMAX_CODE_SOURCE);
   return true;
 }
@@ -68,21 +79,84 @@ function asObject(value: unknown): Record<string, unknown> | null {
   return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : null;
 }
 
-function readSqliteUsage(dbPath: string, afterId: number, sinceMs: number, state: BucketAccumulator): { lastId: number; events: number } {
-  const rows = readSqliteWithSnapshot(dbPath, (path) => queryDbJson(path, `SELECT u.id, u.model, u.ts, u.input_tokens, u.output_tokens,
-    u.reasoning_tokens, u.cache_read_tokens, u.cache_write_tokens,
-    s.workspace_dir, s.project_workspace_dir
-    FROM local_runtime_token_usage u
+function queryUsageRows(dbPath: string, afterId: number): Record<string, unknown>[] {
+  const where = `WHERE u.id > ${Math.max(0, Math.floor(afterId))} ORDER BY u.id`;
+  const fromJoin = `FROM local_runtime_token_usage u
     LEFT JOIN local_runtime_sessions s ON s.session_id = u.session_id
-    WHERE u.id > ${Math.max(0, Math.floor(afterId))}
-    ORDER BY u.id`));
+    ${where}`;
+  const base = `SELECT u.id, u.model, u.ts, u.input_tokens, u.output_tokens,
+    u.reasoning_tokens, u.cache_read_tokens, u.cache_write_tokens,
+    s.workspace_dir, s.project_workspace_dir`;
+  try {
+    return readSqliteWithSnapshot(dbPath, (path) => queryDbJson(path, `${base}, u.turn_id, s.history_relative_dir ${fromJoin}`));
+  } catch {
+    return readSqliteWithSnapshot(dbPath, (path) => queryDbJson(path, `${base} ${fromJoin}`));
+  }
+}
+
+function rememberJsonlModel(models: Map<string, string>, key: string | null, model: string): void {
+  if (!key || models.has(key)) return;
+  models.set(key, model);
+}
+
+/** sqlite.model is often NULL; mcode still writes the routed model on jsonl assistant rows. */
+async function jsonlModelsForDirs(sessionsDir: string, relativeDirs: Iterable<string>): Promise<Map<string, string>> {
+  const models = new Map<string, string>();
+  for (const relative of new Set(relativeDirs)) {
+    const trimmed = relative.trim();
+    if (!trimmed) continue;
+    const file = join(sessionsDir, trimmed, 'messages.jsonl');
+    if (!existsSync(file)) continue;
+    const reader = createJsonlLineReader(file, 0);
+    for await (const line of reader) {
+      let record: Record<string, unknown> | null;
+      try { record = asObject(JSON.parse(line)); } catch { continue; }
+      if (!record) continue;
+      const message = asObject(record.message) ?? record;
+      if (message.role !== 'assistant') continue;
+      const model = jsonlAssistantModel(record);
+      if (!model) continue;
+      rememberJsonlModel(models, typeof record.turn_id === 'string' ? `turn:${record.turn_id}` : null, model);
+      const timestamp = message.timestamp ?? record.timestamp;
+      if (timestamp != null && timestamp !== '') rememberJsonlModel(models, `ts:${timestamp}`, model);
+    }
+  }
+  return models;
+}
+
+function resolveUsageModel(row: Record<string, unknown>, jsonlModels: Map<string, string>): string | null {
+  const fromSqlite = stringModel(row.model);
+  if (fromSqlite) return fromSqlite;
+  const turnId = typeof row.turn_id === 'string' ? row.turn_id.trim() : '';
+  if (turnId) {
+    const fromTurn = jsonlModels.get(`turn:${turnId}`);
+    if (fromTurn) return fromTurn;
+  }
+  if (row.ts != null && row.ts !== '') return jsonlModels.get(`ts:${row.ts}`) ?? null;
+  return null;
+}
+
+async function readSqliteUsage(
+  dbPath: string,
+  afterId: number,
+  sinceMs: number,
+  state: BucketAccumulator,
+  sessionsDir: string,
+): Promise<{ lastId: number; events: number }> {
+  const rows = queryUsageRows(dbPath, afterId);
+  const missingModelDirs = rows
+    .filter((row) => !stringModel(row.model) && typeof row.history_relative_dir === 'string')
+    .map((row) => row.history_relative_dir as string);
+  const jsonlModels = missingModelDirs.length > 0
+    ? await jsonlModelsForDirs(sessionsDir, missingModelDirs)
+    : new Map<string, string>();
   let lastId = afterId;
   let events = 0;
   for (const row of rows) {
     const id = nonNegative(row.id);
     if (id > lastId) lastId = id;
     const totals = usageTotals(row.input_tokens, row.output_tokens, row.reasoning_tokens, row.cache_read_tokens, row.cache_write_tokens);
-    if (recordBucket(state, row.model, row.project_workspace_dir ?? row.workspace_dir, row.ts, sinceMs, totals)) events++;
+    if (recordBucket(state, resolveUsageModel(row, jsonlModels), row.project_workspace_dir ?? row.workspace_dir, row.ts, sinceMs, totals)) events++;
   }
   return { lastId, events };
 }
@@ -100,7 +174,8 @@ async function readLegacyMessages(sessionsDir: string, cursor: MiniMaxCursor, si
     for await (const line of reader) {
       let record: Record<string, unknown> | null;
       try { record = asObject(JSON.parse(line)); } catch { continue; }
-      const message = asObject(record?.message) ?? record;
+      if (!record) continue;
+      const message = asObject(record.message) ?? record;
       if (message?.role !== 'assistant') continue;
       const usage = asObject(message.usage);
       if (!usage) continue;
@@ -108,10 +183,10 @@ async function readLegacyMessages(sessionsDir: string, cursor: MiniMaxCursor, si
       const totals = usageTotals(usage.input ?? usage.input_tokens, usage.output ?? usage.output_tokens,
         usage.reasoning ?? usage.reasoning_tokens, usage.cacheRead ?? usage.cache_read ?? cache?.read,
         usage.cacheWrite ?? usage.cache_write ?? cache?.write);
-      const messageId = typeof record?.message_id === 'string' ? record.message_id : null;
+      const messageId = typeof record.message_id === 'string' ? record.message_id : null;
       const dedupKey = messageId ? `${sessionsDir}|${messageId}` : null;
       if (dedupKey && seenIds.has(dedupKey)) continue;
-      if (recordBucket(state, message.model ?? record?.model, 'unknown', message.timestamp ?? record?.timestamp, sinceMs, totals)) {
+      if (recordBucket(state, jsonlAssistantModel(record), 'unknown', message.timestamp ?? record.timestamp, sinceMs, totals)) {
         events++;
         if (dedupKey) seenIds.add(dedupKey);
       }
@@ -136,7 +211,13 @@ export async function parseMiniMaxCodeIncremental(cursors: CursorsFile, since: s
     const dbPath = join(home, 'v2', 'sqlite', 'runtime-state.sqlite');
     if (existsSync(dbPath)) {
       try {
-        const result = readSqliteUsage(dbPath, cursor.databases[dbPath] ?? 0, sinceMs, state);
+        const result = await readSqliteUsage(
+          dbPath,
+          cursor.databases[dbPath] ?? 0,
+          sinceMs,
+          state,
+          join(home, 'v2', 'sessions'),
+        );
         cursor.databases[dbPath] = result.lastId;
         eventsParsed += result.events;
         filesProcessed++;
