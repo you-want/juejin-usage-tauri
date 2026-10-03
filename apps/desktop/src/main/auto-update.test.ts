@@ -49,8 +49,8 @@ require.cache[electronId]!.exports = {
   }] },
 };
 require.cache[updaterId]!.exports = { autoUpdater: updater };
-const { initializeAutoUpdate, disposeAutoUpdate } = require('./auto-update.js') as
-  typeof import('./auto-update.js');
+const { initializeAutoUpdate, disposeAutoUpdate, registerAutoUpdateIpc } =
+  require('./auto-update.js') as typeof import('./auto-update.js');
 require.cache[electronId]!.exports = originalElectron;
 require.cache[updaterId]!.exports = originalUpdater;
 
@@ -89,6 +89,16 @@ afterEach(async () => {
   disposeAutoUpdate();
   delete process.env.PORTABLE_EXECUTABLE_FILE;
   await rm(userData, { recursive: true, force: true });
+});
+
+test('early IPC answers get-state without starting an update check', async () => {
+  registerAutoUpdateIpc();
+  assert.ok(handlers.has(AUTO_UPDATE_GET_STATE_CHANNEL));
+  assert.equal(getState().status, 'idle');
+  assert.equal(await check(), getState());
+  assert.equal(updater.checkForUpdates.mock.callCount(), 0);
+  await initializeAutoUpdate({ beforeInstall: async () => {}, onInstallFailed: async () => {} });
+  assert.equal(updater.checkForUpdates.mock.callCount(), 1);
 });
 
 test('packaged startup enables automatic downloading and only supported IPC', async () => {

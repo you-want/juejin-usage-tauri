@@ -26,7 +26,10 @@ let state: AutoUpdateState = {
   currentVersion: app.getVersion(),
 };
 let periodicTimer: NodeJS.Timeout | null = null;
+let ipcRegistered = false;
 let initialized = false;
+/** False until feed/listeners are ready (or dev path finishes). Blocks early check IPC. */
+let updaterReady = false;
 type InstallAttempt = { recovering: boolean };
 let installAttempt: InstallAttempt | null = null;
 let downloadedVersion: string | undefined;
@@ -115,6 +118,8 @@ function clearInstallExitTimer(): void {
 
 async function checkForUpdates(): Promise<AutoUpdateState> {
   if (!app.isPackaged) return state;
+  // Window may open before initializeAutoUpdate configures the feed.
+  if (!updaterReady) return state;
   if (
     state.status === 'checking' ||
     state.status === 'downloading' ||
@@ -252,6 +257,23 @@ function registerIpc(): void {
   );
 }
 
+/**
+ * Register update IPC before the first window so early get-state does not throw.
+ * Does not configure the feed or start checking — call initializeAutoUpdate later.
+ */
+export function registerAutoUpdateIpc(): void {
+  if (ipcRegistered) return;
+  ipcRegistered = true;
+  state = {
+    status: app.isPackaged ? 'idle' : 'unsupported',
+    currentVersion: app.getVersion(),
+    ...(!app.isPackaged
+      ? { message: '开发环境不检查更新，请安装正式构建包后测试' }
+      : {}),
+  };
+  registerIpc();
+}
+
 export async function initializeAutoUpdate(options: {
   beforeInstall: () => Promise<void>;
   onInstallFailed: () => Promise<void>;
@@ -263,6 +285,7 @@ export async function initializeAutoUpdate(options: {
   clearInstallExitTimer();
   beforeInstall = options.beforeInstall;
   onInstallFailed = options.onInstallFailed;
+  registerAutoUpdateIpc();
   const isPortableExecutable = Boolean(process.env.PORTABLE_EXECUTABLE_FILE);
   const automaticInstallationSupported = app.isPackaged && !isPortableExecutable;
   const completedVersion = automaticInstallationSupported
@@ -276,9 +299,13 @@ export async function initializeAutoUpdate(options: {
       ? { message: '开发环境不检查更新，请安装正式构建包后测试' }
       : {}),
   };
-  registerIpc();
+  // Window may already be open from early registerAutoUpdateIpc.
+  broadcastState();
 
-  if (!app.isPackaged) return;
+  if (!app.isPackaged) {
+    updaterReady = true;
+    return;
+  }
 
   autoUpdater.setFeedURL({
     provider: 'generic',
@@ -365,6 +392,7 @@ export async function initializeAutoUpdate(options: {
     });
   });
 
+  updaterReady = true;
   void checkForUpdates();
   periodicTimer = setInterval(() => {
     void checkForUpdates();
@@ -385,5 +413,7 @@ export function disposeAutoUpdate(): void {
   downloadedVersion = undefined;
   beforeInstall = null;
   onInstallFailed = null;
+  ipcRegistered = false;
+  updaterReady = false;
   initialized = false;
 }

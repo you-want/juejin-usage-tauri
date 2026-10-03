@@ -50,6 +50,7 @@ import {
   countGooseRows,
   countZedRows,
   countWarpRows,
+  countWpsComateRows,
   syncAll,
   collectWrittenBuckets,
   type SyncResult,
@@ -269,6 +270,11 @@ export function buildSyncStatus(
         'Warp 读取 warp.sqlite agent_conversations 累计 token 差分，定时轮询同步',
         countWarpRows(rows),
       ),
+      'wps-comate': poll(
+        'wps-comate',
+        'WPS Comate 读取 ~/.wpscomate/agent/task-sessions JSONL，定时轮询同步',
+        countWpsComateRows(rows),
+      ),
     },
     juejinEnabled: config.juejin.enabled,
   };
@@ -413,7 +419,7 @@ export async function createAggregateCache(
   if (cache.sealedDayCount() === 0 && rows.length > 0) {
     await cache.rebuildFromRows(rows);
   } else {
-    await cache.onBucketsChanged(rows, []);
+    await cache.onBucketsChanged(rows, [], true);
   }
   return cache;
 }

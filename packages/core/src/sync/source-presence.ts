@@ -28,6 +28,7 @@ import { dshHome } from '../parsers/dsh.js';
 import { zedDbPath } from '../parsers/zed.js';
 import { warpDbPaths } from '../parsers/warp.js';
 import { miniMaxCodeDataPaths } from '../parsers/minimax-code.js';
+import { wpsComateSessionsDir } from '../parsers/wps-comate.js';
 import {
   codexHomeCandidates,
   commandCodeProjectsDirs,
@@ -199,6 +200,8 @@ export function isSyncSourcePresent(source: string): boolean {
       return anyExists([zedDbPath()]);
     case 'warp':
       return anyExists(warpDbPaths());
+    case 'wps-comate':
+      return anyExists([wpsComateSessionsDir()]);
     default:
       return true;
   }

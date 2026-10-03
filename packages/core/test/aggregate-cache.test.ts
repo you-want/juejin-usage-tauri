@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
 import { AggregateCache, touchedLocalDates } from '../src/aggregate-cache.js';
+import { createAggregateCache } from '../src/server/state.js';
 import { addLocalDays, localDateNow } from '../src/timezone.js';
 import type { QueueBucket } from '../src/types.js';
 
@@ -93,6 +94,52 @@ test('AggregateCache reseals only touched historical dates', async () => {
     const y = daily.days.find((d) => d.date === yesterday);
     assert.ok(y);
     assert.equal(y.tokens, 999);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('startup repairs a historical day missing from a nonempty sealed cache', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'tud-agg-startup-gap-'));
+  try {
+    const today = localDateNow();
+    const twoDaysAgo = addLocalDays(today, -2);
+    const missingDay = addLocalDays(today, -3);
+    const existing = makeRow(`${twoDaysAgo}T04:00:00.000Z`, 100);
+    const missing = makeRow(`${missingDay}T04:00:00.000Z`, 200);
+
+    await new AggregateCache(dir).rebuildFromRows([existing]);
+    const cache = await createAggregateCache(dir, [existing, missing]);
+    const daily = cache.getDaily([existing, missing], 7, '1970-01-01T00:00:00.000Z');
+    assert.equal(daily.days.find((day) => day.date === missingDay)?.tokens, 200);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('resuming after several days seals every recorded day in the gap', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'tud-agg-multi-day-gap-'));
+  try {
+    const today = localDateNow();
+    const firstDay = addLocalDays(today, -5);
+    const missedDays = [addLocalDays(today, -4), addLocalDays(today, -2)];
+    const first = makeRow(`${firstDay}T04:00:00.000Z`, 100);
+    const missed = missedDays.map((date, index) =>
+      makeRow(`${date}T04:00:00.000Z`, (index + 2) * 100),
+    );
+    await new AggregateCache(dir).rebuildFromRows([first]);
+
+    const path = join(dir, 'cache', 'daily-sealed.json');
+    const saved = JSON.parse(await readFile(path, 'utf8')) as { sealedAsOf: string };
+    saved.sealedAsOf = firstDay;
+    await writeFile(path, JSON.stringify(saved));
+
+    const cache = new AggregateCache(dir);
+    await cache.onBucketsChanged([first, ...missed]);
+    const daily = cache.getDaily([first, ...missed], 7, '1970-01-01T00:00:00.000Z');
+    for (const [index, date] of missedDays.entries()) {
+      assert.equal(daily.days.find((day) => day.date === date)?.tokens, (index + 2) * 100);
+    }
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

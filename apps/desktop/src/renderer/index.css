@@ -51,6 +51,7 @@
   --source-qwenwork: #7c3aed;
   --source-command-code: #06b6d4;
   --source-minimax-code: #ef4444;
+  --source-wps-comate: #e34d59;
   /* Heatmap scale uses HeroUI semantic tokens, so it follows the active theme. */
   --heatmap-0: var(--default);
   --heatmap-1: color-mix(in oklab, var(--accent) 18%, var(--surface));
@@ -105,6 +106,7 @@
   --source-qwenwork: #a78bfa;
   --source-command-code: #22d3ee;
   --source-minimax-code: #f87171;
+  --source-wps-comate: #ff6b6b;
 }
 
 @theme inline {
