@@ -74,6 +74,16 @@ apps/desktop/
 
 - Renderer 的 `api.ts`：存在 `window.tud.api` 时用 IPC，否则回退 `fetch`（兼容非 Electron 场景）
 
+### Copilot 套餐额度
+
+主面板和托盘的订阅区显示 Copilot 套餐剩余额度、内联建议及重置时间，设置中的「订阅渠道」可控制显示。套餐额度独立于 Core 采集的 Copilot Token 用量。
+
+主进程读取 Copilot 官方客户端保存的 `github-copilot/apps.json` / `hosts.json` 中的 OAuth 登录信息；macOS / Linux 默认位于 `~/.config/`，Windows 位于 `%USERPROFILE%\AppData\Local\`，也支持绝对路径 `XDG_CONFIG_HOME`。显式设置的 `GH_COPILOT_TOKEN` / `GITHUB_COPILOT_TOKEN` 优先。凭证仅在主进程使用，IPC 只返回套餐和额度。
+
+存在多个账号时，根据 VS Code `state.vscdb` 的 Copilot 账号记录匹配，无法明确匹配时隐藏卡片，避免展示其他账号余额；自定义 VS Code 数据位置可设置 `VSCODE_STATE_DB_PATH`。仅有 VS Code 加密登录、没有上述可读取的 Copilot 登录信息时，暂不展示额度，不读取系统钥匙串。
+
+额度来自 [VS Code 使用的内部接口](https://github.com/microsoft/vscode/blob/main/src/vs/workbench/services/chat/common/chatEntitlementService.ts)，成功读数缓存 60 秒，窗口聚焦时刷新。网络异常保留同一账号的最近读数并标为「旧」；账号切换、退出或认证失效后清除旧读数。内部接口变化可能影响可用性。
+
 ## 窗口外观
 
 - macOS：隐藏标题栏，保留红绿灯

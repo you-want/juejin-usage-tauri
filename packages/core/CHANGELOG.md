@@ -1,5 +1,21 @@
 # @juejin-opensource/jusage-core
 
+## 0.1.13
+
+### Patch Changes
+
+- 新增 MiniMax Code 用量采集：读取本机 MiniMax Code 会话，按项目目录归属；可用 `jusage sync --source=minimax-code`（别名 `mcode` / `minimax`）。
+- 新增 WPS 灵犀（WPS Comate）用量采集：读取 `~/.wpscomate` 会话日志，按工作目录归属项目。
+- Command Code 用量现在会随云端同步上报；升级后首次校对可补报近 90 天存量。
+- 修复 OpenCode 2.0 及之后新产生的用量没有进入统计：下次同步补齐尚未记过的模型调用与上下文压缩，已统计历史不重复计算。
+- 修复 CodeBuddy 用量偏低：多轮工具调用按整轮累计 token，不再只计最后一轮。
+- 修复同一时段多项目用量上报到云端时只记一部分：每次同步上报该时段全部项目合计；升级后首次同步会自动全量比对纠正少报。
+- 修复应用休眠或停用多天后，已有用量日期不出现在本地面板：启动时补齐缺失的历史缓存日期。
+- Cursor 用量 CSV 下载超时则跳过本轮采集，避免中断整轮同步；未登录时停止拉取账号账单，已采集历史保留。
+- 收紧桌面进程匹配，避免启动时误杀 Cursor / VS Code 等带仓库名的 IDE 插件进程。
+- 设置中的关联账号头像、昵称改为后台刷新，不再长期停留在过期资料。
+- 内置定价表补充 Claude Opus 5.5、GPT-6 Sol/Luna、小米 Mimo v2.6，并更新通义千问国内区价格。
+
 ## 0.1.12
 
 ### Patch Changes

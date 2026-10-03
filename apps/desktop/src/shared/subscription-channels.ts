@@ -11,6 +11,7 @@ export const SUBSCRIPTION_CHANNELS = [
   { id: 'codex', label: 'Codex' },
   { id: 'claude', label: 'Claude' },
   { id: 'cursor', label: 'Cursor' },
+  { id: 'copilot', label: 'Copilot' },
   { id: 'grok', label: 'Grok' },
   { id: 'kimi', label: 'Kimi' },
   { id: 'zcode', label: 'ZCode' },

@@ -51,6 +51,7 @@ import {
   countGooseRows,
   countZedRows,
   countWarpRows,
+  countWpsComateRows,
   syncAll,
   collectWrittenBuckets,
   type SyncResult,
@@ -169,7 +170,7 @@ export function buildSyncStatus(
       gemini: poll('gemini', 'Gemini CLI 读取 ~/.gemini/tmp 会话，定时轮询同步', countGeminiRows(rows)),
       opencode: poll(
         'opencode',
-        'OpenCode 读取 opencode.db / storage/message，定时轮询同步',
+        'OpenCode 读取 opencode.db 的 session_message / message，或 storage/message，定时轮询同步',
         countOpencodeRows(rows),
       ),
       copilot: poll(
@@ -270,6 +271,11 @@ export function buildSyncStatus(
         'warp',
         'Warp 读取 warp.sqlite agent_conversations 累计 token 差分，定时轮询同步',
         countWarpRows(rows),
+      ),
+      'wps-comate': poll(
+        'wps-comate',
+        'WPS Comate 读取 ~/.wpscomate/agent/task-sessions JSONL，定时轮询同步',
+        countWpsComateRows(rows),
       ),
     },
     juejinEnabled: config.juejin.enabled,
@@ -415,7 +421,7 @@ export async function createAggregateCache(
   if (cache.sealedDayCount() === 0 && rows.length > 0) {
     await cache.rebuildFromRows(rows);
   } else {
-    await cache.onBucketsChanged(rows, []);
+    await cache.onBucketsChanged(rows, [], true);
   }
   return cache;
 }

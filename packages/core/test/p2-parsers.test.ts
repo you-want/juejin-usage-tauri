@@ -665,6 +665,115 @@ test('parseCodebuddyIncremental reads App / extension history messages', async (
   }
 });
 
+test('parseCodebuddyIncremental prefers statsSnapshot over lastStep usage', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'tud-cb-snapshot-'));
+  const messagesDir = join(
+    root,
+    'user-1',
+    'CodeBuddyIDE',
+    'user-1',
+    'history',
+    'ws-md5',
+    'sess-1',
+    'messages',
+  );
+  await mkdir(messagesDir, { recursive: true });
+
+  // A reply whose agent loop ran many steps: `lastStep*` is only the final
+  // call, `statsSnapshot` is the whole-loop total the UI shows.
+  await writeFile(
+    join(messagesDir, 'dddddddddddddddddddddddddddddddd.json'),
+    JSON.stringify({
+      id: 'dddddddddddddddddddddddddddddddd',
+      role: 'assistant',
+      createdAt: '2026-09-20T08:13:32.746Z',
+      message: '{"role":"assistant","content":[]}',
+      extra: JSON.stringify({
+        modelId: 'hy4-preview-f',
+        lastStepInputTokens: 1000,
+        lastStepOutputTokens: 40,
+        lastStepCachedInputTokens: 800,
+        statsSnapshot: {
+          inputTokens: 500_000,
+          outputTokens: 8_000,
+          cachedInputTokens: 460_000,
+          cacheMissTokens: 40_000,
+          cacheWriteTokens: 500,
+          thinkingTokens: 3_000,
+          credit: 0,
+        },
+      }),
+    }),
+  );
+
+  const files = resolveCodebuddyExtensionMessageFiles({
+    ...process.env,
+    CODEBUDDY_EXTENSION_ROOTS: root,
+  });
+  const { result } = await parseCodebuddyIncremental({}, SINCE, {
+    projectFiles: [],
+    extensionFiles: files,
+    sessionCwds: new Map([['sess-1', '/Users/lishanbing/workspace/juejin-usage']]),
+    defaultModel: 'codebuddy-unknown',
+  });
+  assert.equal(result.eventsParsed, 1);
+  const bucket = result.buckets.find((b) => b.source === 'codebuddy')!;
+  assert.equal(bucket.input_tokens, 40_000); // cacheMissTokens, not lastStep input
+  assert.equal(bucket.cached_input_tokens, 460_000);
+  assert.equal(bucket.cache_creation_input_tokens, 500);
+  assert.equal(bucket.output_tokens, 8_000);
+  assert.equal(bucket.reasoning_output_tokens, 3_000);
+  assert.equal(bucket.total_tokens, 511_500);
+});
+
+test('parseCodebuddyIncremental falls back to lastStep when snapshot is empty', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'tud-cb-snapshot-zero-'));
+  const messagesDir = join(
+    root,
+    'user-1',
+    'CodeBuddyIDE',
+    'user-1',
+    'history',
+    'ws-md5',
+    'sess-1',
+    'messages',
+  );
+  await mkdir(messagesDir, { recursive: true });
+
+  await writeFile(
+    join(messagesDir, 'eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee.json'),
+    JSON.stringify({
+      id: 'eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee',
+      role: 'assistant',
+      createdAt: '2026-09-20T08:13:32.746Z',
+      extra: JSON.stringify({
+        modelId: 'hy4-preview-f',
+        lastStepInputTokens: 1000,
+        lastStepOutputTokens: 40,
+        lastStepCachedInputTokens: 800,
+        statsSnapshot: { inputTokens: 0, outputTokens: 0, cachedInputTokens: 0 },
+      }),
+    }),
+  );
+
+  const files = resolveCodebuddyExtensionMessageFiles({
+    ...process.env,
+    CODEBUDDY_EXTENSION_ROOTS: root,
+  });
+  const { result } = await parseCodebuddyIncremental({}, SINCE, {
+    projectFiles: [],
+    extensionFiles: files,
+    sessionCwds: new Map([['sess-1', '/Users/lishanbing/workspace/juejin-usage']]),
+    defaultModel: 'codebuddy-unknown',
+  });
+  assert.equal(result.eventsParsed, 1);
+  const bucket = result.buckets.find((b) => b.source === 'codebuddy')!;
+  assert.equal(bucket.input_tokens, 200); // 1000 - 800 cached
+  assert.equal(bucket.cached_input_tokens, 800);
+  assert.equal(bucket.output_tokens, 40);
+  assert.equal(bucket.total_tokens, 1040);
+});
+
 test('parseCodebuddyIncremental attributes plugin sessions via genie-history', async () => {
   const root = await mkdtemp(join(tmpdir(), 'tud-cb-plugin-'));
   const cwd = '/Users/sugar/Documents/github/juejin-usage';

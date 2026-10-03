@@ -50,6 +50,7 @@ export * from './parsers/goose.js';
 export * from './parsers/zed.js';
 export * from './parsers/warp.js';
 export * from './parsers/kinetaios.js';
+export * from './parsers/wps-comate.js';
 export * from './sync/index.js';
 export * from './sync/poll-backoff.js';
 export * from './hooks/claude.js';

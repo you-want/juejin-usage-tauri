@@ -57,6 +57,8 @@ export const SUPPORTED_TOOLS: readonly SupportedToolLine[] = [
   { name: 'Zed', source: 'zed' },
   { name: 'Warp', source: 'warp' },
   { name: 'Command Code', source: 'command-code' },
+  { name: 'MiniMax Code', source: 'minimax-code' },
+  { name: 'WPS Comate', source: 'wps-comate' },
 ] as const;
 
 export function formatSupportedTool(line: SupportedToolLine): string {

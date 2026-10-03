@@ -106,8 +106,11 @@ export const TOOL_CATALOG: readonly ToolMetadata[] = [
   { key: 'goose', displayName: 'Goose', sortOrder: 280, costStrategy: 'estimated', costSupported: true, enabled: true },
   { key: 'zed', displayName: 'Zed', sortOrder: 290, costStrategy: 'estimated', costSupported: true, enabled: true },
   { key: 'warp', displayName: 'Warp', sortOrder: 300, costStrategy: 'estimated', costSupported: true, enabled: true },
+  { key: 'wps-comate', displayName: 'WPS Comate', sortOrder: 310, costStrategy: 'estimated', costSupported: true, enabled: true },
+  { key: 'command-code', displayName: 'Command Code', sortOrder: 320, costStrategy: 'estimated', costSupported: true, enabled: true },
+  { key: 'minimax-code', displayName: 'MiniMax Code', sortOrder: 330, costStrategy: 'estimated', costSupported: true, enabled: true },
   // KinetAios 上报真实 USD(amount 按 profile 单价折算)→ reported-first。
-  { key: 'kinetaios', displayName: 'KinetAios', sortOrder: 310, costStrategy: 'reported-first', costSupported: true, enabled: true },
+  { key: 'kinetaios', displayName: 'KinetAios', sortOrder: 340, costStrategy: 'reported-first', costSupported: true, enabled: true },
 ] as const;
 
 export function getEnabledTools(

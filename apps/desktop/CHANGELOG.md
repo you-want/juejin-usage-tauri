@@ -1,5 +1,19 @@
 # @juejin-opensource/jusage-desktop
 
+## 0.1.13
+
+### Patch Changes
+
+- 主面板和托盘新增 Copilot 套餐剩余额度、内联建议与重置时间，按本机登录账号匹配，避免多账号混用。
+- 新增 MiniMax Code、WPS 灵犀（WPS Comate）用量采集；MiniMax 额度卡支持新版桌面客户端 / mcode CLI。
+- 修复 ZCode 额度卡在智谱账号下不显示，并区分国内 / 国际账号；Codex 额度失败时显示原因和重试，未使用 ChatGPT 订阅时隐藏卡片。
+- 修复静默启动后再打开不显示窗口，以及原生崩溃后进程卡死无法重新打开。
+- 修复 Windows 便携版自动更新后变成普通安装版：便携版只提示新版本，引导到 Gitee 手动下载。
+- 修复 OpenCode 2.0 新用量、CodeBuddy 整轮 token、多项目云端少报，以及休眠后缺失日期不显示。
+- WorkBuddy 改用官方品牌图标。
+- Updated dependencies
+  - @juejin-opensource/jusage-core@0.1.13
+
 ## 0.1.12
 
 ### Patch Changes

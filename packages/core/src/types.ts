@@ -125,6 +125,11 @@ export interface CodexSessionIndexEntry {
 }
 
 export interface CursorsFile {
+  minimaxCode?: {
+    databases: Record<string, number>;
+    files: Record<string, { offset: number; inode?: number }>;
+    seenMessageIds?: string[];
+  };
   claude?: {
     files: Record<string, ClaudeFileCursor>;
     /** Legacy first-wins keys; still honored so already-ingested rows are not double-counted. */
@@ -482,6 +487,15 @@ export interface CursorsFile {
     conversationTotals?: Record<string, { tokens: number }>;
     dbMtimes?: Record<string, number>;
     updatedAt?: string;
+  };
+  wpsComate?: {
+    /** Per session file: inode/offset cursor + cached project name. */
+    files?: Record<
+      string,
+      { inode: number; offset: number; project?: string }
+    >;
+    /** Assistant entry ids already counted (`<fileName>:<entryId>`). */
+    seenIds?: string[];
   };
 }
 

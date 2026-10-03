@@ -16,7 +16,14 @@ import { isSqliteLockError, queryDbJson, readSqliteWithSnapshot } from './sqlite
 
 const ACCESS_TOKEN_KEY = 'cursorAuth/accessToken';
 const SESSION_COOKIE = 'WorkosCursorSessionToken';
-const FETCH_TIMEOUT_MS = 30_000;
+const DEFAULT_FETCH_TIMEOUT_MS = 180_000;
+
+function cursorFetchTimeoutMs(): number {
+  const configuredTimeoutMs = Number(process.env.JUSAGE_CURSOR_FETCH_TIMEOUT_MS);
+  return Number.isSafeInteger(configuredTimeoutMs) && configuredTimeoutMs > 0
+    ? configuredTimeoutMs
+    : DEFAULT_FETCH_TIMEOUT_MS;
+}
 
 /** Re-read the session cookie from state.vscdb at most this often (invalidated on 401). */
 const COOKIE_CACHE_TTL_MS = 30 * 60_000;
@@ -147,7 +154,7 @@ async function fetchUsageCsv(cookie: string): Promise<string> {
         'User-Agent':
           'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
       },
-      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+      signal: AbortSignal.timeout(cursorFetchTimeoutMs()),
     });
   } catch (err) {
     const reason = err instanceof Error && err.name === 'TimeoutError' ? 'timeout' : 'network';
@@ -163,7 +170,12 @@ async function fetchUsageCsv(cookie: string): Promise<string> {
     }
     throw new Error(`Cursor API 返回 ${resp.status}`);
   }
-  return resp.text();
+  try {
+    return await resp.text();
+  } catch (err) {
+    const reason = err instanceof Error && err.name === 'TimeoutError' ? 'timeout' : 'network';
+    throw new CursorSyncSkippedError(`Cursor 用量拉取跳过 (${reason})`);
+  }
 }
 
 function parseCsvLine(line: string): string[] {
@@ -421,8 +433,18 @@ export async function parseCursorIncremental(
 
   try {
     const cookies: string[] = [];
-    if (cachedCookie) cookies.push(cachedCookie);
-    else {
+    if (cachedCookie) {
+      const loaded = loadCookies();
+      if ('skip' in loaded) {
+        cookieCache = null;
+        cursors.cursor.lastError = loaded.skip;
+        return {
+          result: { buckets: [], eventsParsed: 0, filesProcessed: 0, skipped: true, error: loaded.skip },
+          cursors,
+        };
+      }
+      cookies.push(cachedCookie);
+    } else {
       const loaded = loadCookies();
       if ('skip' in loaded) {
         cursors.cursor.lastError = loaded.skip;

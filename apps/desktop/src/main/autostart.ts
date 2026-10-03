@@ -372,13 +372,13 @@ function isDesktopPetSyncFeedbackDuration(value: unknown): value is number {
 /** First launch: enable + register. Later: re-apply stored preference. */
 export async function initAutostartOnLaunch(): Promise<boolean> {
   const pref = await loadAutostartPref();
+  // OS registration may fail; it must not change how this process was launched.
+  silentThisLaunch = detectSilentThisLaunch(pref.launchHidden);
   if (pref.isFirstRun) {
     await applyAutostart(true);
-    silentThisLaunch = detectSilentThisLaunch(true);
     return true;
   }
   setOsLoginItem(pref.openAtLogin, pref.launchHidden);
-  silentThisLaunch = detectSilentThisLaunch(pref.launchHidden);
   return pref.openAtLogin;
 }
 

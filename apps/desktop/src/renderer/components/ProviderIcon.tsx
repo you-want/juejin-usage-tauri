@@ -17,6 +17,7 @@ import gooseIcon from '@lobehub/icons-static-svg/icons/goose.svg';
 import grokIcon from '@lobehub/icons-static-svg/icons/grok.svg';
 import hermesIcon from '@lobehub/icons-static-svg/icons/hermesagent.svg';
 import kimiIcon from '@lobehub/icons-static-svg/icons/kimi-color.svg';
+import minimaxIcon from '@lobehub/icons-static-svg/icons/minimax-color.svg';
 import kilocodeIcon from '@lobehub/icons-static-svg/icons/kilocode.svg';
 import kiroIcon from '@lobehub/icons-static-svg/icons/kiro-color.svg';
 import openClawIcon from '@lobehub/icons-static-svg/icons/openclaw-color.svg';
@@ -28,6 +29,8 @@ import qwenWorkIcon from '@/assets/brand-logos/qwenwork.ico';
 import roocodeIcon from '@lobehub/icons-static-svg/icons/roocode.svg';
 import traeIcon from '@lobehub/icons-static-svg/icons/trae-color.svg';
 import windsurfIcon from '@lobehub/icons-static-svg/icons/windsurf.svg';
+import workBuddyIcon from '@/assets/brand-logos/workbuddy.svg';
+import wpsComateIcon from '@/assets/brand-logos/wps-comate.svg';
 import xiaomiMimoIcon from '@lobehub/icons-static-svg/icons/xiaomimimo.svg';
 import zaiIcon from '@lobehub/icons-static-svg/icons/zai.svg';
 
@@ -56,6 +59,7 @@ const PROVIDER_ICON_MAP: Record<string, ProviderIconAsset> = {
   goose: { monochrome: true, src: gooseIcon },
   hermes: { monochrome: true, src: hermesIcon },
   kimi: { src: kimiIcon },
+  'minimax-code': { src: minimaxIcon },
   'kilo-cli': { monochrome: true, src: kilocodeIcon },
   kilocode: { monochrome: true, src: kilocodeIcon },
   kiro: { src: kiroIcon },
@@ -70,7 +74,8 @@ const PROVIDER_ICON_MAP: Record<string, ProviderIconAsset> = {
   roocode: { monochrome: true, src: roocodeIcon },
   trae: { src: traeIcon },
   windsurf: { monochrome: true, src: windsurfIcon },
-  workbuddy: { src: codeBuddyIcon },
+  workbuddy: { src: workBuddyIcon },
+  'wps-comate': { src: wpsComateIcon },
   zcode: { monochrome: true, src: zaiIcon },
 };
 
@@ -116,6 +121,7 @@ function normalizeProviderKey(provider: string): string {
   if (key.startsWith('openclaw')) return 'openclaw';
   if (key.startsWith('hermes')) return 'hermes';
   if (key.startsWith('kimi')) return 'kimi';
+  if (key === 'mcode' || key.startsWith('minimax-code')) return 'minimax-code';
   if (key.startsWith('kiro')) return 'kiro';
   if (key === 'roo-code' || key.startsWith('roocode') || key.startsWith('roo-')) {
     return 'roocode';
@@ -152,6 +158,9 @@ function normalizeProviderKey(provider: string): string {
   if (key.startsWith('zed')) return 'zed';
   if (key.startsWith('warp')) return 'warp';
   if (key.startsWith('command-code') || key.startsWith('commandcode')) return 'command-code';
+  if (key.startsWith('wps-comate') || key.startsWith('wpscomate')) {
+    return 'wps-comate';
+  }
 
   return PROVIDER_ALIASES[key] ?? key;
 }

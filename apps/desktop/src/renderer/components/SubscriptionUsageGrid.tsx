@@ -1,6 +1,7 @@
 import { AntigravitySubscriptionCard } from './AntigravitySubscriptionCard';
 import { ClaudeSubscriptionCard } from './ClaudeSubscriptionCard';
 import { CodexSubscriptionCard } from './CodexSubscriptionCard';
+import { CopilotSubscriptionCard } from './CopilotSubscriptionCard';
 import { CursorSubscriptionCard } from './CursorSubscriptionCard';
 import { DeepSeekSubscriptionCard } from './DeepSeekSubscriptionCard';
 import { GrokSubscriptionCard } from './GrokSubscriptionCard';
@@ -27,6 +28,7 @@ export function SubscriptionUsageGrid({ className = '' }: SubscriptionUsageGridP
       {isEnabled('codex') ? <CodexSubscriptionCard /> : null}
       {isEnabled('claude') ? <ClaudeSubscriptionCard /> : null}
       {isEnabled('cursor') ? <CursorSubscriptionCard /> : null}
+      {isEnabled('copilot') ? <CopilotSubscriptionCard /> : null}
       {isEnabled('grok') ? <GrokSubscriptionCard /> : null}
       {isEnabled('kimi') ? <KimiSubscriptionCard /> : null}
       {isEnabled('zcode') ? <ZcodeSubscriptionCard /> : null}

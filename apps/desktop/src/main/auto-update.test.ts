@@ -49,8 +49,8 @@ require.cache[electronId]!.exports = {
   }] },
 };
 require.cache[updaterId]!.exports = { autoUpdater: updater };
-const { initializeAutoUpdate, disposeAutoUpdate } = require('./auto-update.js') as
-  typeof import('./auto-update.js');
+const { initializeAutoUpdate, disposeAutoUpdate, registerAutoUpdateIpc } =
+  require('./auto-update.js') as typeof import('./auto-update.js');
 require.cache[electronId]!.exports = originalElectron;
 require.cache[updaterId]!.exports = originalUpdater;
 
@@ -74,6 +74,7 @@ async function until(condition: () => boolean) {
 
 beforeEach(async () => {
   userData = await mkdtemp(join(tmpdir(), 'jusage-auto-update-test-'));
+  delete process.env.PORTABLE_EXECUTABLE_FILE;
   sentStates.length = 0;
   app.isPackaged = true;
   updater.quitAndInstallCalled = false;
@@ -86,7 +87,18 @@ beforeEach(async () => {
 });
 afterEach(async () => {
   disposeAutoUpdate();
+  delete process.env.PORTABLE_EXECUTABLE_FILE;
   await rm(userData, { recursive: true, force: true });
+});
+
+test('early IPC answers get-state without starting an update check', async () => {
+  registerAutoUpdateIpc();
+  assert.ok(handlers.has(AUTO_UPDATE_GET_STATE_CHANNEL));
+  assert.equal(getState().status, 'idle');
+  assert.equal(await check(), getState());
+  assert.equal(updater.checkForUpdates.mock.callCount(), 0);
+  await initializeAutoUpdate({ beforeInstall: async () => {}, onInstallFailed: async () => {} });
+  assert.equal(updater.checkForUpdates.mock.callCount(), 1);
 });
 
 test('packaged startup enables automatic downloading and only supported IPC', async () => {
@@ -114,6 +126,22 @@ test('development never checks for updates or starts an installation', async () 
   await check();
   install();
   assert.equal(updater.checkForUpdates.mock.callCount(), 0);
+  assert.equal(updater.quitAndInstall.mock.callCount(), 0);
+});
+
+test('portable build reports new versions without downloading the NSIS package', async () => {
+  process.env.PORTABLE_EXECUTABLE_FILE = 'C:\\Downloads\\Juejin.Usage.Portable.exe';
+  await initializeAutoUpdate({ beforeInstall: async () => {}, onInstallFailed: async () => {} });
+  assert.equal(updater.autoDownload, false);
+  assert.equal(updater.checkForUpdates.mock.callCount(), 1);
+  updater.emit('update-available', { version: '0.1.9' });
+  assert.equal(getState().status, 'available');
+  assert.equal(getState().version, '0.1.9');
+  assert.equal(
+    getState().message,
+    '点击前往 Gitee Release 下载便携版',
+  );
+  install();
   assert.equal(updater.quitAndInstall.mock.callCount(), 0);
 });
 

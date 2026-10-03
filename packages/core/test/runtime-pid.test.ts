@@ -137,6 +137,7 @@ test('releaseRuntimeOwner only clears own pid', async () => {
 });
 
 test('argsMatchRuntimeKind recognizes CLI and desktop commands', () => {
+  // CLI — mac / Linux / Windows
   assert.equal(
     argsMatchRuntimeKind('node /Users/me/ai-usage/packages/cli/bin/jusage.js start', 'cli'),
     true,
@@ -150,11 +151,29 @@ test('argsMatchRuntimeKind recognizes CLI and desktop commands', () => {
   );
   assert.equal(
     argsMatchRuntimeKind(
+      'node /home/me/.local/share/pnpm/global/5/.pnpm/.../node_modules/@juejin-opensource/jusage/bin/jusage.js start',
+      'cli',
+    ),
+    true,
+  );
+  assert.equal(
+    argsMatchRuntimeKind(
+      String.raw`node C:\Users\me\AppData\Roaming\npm\node_modules\@juejin-opensource\jusage\bin\jusage.js start`,
+      'cli',
+    ),
+    true,
+  );
+  assert.equal(argsMatchRuntimeKind('jusage start', 'cli'), true);
+  assert.equal(argsMatchRuntimeKind(String.raw`C:\npm\jusage.cmd start`, 'cli'), true);
+  assert.equal(
+    argsMatchRuntimeKind(
       'node /Users/me/ai-usage/node_modules/@juejin-opensource/jusage-desktop/out/main/index.js',
       'cli',
     ),
     false,
   );
+
+  // Desktop — packaged + monorepo
   assert.equal(
     argsMatchRuntimeKind(
       'node /Users/me/ai-usage/node_modules/electron-vite/bin/electron-vite.js dev',
@@ -163,8 +182,106 @@ test('argsMatchRuntimeKind recognizes CLI and desktop commands', () => {
     false,
   );
   assert.equal(argsMatchRuntimeKind('/Applications/Juejin Usage.app/Contents/MacOS/Juejin Usage', 'desktop'), true);
+  assert.equal(
+    argsMatchRuntimeKind(
+      String.raw`C:\Users\me\AppData\Local\Programs\Juejin Usage\Juejin Usage.exe`,
+      'desktop',
+    ),
+    true,
+  );
+  assert.equal(
+    argsMatchRuntimeKind(String.raw`C:\Downloads\Juejin.Usage.Portable.exe`, 'desktop'),
+    true,
+  );
+  assert.equal(
+    argsMatchRuntimeKind('/home/me/Apps/Juejin-Usage.AppImage', 'desktop'),
+    true,
+  );
+  assert.equal(
+    argsMatchRuntimeKind(
+      '/path/to/electron /Users/me/juejin-usage/apps/desktop/out/main/index.js',
+      'desktop',
+    ),
+    true,
+  );
+  assert.equal(
+    argsMatchRuntimeKind(
+      String.raw`C:\electron\electron.exe C:\src\juejin-usage\apps\desktop\out\main\index.js`,
+      'desktop',
+    ),
+    true,
+  );
+  assert.equal(
+    argsMatchRuntimeKind(
+      'node /Users/me/ai-usage/node_modules/@juejin-opensource/jusage-desktop/out/main/index.js',
+      'desktop',
+    ),
+    true,
+  );
   assert.equal(argsMatchRuntimeKind('/usr/sbin/cfprefsd', 'desktop'), false);
   assert.equal(argsMatchRuntimeKind('/usr/sbin/cfprefsd', 'cli'), false);
+});
+
+test('argsMatchRuntimeKind does not treat IDE hosts in this repo as desktop or cli', () => {
+  assert.equal(
+    argsMatchRuntimeKind(
+      'Cursor Helper (Plugin): extension-host (user) juejin-usage [3-70]',
+      'desktop',
+    ),
+    false,
+  );
+  assert.equal(
+    argsMatchRuntimeKind(
+      'Cursor Helper (Plugin): extension-host (user) juejin-usage [3-70]',
+      'cli',
+    ),
+    false,
+  );
+  assert.equal(
+    argsMatchRuntimeKind(
+      'Cursor Helper (Plugin): extension-host (retrieval) juejin-usage [3-71]',
+      'desktop',
+    ),
+    false,
+  );
+  assert.equal(
+    argsMatchRuntimeKind(
+      '/Applications/Trae.app/.../Trae Helper (Plugin) --vscode-crash-reporter-process-type=extensionHost',
+      'desktop',
+    ),
+    false,
+  );
+  // Linux Cursor / VS Code utility process (camelCase extensionHost).
+  assert.equal(
+    argsMatchRuntimeKind(
+      '/usr/share/cursor/cursor --type=utility --utility-sub-type=node.mojom.NodeService --vscode-crash-reporter-process-type=extensionHost /home/me/src/juejin-usage',
+      'desktop',
+    ),
+    false,
+  );
+  assert.equal(
+    argsMatchRuntimeKind(
+      '/usr/share/cursor/cursor --type=utility --utility-sub-type=node.mojom.NodeService --vscode-crash-reporter-process-type=extensionHost /home/me/src/juejin-usage',
+      'cli',
+    ),
+    false,
+  );
+  // Bare workspace / repo path must not match without a real desktop/CLI binary.
+  assert.equal(
+    argsMatchRuntimeKind('/Users/me/Documents/github/juejin-usage', 'desktop'),
+    false,
+  );
+  assert.equal(
+    argsMatchRuntimeKind('/home/me/src/juejin-usage', 'cli'),
+    false,
+  );
+  assert.equal(
+    argsMatchRuntimeKind(
+      '/Applications/Cursor.app/Contents/MacOS/Cursor /Users/me/juejin-usage',
+      'desktop',
+    ),
+    false,
+  );
 });
 
 test('stopPid refuses to signal the current process', async () => {
