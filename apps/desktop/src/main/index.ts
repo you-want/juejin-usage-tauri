@@ -69,7 +69,11 @@ import {
   registerProtocolClient,
   type OpenSettingsPayload,
 } from './deep-link';
-import { disposeAutoUpdate, initializeAutoUpdate } from './auto-update';
+import {
+  disposeAutoUpdate,
+  initializeAutoUpdate,
+  registerAutoUpdateIpc,
+} from './auto-update';
 import { createMainWindowLauncher } from './main-window-launcher';
 import { restoreNativeTrapHandler } from './native-crash-signals';
 import { isThemeMode, resolveTheme, type ThemeMode } from '../shared/theme';
@@ -515,6 +519,8 @@ void acquireDesktopInstanceLock().then((gotLock) => {
     registerThemeIpc();
     registerShareCardIpc();
     registerAutostartIpc();
+    // Before the first window: get-state must not race initializeAutoUpdate.
+    registerAutoUpdateIpc();
     registerDesktopPetIpc({
       showMainWindow,
       openSettings: () => {
