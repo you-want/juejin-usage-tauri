@@ -1,5 +1,17 @@
 # @juejin-opensource/jusage
 
+## 0.1.13
+
+### Patch Changes
+
+- 新增 MiniMax Code、WPS 灵犀（WPS Comate）用量采集与面板展示；Command Code 用量会随云端同步上报。
+- 修复 OpenCode 2.0 新用量未统计、CodeBuddy 多轮工具调用只计最后一轮、以及休眠后缺失日期不显示。
+- 修复同一时段多项目用量上报到云端时只记一部分；升级后首次同步会自动全量比对纠正少报。
+- 内置面板：WorkBuddy 改用官方品牌图标；关联账号头像、昵称后台刷新。
+- Cursor 用量 CSV 超时跳过本轮、未登录时停止拉账单；启动时不再误杀带仓库名的 IDE 插件进程。
+- Updated dependencies
+  - @juejin-opensource/jusage-core@0.1.13
+
 ## 0.1.12
 
 ### Patch Changes

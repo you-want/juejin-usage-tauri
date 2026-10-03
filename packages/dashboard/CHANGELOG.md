@@ -1,5 +1,14 @@
 # @juejin-opensource/jusage-dashboard
 
+## 0.1.13
+
+### Patch Changes
+
+- 新增 MiniMax Code、WPS 灵犀（WPS Comate）用量展示；WorkBuddy 改用官方品牌图标。
+- 同步 core：OpenCode 2.0、CodeBuddy 整轮用量、Command Code 上报、多项目少报与缺失日期等修复。
+- Updated dependencies
+  - @juejin-opensource/jusage-core@0.1.13
+
 ## 0.1.12
 
 ### Patch Changes
