@@ -29,6 +29,48 @@ async function makeDb(rows: Array<[string, number, number, number, string | null
 
 void makeDb;
 
+test('parseKinetaiosIncremental skips CLI-engine rows (no double counting)', async () => {
+  // KinetAios 的 Claude Code / Codex 引擎是 spawn 官方 CLI,CLI 自己在 ~/.claude、~/.codex
+  // 写原生用量(上游 claude/codex parser 采)。cost_log 里这两类引擎的行必须排除,
+  // 否则同一批请求被原生 parser + 本 source 各算一次。
+  const dir = await mkdtemp(join(tmpdir(), 'tud-kinetaios-'));
+  const dbPath = join(dir, 'history.db');
+  const db = new DatabaseSync(dbPath);
+  db.exec(`CREATE TABLE conversations(id TEXT PRIMARY KEY, engine TEXT, cwd TEXT, model TEXT);
+  CREATE TABLE cost_log(
+    id TEXT PRIMARY KEY, conv_id TEXT, engine TEXT, amount REAL, tokens INTEGER, ts REAL,
+    tokens_in INTEGER DEFAULT 0, tokens_out INTEGER DEFAULT 0);`);
+  db.prepare('INSERT INTO conversations VALUES (?, ?, ?, ?)').run(
+    'c1', 'claudeCode', '/Users/me/demo', 'claude-sonnet-4-5',
+  );
+  const ts = Date.parse('2026-09-23T10:00:00.000Z');
+  db.prepare('INSERT INTO cost_log VALUES (?, ?, ?, ?, ?, ?, ?, ?)').run(
+    'r-cli', 'c1', 'claudeCode', 0.11, 500, ts, 400, 100,
+  );
+  db.prepare('INSERT INTO cost_log VALUES (?, ?, ?, ?, ?, ?, ?, ?)').run(
+    'r-direct', 'c1', 'direct', 0.05, 120, ts, 100, 20,
+  );
+  db.prepare('INSERT INTO cost_log VALUES (?, ?, ?, ?, ?, ?, ?, ?)').run(
+    'r-v3', 'c1', 'directV3', 0.01, 60, ts, 50, 10,
+  );
+  db.close();
+
+  const prev = process.env.AI_USAGE_KINETAIOS_DB;
+  process.env.AI_USAGE_KINETAIOS_DB = dbPath;
+  try {
+    const { result } = await parseKinetaiosIncremental({}, SINCE);
+    // claudeCode 行被排除;direct + directV3 两条内置引擎行保留
+    assert.equal(result.eventsParsed, 2);
+    const total = result.buckets.reduce((acc, b) => acc + b.total_tokens, 0);
+    assert.equal(total, 180);
+    const cost = result.buckets.reduce((acc, b) => acc + (b.reported_cost_usd ?? 0), 0);
+    assert.ok(Math.abs(cost - 0.06) < 1e-9, `cost should be 0.06, got ${cost}`);
+  } finally {
+    if (prev === undefined) delete process.env.AI_USAGE_KINETAIOS_DB;
+    else process.env.AI_USAGE_KINETAIOS_DB = prev;
+  }
+});
+
 test('parseKinetaiosIncremental reads cost_log with model/cwd join + reported cost', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'tud-kinetaios-'));
   const dbPath = join(dir, 'history.db');

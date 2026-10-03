@@ -76,6 +76,11 @@ export interface ParseKinetaiosResult {
 
 // 单行 SQL：cost_log LEFT JOIN conversations 补模型名与项目目录（都是可空的）。
 // 尾部 `${since}` 由 parseKinetaiosIncremental 内联填（数值字面量，无注入面）。
+// engine 过滤（防双倍统计）：KinetAios 是多引擎壳，Claude Code / Codex 引擎是 spawn 官方
+// CLI（不是官方 SDK），CLI 自己会在 ~/.claude、~/.codex 写原生用量数据 —— 上游 claude/codex
+// parser 会采那一份。cost_log 里 engine='claudeCode'/'codex' 的行与原生数据是同一批请求，
+// 不过滤就会被算两次。这里排除 CLI 引擎：Direct 家族（内置 ReAct loop 直调 API）的用量
+// 只在本数据源存在；排除式写法对 KinetAios 未来新增内置引擎前向兼容（无需上游改 SQL）。
 const COST_QUERY = `SELECT
     c.id,
     c.amount,
@@ -86,7 +91,7 @@ const COST_QUERY = `SELECT
     co.cwd
   FROM cost_log c
   LEFT JOIN conversations co ON co.id = c.conv_id
-  WHERE c.ts > `;
+  WHERE c.engine NOT IN ('claudeCode', 'codex') AND c.ts > `;
 
 export async function parseKinetaiosIncremental(
   cursors: CursorsFile,
