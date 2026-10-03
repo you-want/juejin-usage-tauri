@@ -11,6 +11,7 @@ import { parseKilocodeIncremental } from '../src/parsers/kilocode.js';
 import { parseGooseIncremental } from '../src/parsers/goose.js';
 import { parseZedIncremental } from '../src/parsers/zed.js';
 import { splitRootsEnv } from '../src/parsers/shared.js';
+import { findEnabledTool } from '../src/tool-catalog.js';
 import { bucketToIngestEvent } from '../src/upload/events.js';
 
 const SINCE = '2020-01-01T00:00:00.000Z';
@@ -253,6 +254,12 @@ test('bucketToIngestEvent maps long-tail sources and collectors', () => {
     },
     { source: 'goose', collector: 'goose', integration: 'goose', expectedCollector: 'goose' },
     { source: 'zed', collector: 'zed', integration: 'zed', expectedCollector: 'zed' },
+    {
+      source: 'command-code',
+      collector: 'command-code',
+      integration: 'command-code',
+      expectedCollector: 'command-code',
+    },
   ];
 
   for (const c of cases) {
@@ -275,6 +282,11 @@ test('bucketToIngestEvent maps long-tail sources and collectors', () => {
     assert.equal(event?.integration, c.integration, c.source);
     assert.equal(event?.collector, c.expectedCollector, c.source);
   }
+});
+
+test('catalog lists Command Code and MiniMax Code for ranking filters', () => {
+  assert.equal(findEnabledTool('command-code')?.displayName, 'Command Code');
+  assert.equal(findEnabledTool('minimax-code')?.displayName, 'MiniMax Code');
 });
 
 test('splitRootsEnv keeps an absolute path of the running platform intact', () => {
