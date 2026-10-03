@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
@@ -131,3 +131,37 @@ test('recordsToBuckets aggregates into half-hour UTC buckets', () => {
   assert.equal(buckets[0]!.reported_cost_usd, 0.05);
   assert.equal(buckets[1]!.reported_cost_usd, 0.01);
 });
+
+function writeEmptyCursorStateDb(dir: string): string {
+  const stateDbPath = join(dir, 'User', 'globalStorage', 'state.vscdb');
+  mkdirSync(join(dir, 'User', 'globalStorage'), { recursive: true });
+  const stateDb = new DatabaseSync(stateDbPath);
+  stateDb.exec('CREATE TABLE ItemTable (key TEXT PRIMARY KEY, value TEXT)');
+  stateDb.close();
+  return stateDbPath;
+}
+
+test('parseCursorIncremental skips cursor.com when Cursor is not logged in', async () => {
+  const appDir = mkdtempSync(join(tmpdir(), 'jusage-cursor-logout-'));
+  const stateDbPath = writeEmptyCursorStateDb(appDir);
+  const originalState = process.env.CURSOR_STATE_DB_PATH;
+  const originalFetch = globalThis.fetch;
+  let fetched = false;
+  try {
+    process.env.CURSOR_STATE_DB_PATH = stateDbPath;
+    globalThis.fetch = async () => {
+      fetched = true;
+      return new Response('nope', { status: 500 });
+    };
+    const { result } = await parseCursorIncremental({}, '2026-01-01T00:00:00.000Z');
+    assert.equal(result.skipped, true);
+    assert.equal(result.error, 'Cursor 未登录');
+    assert.equal(fetched, false);
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (originalState === undefined) delete process.env.CURSOR_STATE_DB_PATH;
+    else process.env.CURSOR_STATE_DB_PATH = originalState;
+    rmSync(appDir, { recursive: true, force: true });
+  }
+});
+

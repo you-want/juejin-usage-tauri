@@ -433,8 +433,18 @@ export async function parseCursorIncremental(
 
   try {
     const cookies: string[] = [];
-    if (cachedCookie) cookies.push(cachedCookie);
-    else {
+    if (cachedCookie) {
+      const loaded = loadCookies();
+      if ('skip' in loaded) {
+        cookieCache = null;
+        cursors.cursor.lastError = loaded.skip;
+        return {
+          result: { buckets: [], eventsParsed: 0, filesProcessed: 0, skipped: true, error: loaded.skip },
+          cursors,
+        };
+      }
+      cookies.push(cachedCookie);
+    } else {
       const loaded = loadCookies();
       if ('skip' in loaded) {
         cursors.cursor.lastError = loaded.skip;
