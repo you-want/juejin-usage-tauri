@@ -85,8 +85,6 @@ const SYNC_ID_TO_CATALOG_KEY: Record<string, string> = {
 /** Display names for sync sources that are not in TOOL_CATALOG. */
 const SYNC_ID_DISPLAY_FALLBACK: Record<string, string> = {
   qwenwork: 'QwenWork',
-  'command-code': 'Command Code',
-  'minimax-code': 'MiniMax Code',
 };
 
 function collectorDisplayName(sourceId: string): string {

@@ -107,6 +107,8 @@ export const TOOL_CATALOG: readonly ToolMetadata[] = [
   { key: 'zed', displayName: 'Zed', sortOrder: 290, costStrategy: 'estimated', costSupported: true, enabled: true },
   { key: 'warp', displayName: 'Warp', sortOrder: 300, costStrategy: 'estimated', costSupported: true, enabled: true },
   { key: 'wps-comate', displayName: 'WPS Comate', sortOrder: 310, costStrategy: 'estimated', costSupported: true, enabled: true },
+  { key: 'command-code', displayName: 'Command Code', sortOrder: 320, costStrategy: 'estimated', costSupported: true, enabled: true },
+  { key: 'minimax-code', displayName: 'MiniMax Code', sortOrder: 330, costStrategy: 'estimated', costSupported: true, enabled: true },
 ] as const;
 
 export function getEnabledTools(
