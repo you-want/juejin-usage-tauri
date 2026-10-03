@@ -166,33 +166,70 @@ export function readProcessArgs(pid: number): string | null {
   return execPsField(pid, 'args=');
 }
 
+/**
+ * IDE / editor side processes that often embed the workspace folder name.
+ * Brand lists are endless; rely on shared shapes instead.
+ * Primary safety is still looksLikeDesktopRuntime / looksLikeCliRuntime —
+ * this is only a belt-and-suspenders deny list.
+ */
+function looksLikeIdeHelperProcess(lower: string): boolean {
+  // VS Code-family: mac titles use "extension-host"; Linux flags use extensionHost.
+  if (lower.includes('extension-host') || lower.includes('extensionhost')) {
+    return true;
+  }
+  // Electron editor helpers: "Cursor Helper", "Code Helper", "Trae Helper", …
+  return /\bhelper\b/.test(lower);
+}
+
+/** Packaged / monorepo desktop — never a bare repo folder like .../juejin-usage. */
+function looksLikeDesktopRuntime(lower: string): boolean {
+  const path = lower.replace(/\\/g, '/');
+  if (path.includes('jusage-desktop')) return true;
+  if (path.includes('com.juejin.tud.desktop')) return true;
+  // productName "Juejin Usage" (mac .app / win Program Files).
+  if (path.includes('juejin usage')) return true;
+  // Win portable / installers: Juejin.Usage.exe, Juejin.Usage.Portable.exe
+  if (/\bjuejin\.usage(?:\.portable)?\.exe\b/.test(path)) return true;
+  // Linux AppImage only — never a bare workspace folder ".../juejin-usage".
+  if (/\bjuejin[-_.]usage\.appimage\b/.test(path)) return true;
+  // Monorepo Electron main (posix or win separators, normalized above).
+  if (path.includes('electron') && path.includes('apps/desktop')) return true;
+  return false;
+}
+
+/** Global CLI (`jusage` / jusage.js) on macOS, Linux, and Windows. */
+function looksLikeCliRuntime(lower: string): boolean {
+  const path = lower.replace(/\\/g, '/');
+  if (path.includes('jusage.js')) return true;
+  // npm global: .../node_modules/@juejin-opensource/jusage/bin/...
+  if (path.includes('@juejin-opensource/jusage/')) return true;
+  // `jusage`, `jusage.cmd` (Win), not `juejin-usage` workspace folder.
+  if (/(?:^|[\s/])jusage(?:\.cmd)?(?:\s|$)/.test(path)) return true;
+  return false;
+}
+
 export function argsMatchRuntimeKind(args: string, kind: RuntimeKind): boolean {
   const lower = args.toLowerCase();
   if (kind === 'desktop') {
     // Dev servers are siblings of Electron under electron-vite; never treat them
     // as a desktop runtime to evict.
     if (lower.includes('electron-vite') || lower.includes('vite.js')) return false;
-    return (
-      lower.includes('jusage-desktop') ||
-      lower.includes('juejin usage') ||
-      lower.includes('juejin-usage') ||
-      lower.includes('com.juejin.tud.desktop') ||
-      (lower.includes('electron') && (lower.includes('jusage') || lower.includes('juejin')))
-    );
+    // IDE helpers put the workspace folder name (often "juejin-usage") in the
+    // process title. A bare repo-name match would SIGKILL Cursor / VS Code /
+    // Trae extension hosts when Desktop evicts stale runtimes.
+    if (looksLikeIdeHelperProcess(lower)) return false;
+    return looksLikeDesktopRuntime(lower);
   }
   if (
     lower.includes('jusage-desktop') ||
     lower.includes('jusage-core') ||
     lower.includes('jusage-dashboard') ||
-    lower.includes('electron-vite')
+    lower.includes('electron-vite') ||
+    looksLikeIdeHelperProcess(lower)
   ) {
     return false;
   }
-  return (
-    lower.includes('jusage.js') ||
-    lower.includes('@juejin-opensource/jusage/') ||
-    /(?:^|[\s/\\])jusage(?:\.cmd)?(?:\s|$)/.test(lower)
-  );
+  return looksLikeCliRuntime(lower);
 }
 
 /**
