@@ -114,9 +114,11 @@ test('deduplicates profile requests and keeps the cached view when toggling sync
   } }));
   await settleProfileRefresh(f.fetchMock);
 
+  // PUT returns the persisted snapshot; only GET overlays the refreshed cache.
   const toggle = await f.update({ juejin: { enabled: false } });
-  assert.equal((await toggle.json() as { data: TudConfigView }).data.juejin.userName, 'New name');
-  await f.app.request('/functions/tud-config');
+  assert.equal((await toggle.json() as { data: TudConfigView }).data.juejin.userName, 'Old name');
+  const cached = await f.app.request('/functions/tud-config');
+  assert.equal((await cached.json() as { data: TudConfigView }).data.juejin.userName, 'New name');
   assert.equal(f.fetchMock.mock.callCount(), 1);
 
   await f.update({ juejin: { userName: 'Explicit name' } });

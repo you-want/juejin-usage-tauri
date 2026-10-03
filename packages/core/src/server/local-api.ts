@@ -112,11 +112,10 @@ async function fetchJuejinProfile(userId: string): Promise<JuejinProfile | null>
       err_no?: unknown;
       data?: { user_id?: unknown; user_name?: unknown; avatar_large?: unknown };
     } | null;
-    if (body?.err_no !== 0 || body.data?.user_id !== userId) return null;
-    const userName = typeof body.data.user_name === 'string'
-      ? body.data.user_name.trim() : '';
-    const avatarLarge = typeof body.data.avatar_large === 'string'
-      ? body.data.avatar_large.trim() : '';
+    const data = body?.err_no === 0 ? body.data : null;
+    if (!data || String(data.user_id ?? '') !== userId) return null;
+    const userName = typeof data.user_name === 'string' ? data.user_name.trim() : '';
+    const avatarLarge = typeof data.avatar_large === 'string' ? data.avatar_large.trim() : '';
     if (!userName || !isValidApiUrl(avatarLarge)) return null;
     return { userName, avatarLarge };
   } catch {
@@ -276,50 +275,36 @@ function mapUpstreamError(
 
 export function createLocalApiApp(deps: LocalApiDeps): Hono {
   const app = new Hono();
-  // Display-only profile overlay. Login already persisted name/avatar; refreshes
-  // run in the background so GET /tud-config never waits on the network.
+  // GET-only display overlay. Login already persisted name/avatar; refresh runs in
+  // the background so config reads never wait on the network or write disk.
   let profileCache: {
     userId: string;
     expiresAt: number;
     value: JuejinProfile | null;
-    generation: number;
   } | null = null;
-  let profileGeneration = 0;
 
-  function getConfigView(config: TudConfig, refresh = false): TudConfigView {
-    const view = toConfigView(config);
+  function readConfigView(): TudConfigView {
+    const view = toConfigView(deps.getConfig());
     const userId = view.juejin.originUserId;
     if (!view.juejin.userId || !userId || !looksLikePlainJuejinUserId(userId)) return view;
 
-    if (refresh && (
+    if (
       !profileCache || profileCache.userId !== userId || profileCache.expiresAt <= Date.now()
-    )) {
-      const previous = profileCache?.userId === userId ? profileCache.value : null;
-      const generation = ++profileGeneration;
+    ) {
       const entry = {
         userId,
         expiresAt: Date.now() + 5 * 60_000,
-        value: previous,
-        generation,
+        value: profileCache?.userId === userId ? profileCache.value : null,
       };
       profileCache = entry;
       void fetchJuejinProfile(userId).then((profile) => {
-        // Drop results after logout, account switch, or a newer refresh.
-        if (profileCache !== entry || entry.generation !== generation) return;
-        if (profile) entry.value = profile;
+        // Drop after logout / account switch / a newer refresh replaced the entry.
+        if (profileCache === entry && profile) entry.value = profile;
       });
     }
 
-    const cached = profileCache;
-    if (!cached || cached.userId !== userId || !cached.value) return view;
-    const current = toConfigView(deps.getConfig());
-    if (
-      current.juejin.userId === view.juejin.userId &&
-      current.juejin.originUserId === userId
-    ) {
-      Object.assign(current.juejin, cached.value);
-    }
-    return current;
+    if (profileCache.value) Object.assign(view.juejin, profileCache.value);
+    return view;
   }
 
   app.use('*', cors());
@@ -562,7 +547,7 @@ export function createLocalApiApp(deps: LocalApiDeps): Hono {
   });
 
   app.get('/functions/tud-config', (c) => {
-    return c.json(ok(getConfigView(deps.getConfig(), true)));
+    return c.json(ok(readConfigView()));
   });
 
   app.put('/functions/tud-config', async (c) => {
@@ -646,7 +631,7 @@ export function createLocalApiApp(deps: LocalApiDeps): Hono {
       });
     }
 
-    return c.json(ok(getConfigView(config)));
+    return c.json(ok(toConfigView(config)));
   });
 
   app.post('/functions/tud-trigger-sync', async (c) => {
