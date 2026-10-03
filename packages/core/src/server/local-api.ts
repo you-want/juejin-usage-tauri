@@ -276,35 +276,48 @@ function mapUpstreamError(
 
 export function createLocalApiApp(deps: LocalApiDeps): Hono {
   const app = new Hono();
+  // Display-only profile overlay. Login already persisted name/avatar; refreshes
+  // run in the background so GET /tud-config never waits on the network.
   let profileCache: {
     userId: string;
     expiresAt: number;
-    profile: Promise<JuejinProfile | null>;
+    value: JuejinProfile | null;
+    generation: number;
   } | null = null;
+  let profileGeneration = 0;
 
-  // Keep display-only refreshes out of config writes so they cannot race logout.
-  async function getConfigView(config: TudConfig, refresh = false): Promise<TudConfigView> {
+  function getConfigView(config: TudConfig, refresh = false): TudConfigView {
     const view = toConfigView(config);
     const userId = view.juejin.originUserId;
     if (!view.juejin.userId || !userId || !looksLikePlainJuejinUserId(userId)) return view;
+
     if (refresh && (
       !profileCache || profileCache.userId !== userId || profileCache.expiresAt <= Date.now()
     )) {
-      const previous = profileCache?.userId === userId ? profileCache.profile : null;
-      profileCache = {
+      const previous = profileCache?.userId === userId ? profileCache.value : null;
+      const generation = ++profileGeneration;
+      const entry = {
         userId,
         expiresAt: Date.now() + 5 * 60_000,
-        profile: fetchJuejinProfile(userId).then((profile) => profile ?? previous),
+        value: previous,
+        generation,
       };
+      profileCache = entry;
+      void fetchJuejinProfile(userId).then((profile) => {
+        // Drop results after logout, account switch, or a newer refresh.
+        if (profileCache !== entry || entry.generation !== generation) return;
+        if (profile) entry.value = profile;
+      });
     }
+
     const cached = profileCache;
-    if (!cached || cached.userId !== userId) return view;
-    const profile = await cached.profile;
-    // A login/logout or settings write may have completed during the request.
+    if (!cached || cached.userId !== userId || !cached.value) return view;
     const current = toConfigView(deps.getConfig());
-    if (profile && profileCache === cached &&
-      current.juejin.userId === view.juejin.userId && current.juejin.originUserId === userId) {
-      Object.assign(current.juejin, profile);
+    if (
+      current.juejin.userId === view.juejin.userId &&
+      current.juejin.originUserId === userId
+    ) {
+      Object.assign(current.juejin, cached.value);
     }
     return current;
   }
@@ -548,8 +561,8 @@ export function createLocalApiApp(deps: LocalApiDeps): Hono {
     return c.json(ok(await getSyncStatusPayload(deps.dataDir, config, rows, hooks)));
   });
 
-  app.get('/functions/tud-config', async (c) => {
-    return c.json(ok(await getConfigView(deps.getConfig(), true)));
+  app.get('/functions/tud-config', (c) => {
+    return c.json(ok(getConfigView(deps.getConfig(), true)));
   });
 
   app.put('/functions/tud-config', async (c) => {
@@ -633,7 +646,7 @@ export function createLocalApiApp(deps: LocalApiDeps): Hono {
       });
     }
 
-    return c.json(ok(await getConfigView(config)));
+    return c.json(ok(getConfigView(config)));
   });
 
   app.post('/functions/tud-trigger-sync', async (c) => {

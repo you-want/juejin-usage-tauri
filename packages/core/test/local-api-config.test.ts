@@ -10,6 +10,19 @@ import { createLocalApiApp } from '../src/server/local-api.js';
 import { BucketStore } from '../src/server/state.js';
 import type { TudConfig, TudConfigUpdate, TudConfigView } from '../src/types.js';
 
+/** Wait until background profile fetch has settled far enough for cache writes. */
+async function settleProfileRefresh(fetchMock: { mock: { callCount: () => number } }, calls = 1) {
+  for (let i = 0; i < 50; i += 1) {
+    if (fetchMock.mock.callCount() >= calls) {
+      await new Promise((resolve) => setImmediate(resolve));
+      await new Promise((resolve) => setImmediate(resolve));
+      return;
+    }
+    await new Promise((resolve) => setImmediate(resolve));
+  }
+  assert.fail(`profile fetch did not reach ${calls} call(s)`);
+}
+
 async function fixture(
   t: TestContext,
   onConfigChange?: (config: TudConfig) => void,
@@ -44,7 +57,7 @@ async function fixture(
   };
 }
 
-test('refreshes linked account profile in the config view without changing saved credentials', async (t) => {
+test('refreshes linked account profile in the background without blocking or writing credentials', async (t) => {
   const f = await fixture(t);
   await f.update({ juejin: {
     enabled: false,
@@ -66,8 +79,15 @@ test('refreshes linked account profile in the config view without changing saved
     } });
   });
 
-  const response = await f.app.request('/functions/tud-config');
-  const body = await response.json() as { data: TudConfigView };
+  const cold = await f.app.request('/functions/tud-config');
+  const coldBody = await cold.json() as { data: TudConfigView };
+  assert.equal(coldBody.data.juejin.userName, 'Old name');
+  assert.equal(coldBody.data.juejin.avatarLarge, 'https://example.invalid/old.png');
+  assert.equal(f.fetchMock.mock.callCount(), 1);
+
+  await settleProfileRefresh(f.fetchMock);
+  const warm = await f.app.request('/functions/tud-config');
+  const body = await warm.json() as { data: TudConfigView };
   assert.equal(body.data.juejin.userName, 'New name');
   assert.equal(body.data.juejin.avatarLarge, 'https://example.invalid/new.png');
   assert.equal(body.data.juejin.originUserId, '1234567890123456');
@@ -83,18 +103,17 @@ test('deduplicates profile requests and keeps the cached view when toggling sync
   let release!: (response: Response) => void;
   f.fetchMock.mock.mockImplementation(() => new Promise<Response>((resolve) => { release = resolve; }));
 
-  const first = f.app.request('/functions/tud-config');
-  const second = f.app.request('/functions/tud-config');
-  await new Promise((resolve) => setImmediate(resolve));
+  const first = await f.app.request('/functions/tud-config');
+  const second = await f.app.request('/functions/tud-config');
   assert.equal(f.fetchMock.mock.callCount(), 1);
+  assert.equal((await first.json() as { data: TudConfigView }).data.juejin.userName, 'Old name');
+  assert.equal((await second.json() as { data: TudConfigView }).data.juejin.userName, 'Old name');
+
   release(Response.json({ err_no: 0, data: {
     user_id: '12345678', user_name: 'New name', avatar_large: 'https://example.invalid/new.png',
   } }));
+  await settleProfileRefresh(f.fetchMock);
 
-  for (const response of await Promise.all([first, second])) {
-    const body = await response.json() as { data: TudConfigView };
-    assert.equal(body.data.juejin.userName, 'New name');
-  }
   const toggle = await f.update({ juejin: { enabled: false } });
   assert.equal((await toggle.json() as { data: TudConfigView }).data.juejin.userName, 'New name');
   await f.app.request('/functions/tud-config');
@@ -104,6 +123,7 @@ test('deduplicates profile requests and keeps the cached view when toggling sync
   f.fetchMock.mock.mockImplementation(async () => { throw new Error('offline'); });
   const updated = await f.app.request('/functions/tud-config');
   assert.equal((await updated.json() as { data: TudConfigView }).data.juejin.userName, 'Explicit name');
+  await settleProfileRefresh(f.fetchMock, 2);
   assert.equal(f.fetchMock.mock.callCount(), 2);
 });
 
@@ -116,6 +136,7 @@ test('refreshes expired profile cache and preserves the last successful profile 
     user_id: '12345678', user_name: 'New name', avatar_large: 'https://example.invalid/new.png',
   } }));
   await f.app.request('/functions/tud-config');
+  await settleProfileRefresh(f.fetchMock);
 
   now += 5 * 60 * 1000 + 1;
   f.fetchMock.mock.mockImplementation(async () => { throw new Error('offline'); });
@@ -123,6 +144,7 @@ test('refreshes expired profile cache and preserves the last successful profile 
   const body = await response.json() as { data: TudConfigView };
   assert.equal(body.data.juejin.userName, 'New name');
   assert.equal(body.data.juejin.avatarLarge, 'https://example.invalid/new.png');
+  await settleProfileRefresh(f.fetchMock, 2);
   await f.app.request('/functions/tud-config');
   assert.equal(f.fetchMock.mock.callCount(), 2);
 });
@@ -152,6 +174,7 @@ for (const [label, upstream] of [
       assert.equal(body.data.juejin.userName, 'Old name');
       assert.equal(body.data.juejin.avatarLarge, 'https://example.invalid/old.png');
     }
+    await settleProfileRefresh(f.fetchMock);
     assert.equal(f.fetchMock.mock.callCount(), 1);
   });
 }
@@ -173,18 +196,14 @@ test('skips profile requests for unlinked accounts or missing public user IDs', 
 
 for (const switchAccount of [false, true]) {
   test(`an in-flight profile cannot leak after ${switchAccount ? 'switching accounts' : 'logout'}`, async (t) => {
-    let onChange = () => {};
-    const f = await fixture(t, () => onChange());
+    const f = await fixture(t);
     await f.update({ juejin: { enabled: false, token: '12345678', userName: 'Old name' } });
     let release!: (response: Response) => void;
     f.fetchMock.mock.mockImplementation(() => new Promise<Response>((resolve) => { release = resolve; }));
-    const pending = f.app.request('/functions/tud-config');
-    await new Promise((resolve) => setImmediate(resolve));
-    assert.equal(f.fetchMock.mock.callCount(), 1);
 
-    const toggled = new Promise<void>((resolve) => { onChange = resolve; });
-    const pendingToggle = f.update({ juejin: { enabled: false } });
-    await toggled;
+    const cold = await f.app.request('/functions/tud-config');
+    assert.equal((await cold.json() as { data: TudConfigView }).data.juejin.userName, 'Old name');
+    assert.equal(f.fetchMock.mock.callCount(), 1);
 
     await f.update({ juejin: {
       token: switchAccount ? '87654321' : null,
@@ -195,12 +214,14 @@ for (const switchAccount of [false, true]) {
     release(Response.json({ err_no: 0, data: {
       user_id: '12345678', user_name: 'Stale account', avatar_large: 'https://example.invalid/stale.png',
     } }));
-    for (const response of await Promise.all([pending, pendingToggle])) {
-      const body = await response.json() as { data: TudConfigView };
-      assert.equal(body.data.juejin.userName, switchAccount ? 'Other account' : null);
-      assert.equal(body.data.juejin.avatarLarge, null);
-      assert.equal(body.data.juejin.originUserId, switchAccount ? '87654321' : null);
-    }
+    await new Promise((resolve) => setImmediate(resolve));
+    await new Promise((resolve) => setImmediate(resolve));
+
+    const after = await f.app.request('/functions/tud-config');
+    const body = await after.json() as { data: TudConfigView };
+    assert.equal(body.data.juejin.userName, switchAccount ? 'Other account' : null);
+    assert.equal(body.data.juejin.avatarLarge, null);
+    assert.equal(body.data.juejin.originUserId, switchAccount ? '87654321' : null);
   });
 }
 
