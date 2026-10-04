@@ -15,7 +15,7 @@ import geminiCliIcon from '@lobehub/icons-static-svg/icons/geminicli-color.svg';
 import gooseIcon from '@lobehub/icons-static-svg/icons/goose.svg';
 import grokIcon from '@lobehub/icons-static-svg/icons/grok.svg';
 import hermesIcon from '@lobehub/icons-static-svg/icons/hermesagent.svg';
-import kimiIcon from '@lobehub/icons-static-svg/icons/kimi-color.svg';
+import kimiIcon from '@lobehub/icons-static-svg/icons/kimi.svg';
 import minimaxIcon from '@lobehub/icons-static-svg/icons/minimax-color.svg';
 import kilocodeIcon from '@lobehub/icons-static-svg/icons/kilocode.svg';
 import kiroIcon from '@lobehub/icons-static-svg/icons/kiro-color.svg';
@@ -56,7 +56,7 @@ const PROVIDER_ICON_MAP: Record<string, ProviderIconAsset> = {
   grok: { monochrome: true, src: grokIcon },
   goose: { monochrome: true, src: gooseIcon },
   hermes: { monochrome: true, src: hermesIcon },
-  kimi: { src: kimiIcon },
+  kimi: { monochrome: true, src: kimiIcon },
   'minimax-code': { src: minimaxIcon },
   'kilo-cli': { monochrome: true, src: kilocodeIcon },
   kilocode: { monochrome: true, src: kilocodeIcon },
