@@ -88,7 +88,7 @@ test('reads only the matching desktop account and treats token membership as cac
 test('desktop loader ignores persisted credentials and reads only its own current account', async (t) => {
   const root = await mkdtemp(path.join(tmpdir(), 'kimi-account-'));
   t.after(() => rm(root, { recursive: true, force: true }));
-  const options = { desktopDataDir: path.join(root, 'profile'), desktopShareDir: path.join(root, 'share'), codeHome: path.join(root, 'code'), env: {}, readDesktopContext: async () => null };
+  const options = { desktopDataDir: path.join(root, 'profile'), desktopShareDir: path.join(root, 'share'), codeHome: path.join(root, 'code'), platform: 'darwin' as const, env: {}, readDesktopContext: async () => null };
   assert.equal((await loadKimiAccount(options) as { status: string }).status, 'not-installed');
   await mkdir(options.codeHome);
   assert.equal((await loadKimiAccount(options) as { status: string }).status, 'not-installed');
@@ -105,9 +105,6 @@ test('desktop loader ignores persisted credentials and reads only its own curren
   assert.equal(requests, 0);
   const closedWithCustomCode = await loadKimiAccount({ ...options, env: { KIMI_CODE_BASE_URL: 'https://proxy.example' } });
   assert.match((closedWithCustomCode as { message: string }).message, /打开 Kimi/);
-  const windowsWithoutPipe = await loadKimiAccount({ ...options, platform: 'win32' });
-  assert.equal((windowsWithoutPipe as { status: string }).status, 'temporarily-unavailable');
-  assert.match((windowsWithoutPipe as { message: string }).message, /暂不支持自动连接 Windows/);
   const context: KimiDesktopContext = {
     accessToken: jwt({ sub: 'alice', exp: 2_000_000_000, membership: { level: 10 } }), userId: 'alice', region: 'overseas', validateIdentity: async () => true,
   };
@@ -124,6 +121,37 @@ test('desktop loader ignores persisted credentials and reads only its own curren
   const syncing = await loadKimiAccount({ ...options, readDesktopContext: async () => { throw new Error('context changed'); } });
   assert.equal((syncing as { status: string }).status, 'temporarily-unavailable');
 });
+
+for (const [platform, pipe, status, message] of [
+  ['darwin', undefined, 'not-signed-in', /打开 Kimi/],
+  ['linux', undefined, 'not-signed-in', /打开 Kimi/],
+  ['win32', undefined, 'temporarily-unavailable', /暂不支持自动连接 Windows/],
+  ['win32', '   ', 'temporarily-unavailable', /暂不支持自动连接 Windows/],
+  ['win32', String.raw`\\.\pipe\kimi-work-00000000-0000-4000-8000-000000000000`, 'not-signed-in', /打开 Kimi/],
+] as const) {
+  test(`desktop account without live context on ${platform} with pipe ${JSON.stringify(pipe)}`, async (t) => {
+    const root = await mkdtemp(path.join(tmpdir(), 'kimi-account-platform-'));
+    t.after(() => rm(root, { recursive: true, force: true }));
+    const options = {
+      desktopDataDir: path.join(root, 'profile'), desktopShareDir: path.join(root, 'share'),
+      platform, env: pipe === undefined ? {} : { KIMI_WORK_CONTEXT_IPC: pipe },
+      readDesktopContext: async () => null,
+    };
+    let requests = 0;
+    const read = createKimiSubscriptionReader(() => loadKimiAccount(options), async () => {
+      requests++;
+      return subscriptionResponse();
+    });
+    assert.equal((await read()).status, 'not-installed');
+    await mkdir(options.desktopDataDir);
+    const snapshot = await read();
+    assert.equal(snapshot.status, status);
+    assert.match(snapshot.message ?? '', message);
+    assert.equal(snapshot.planLabel, null);
+    assert.deepEqual(snapshot.limits, []);
+    assert.equal(requests, 0);
+  });
+}
 
 test('preserves managed Code configuration and distinguishes a real custom provider', async (t) => {
   const root = await mkdtemp(path.join(tmpdir(), 'kimi-code-account-'));
