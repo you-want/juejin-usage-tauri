@@ -21,6 +21,7 @@ export interface SubscriptionUsageCardData {
   icon?: ReactNode;
   metrics: readonly SubscriptionUsageMetric[];
   planLabel?: string | null;
+  showFreePlan?: boolean;
   stale?: boolean;
   title: string;
 }
@@ -38,7 +39,7 @@ export function SubscriptionUsageCard({
   loading,
   feedback,
 }: SubscriptionUsageCardProps) {
-  const visiblePlanLabel = visibleSubscriptionPlanLabel(data.planLabel);
+  const visiblePlanLabel = visibleSubscriptionPlanLabel(data.planLabel, data.showFreePlan);
   const visibleMetrics = data.metrics.filter(
     (metric): metric is SubscriptionUsageMetric & { remainingPercent: number } =>
       metric.remainingPercent !== null,

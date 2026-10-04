@@ -1,13 +1,9 @@
 /**
  * Kimi passive reader (source `kimi`).
  *
- * Collectors: `kimi-code` (~/.kimi-code) preferred; `kimi-legacy` (~/.kimi) only
- * when no kimi-code wire files exist (avoids double-count after migration).
- *
- * Path helpers to add in ../paths.ts:
- *   - kimiCodeHome() / kimiCodeSessionsDir()
- *   - kimiLegacyHome() / kimiLegacySessionsDir()
- *   - kimiCodeSessionIndexPath()
+ * CLI: `kimi-code` (~/.kimi-code) preferred over `kimi-legacy` (~/.kimi).
+ * Desktop: its embedded Code runtime is collected independently. Shared event
+ * IDs prevent copied sessions from being counted twice across the homes.
  */
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { createJsonlLineReader } from './jsonl-tail.js';
@@ -17,6 +13,7 @@ import { join } from 'node:path';
 import { stat } from 'node:fs/promises';
 
 import type { CursorsFile, QueueBucket, TokenTotals } from '../types.js';
+import { kimiDesktopCodeHome } from '../paths.js';
 import { resolveProjectName } from '../project-name.js';
 import { toUtcHalfHourStart } from '../queue/keys.js';
 import {
@@ -28,6 +25,7 @@ import {
 
 export const KIMI_COLLECTOR_CODE = 'kimi-code';
 export const KIMI_COLLECTOR_LEGACY = 'kimi-legacy';
+export const KIMI_COLLECTOR_DESKTOP = 'kimi-desktop';
 
 type KimiExtCursors = CursorsFile & {
   kimi?: {
@@ -70,8 +68,8 @@ function walkWireFiles(sessionsDir: string, depth = 0): string[] {
   return out;
 }
 
-export function resolveKimiCodeWireFiles(): string[] {
-  const dir = join(kimiCodeHome(), 'sessions');
+export function resolveKimiCodeWireFiles(home = kimiCodeHome()): string[] {
+  const dir = join(home, 'sessions');
   const files = walkWireFiles(dir);
   files.sort((a, b) => a.localeCompare(b));
   return files;
@@ -102,9 +100,9 @@ function projectNameFromPath(p: string): string {
   return resolveProjectName(p);
 }
 
-function loadKimiCodeSessionIndex(): Map<string, string> {
+function loadKimiCodeSessionIndex(home: string): Map<string, string> {
   const map = new Map<string, string>();
-  const indexPath = join(kimiCodeHome(), 'session_index.jsonl');
+  const indexPath = join(home, 'session_index.jsonl');
   if (!existsSync(indexPath)) return map;
   let raw: string;
   try {
@@ -118,7 +116,7 @@ function loadKimiCodeSessionIndex(): Map<string, string> {
       const entry = JSON.parse(line) as { sessionDir?: string; workDir?: string };
       const dir = entry.sessionDir;
       const project = entry.workDir ? projectNameFromPath(entry.workDir) : null;
-      if (typeof dir === 'string' && dir && project) map.set(dir, project);
+      if (typeof dir === 'string' && dir && project) map.set(dir.replace(/\\/g, '/'), project);
     } catch {
       continue;
     }
@@ -130,7 +128,7 @@ function kimiCodeProjectForWire(filePath: string, sessionIndex: Map<string, stri
   const parts = filePath.split(/[/\\]/);
   const agentsIdx = parts.lastIndexOf('agents');
   if (agentsIdx >= 2) {
-    const sessionDir = parts.slice(0, agentsIdx - 1).join('/');
+    const sessionDir = parts.slice(0, agentsIdx).join('/');
     const indexed = sessionIndex.get(sessionDir);
     if (indexed) return indexed;
   }
@@ -196,9 +194,9 @@ function resolveKimiLegacyDefaultModel(): string {
   }
 }
 
-function resolveKimiCodeDefaultModel(): string {
+function resolveKimiCodeDefaultModel(home: string): string {
   const fallback = 'kimi-for-coding';
-  const cfgPath = join(kimiCodeHome(), 'config.toml');
+  const cfgPath = join(home, 'config.toml');
   if (!existsSync(cfgPath)) return fallback;
   try {
     const raw = readFileSync(cfgPath, 'utf-8');
@@ -281,6 +279,7 @@ function ingestDelta(
 
 async function parseKimiCodeWireFile(opts: {
   filePath: string;
+  collector: string;
   sinceMs: number;
   seenIds: Set<string>;
   fileOffsets: Record<string, { inode: number; size: number; mtimeMs: number; offset: number; model?: string }>;
@@ -288,7 +287,7 @@ async function parseKimiCodeWireFile(opts: {
   fallbackModel: string;
   bucketState: BucketAccumulator;
 }): Promise<{ eventsParsed: number; filesProcessed: number }> {
-  const { filePath, sinceMs, seenIds, fileOffsets, sessionIndex, fallbackModel, bucketState } = opts;
+  const { filePath, collector, sinceMs, seenIds, fileOffsets, sessionIndex, fallbackModel, bucketState } = opts;
   const st = await stat(filePath).catch(() => null);
   if (!st?.isFile()) return { eventsParsed: 0, filesProcessed: 0 };
 
@@ -344,7 +343,7 @@ async function parseKimiCodeWireFile(opts: {
     const hourStart = toUtcHalfHourStart(new Date(Number(ms)).toISOString());
     if (!hourStart || new Date(hourStart).getTime() < sinceMs) continue;
 
-    ingestDelta(bucketState, KIMI_COLLECTOR_CODE, fileModel, project, hourStart, delta);
+    ingestDelta(bucketState, collector, fileModel, project, hourStart, delta);
     seenIds.add(id);
     eventsParsed += 1;
   }
@@ -472,12 +471,22 @@ export async function parseKimiIncremental(
   let filesProcessed = 0;
 
   const codeFiles = resolveKimiCodeWireFiles();
-  if (codeFiles.length > 0) {
-    const sessionIndex = loadKimiCodeSessionIndex();
-    const fallbackModel = resolveKimiCodeDefaultModel();
-    for (const filePath of codeFiles) {
+  const desktopHome = kimiDesktopCodeHome();
+  const codeSources = [
+    { home: kimiCodeHome(), files: codeFiles, collector: KIMI_COLLECTOR_CODE },
+    { home: desktopHome, files: resolveKimiCodeWireFiles(desktopHome), collector: KIMI_COLLECTOR_DESKTOP },
+  ];
+  const processedFiles = new Set<string>();
+  for (const { home, files, collector } of codeSources) {
+    if (files.length === 0) continue;
+    const sessionIndex = loadKimiCodeSessionIndex(home);
+    const fallbackModel = resolveKimiCodeDefaultModel(home);
+    for (const filePath of files) {
+      if (processedFiles.has(filePath)) continue;
+      processedFiles.add(filePath);
       const parsed = await parseKimiCodeWireFile({
         filePath,
+        collector,
         sinceMs,
         seenIds,
         fileOffsets,
@@ -488,7 +497,8 @@ export async function parseKimiIncremental(
       eventsParsed += parsed.eventsParsed;
       filesProcessed += parsed.filesProcessed;
     }
-  } else {
+  }
+  if (codeFiles.length === 0) {
     const legacyFiles = resolveKimiLegacyWireFiles();
     const projectMap = loadLegacyProjectMap();
     const defaultModel = resolveKimiLegacyDefaultModel();

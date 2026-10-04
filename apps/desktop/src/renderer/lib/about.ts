@@ -37,7 +37,7 @@ export const SUPPORTED_TOOLS: readonly SupportedToolLine[] = [
   { name: 'ZCode', source: 'zcode' },
   { name: 'DeepSeek Harness', source: 'dsh' },
   { name: 'pi', source: 'pi' },
-  { name: 'Kimi', source: 'kimi', variants: ['Code', 'Legacy'] },
+  { name: 'Kimi', source: 'kimi', variants: ['Desktop', 'Code', 'Legacy'] },
   { name: 'Roo Code', source: 'roocode' },
   { name: 'Droid', source: 'droid' },
   { name: 'Kiro', source: 'kiro', variants: ['CLI'] },

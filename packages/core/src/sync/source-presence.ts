@@ -35,6 +35,7 @@ import {
   copilotSessionStateDir,
   cursorStateVscdbPath,
   geminiTmpDir,
+  kimiDesktopCodeHome,
   opencodeDbPath,
   opencodeMessagesDir,
   qoderCliProjectsDirs,
@@ -130,6 +131,7 @@ export function isSyncSourcePresent(source: string): boolean {
         process.env.KIMI_HOME,
         join(home, '.kimi-code'),
         join(home, '.kimi'),
+        kimiDesktopCodeHome(),
       ]);
     }
     case 'roocode':

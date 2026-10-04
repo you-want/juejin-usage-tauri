@@ -74,6 +74,7 @@ const MODEL_MATCHERS: Array<[RegExp, string]> = [
   [/grok/, 'grok'],
   [/mistral|mixtral/, 'mistral'],
   [/kimi/, 'kimi'],
+  [/^k2d8-preview$/, 'kimi'],
   [/moonshot/, 'moonshot'],
   [/(^|[\/_ .-])k(2[._-]7|3)([\/_ .-]|$)/, 'moonshot'],
   [/minimax/, 'minimax'],
