@@ -6,6 +6,7 @@ import claudeCodeIcon from '@lobehub/icons-static-svg/icons/claudecode-color.svg
 import clineIcon from '@lobehub/icons-static-svg/icons/cline.svg';
 import codeBuddyIcon from '@lobehub/icons-static-svg/icons/codebuddy-color.svg';
 import commandCodeIcon from '@/assets/brand-logos/command-code.svg';
+import codexColorIcon from '@lobehub/icons-static-svg/icons/codex-color.svg';
 import codexIcon from '@lobehub/icons-static-svg/icons/codex.svg';
 import copilotIcon from '@lobehub/icons-static-svg/icons/copilot-color.svg';
 import cursorIcon from '@lobehub/icons-static-svg/icons/cursor.svg';
@@ -46,7 +47,7 @@ const PROVIDER_ICON_MAP: Record<string, ProviderIconAsset> = {
   'command-code': { monochrome: true, src: commandCodeIcon },
   cline: { monochrome: true, src: clineIcon },
   codebuddy: { src: codeBuddyIcon },
-  codex: { monochrome: true, src: codexIcon },
+  codex: { src: codexColorIcon },
   'every-code': { monochrome: true, src: codexIcon },
   copilot: { src: copilotIcon },
   cursor: { monochrome: true, src: cursorIcon },
