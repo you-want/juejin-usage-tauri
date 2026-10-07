@@ -86,3 +86,11 @@ export function mapQoderQuota(value: unknown, plan: unknown): Pick<QoderSubscrip
 export function qoderRemainingPercent(usedPercent: number): number {
   return Number.isFinite(usedPercent) ? Math.min(100, Math.max(0, 100 - usedPercent)) : 0;
 }
+
+/**
+ * Preserve a failed subscription lookup in the tray instead of making Qoder
+ * disappear. A successful quota still speaks for itself through its metrics.
+ */
+export function qoderSubscriptionFeedback(snapshot: QoderSubscriptionSnapshot): string | null {
+  return snapshot.limits.length === 0 ? snapshot.message : null;
+}
