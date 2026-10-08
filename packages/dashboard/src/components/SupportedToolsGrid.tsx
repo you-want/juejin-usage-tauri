@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { ChevronDown } from '@gravity-ui/icons';
 import { Button } from '@heroui/react';
-import openAIIcon from '@lobehub/icons-static-svg/icons/openai.svg';
 import { ProviderIcon } from '@/components/ProviderIcon';
 import {
   SUPPORTED_TOOLS,
@@ -155,19 +154,6 @@ function MarqueeChunk({ items }: { items: readonly SupportedToolLine[] }) {
 }
 
 function SupportedToolIcon({ source }: { source: string }) {
-  if (source === 'codex') {
-    return (
-      <span className="flex size-6 shrink-0 items-center justify-center rounded-md bg-emerald-600">
-        <img
-          alt=""
-          aria-hidden
-          className="size-[15px] invert"
-          src={openAIIcon}
-        />
-      </span>
-    );
-  }
-
   const badgeClass = COLOR_BADGE_CLASSES[source];
 
   if (badgeClass) {

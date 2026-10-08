@@ -6,6 +6,7 @@ import claudeIcon from '@lobehub/icons-static-svg/icons/claude-color.svg';
 import clineIcon from '@lobehub/icons-static-svg/icons/cline.svg';
 import codeBuddyIcon from '@lobehub/icons-static-svg/icons/codebuddy-color.svg';
 import commandCodeIcon from '@/assets/brand-logos/command-code.svg';
+import codexColorIcon from '@lobehub/icons-static-svg/icons/codex-color.svg';
 import codexIcon from '@lobehub/icons-static-svg/icons/codex.svg';
 import copilotIcon from '@lobehub/icons-static-svg/icons/copilot-color.svg';
 import cursorIcon from '@lobehub/icons-static-svg/icons/cursor.svg';
@@ -15,7 +16,7 @@ import geminiCliIcon from '@lobehub/icons-static-svg/icons/geminicli-color.svg';
 import gooseIcon from '@lobehub/icons-static-svg/icons/goose.svg';
 import grokIcon from '@lobehub/icons-static-svg/icons/grok.svg';
 import hermesIcon from '@lobehub/icons-static-svg/icons/hermesagent.svg';
-import kimiIcon from '@lobehub/icons-static-svg/icons/kimi-color.svg';
+import kimiIcon from '@lobehub/icons-static-svg/icons/kimi.svg';
 import minimaxIcon from '@lobehub/icons-static-svg/icons/minimax-color.svg';
 import kilocodeIcon from '@lobehub/icons-static-svg/icons/kilocode.svg';
 import kiroIcon from '@lobehub/icons-static-svg/icons/kiro-color.svg';
@@ -46,7 +47,7 @@ const PROVIDER_ICON_MAP: Record<string, ProviderIconAsset> = {
   cline: { monochrome: true, src: clineIcon },
   codebuddy: { src: codeBuddyIcon },
   'command-code': { monochrome: true, src: commandCodeIcon },
-  codex: { monochrome: true, src: codexIcon },
+  codex: { src: codexColorIcon },
   'every-code': { monochrome: true, src: codexIcon },
   copilot: { src: copilotIcon },
   cursor: { monochrome: true, src: cursorIcon },
@@ -56,7 +57,7 @@ const PROVIDER_ICON_MAP: Record<string, ProviderIconAsset> = {
   grok: { monochrome: true, src: grokIcon },
   goose: { monochrome: true, src: gooseIcon },
   hermes: { monochrome: true, src: hermesIcon },
-  kimi: { src: kimiIcon },
+  kimi: { monochrome: true, src: kimiIcon },
   'minimax-code': { src: minimaxIcon },
   'kilo-cli': { monochrome: true, src: kilocodeIcon },
   kilocode: { monochrome: true, src: kilocodeIcon },
