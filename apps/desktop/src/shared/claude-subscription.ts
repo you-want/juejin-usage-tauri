@@ -19,6 +19,7 @@ export interface ClaudeRateLimitWindow {
 
 export interface ClaudeSubscriptionSnapshot {
   status: ClaudeSubscriptionStatus;
+  hasAccount: boolean;
   planLabel: string | null;
   fiveHour: ClaudeRateLimitWindow | null;
   sevenDay: ClaudeRateLimitWindow | null;

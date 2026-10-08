@@ -132,8 +132,8 @@ const tudApi = {
   copyImageToClipboard: (dataUrl: string): Promise<boolean> =>
     ipcRenderer.invoke(SHARE_CARD_COPY_IMAGE_CHANNEL, dataUrl),
 
-  getCodexSubscription: (): Promise<CodexSubscriptionSnapshot> =>
-    ipcRenderer.invoke(CODEX_SUBSCRIPTION_GET_CHANNEL),
+  getCodexSubscription: (options?: { forceRefresh?: boolean }): Promise<CodexSubscriptionSnapshot> =>
+    ipcRenderer.invoke(CODEX_SUBSCRIPTION_GET_CHANNEL, options),
 
   getClaudeSubscription: (options?: {
     allowCredentialAccess?: boolean;

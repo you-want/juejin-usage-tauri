@@ -22,6 +22,8 @@ export interface SubscriptionUsageCardData {
   metrics: readonly SubscriptionUsageMetric[];
   planLabel?: string | null;
   stale?: boolean;
+  hasAccount?: boolean;
+  message?: string | null;
   title: string;
 }
 
@@ -45,7 +47,7 @@ export function SubscriptionUsageCard({
   );
 
   // Channels without explicit feedback retain the existing empty/loading behavior.
-  if (!feedback && (loading || visibleMetrics.length === 0)) return null;
+  if (!feedback && (loading || (visibleMetrics.length === 0 && !(data.hasAccount && data.message)))) return null;
 
   return (
     <Card className="min-w-0 overflow-hidden rounded-2xl p-3">
@@ -69,7 +71,9 @@ export function SubscriptionUsageCard({
         {visibleMetrics.length > 0 ? (
           <SubscriptionProgressBars metrics={visibleMetrics} title={data.title} />
         ) : null}
-        {feedback}
+        {feedback ?? (data.hasAccount && data.message ? (
+          <p role="status" className="text-xs text-muted">{data.message}</p>
+        ) : null)}
       </Card.Content>
     </Card>
   );

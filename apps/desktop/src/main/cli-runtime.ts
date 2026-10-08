@@ -10,10 +10,14 @@ import path from 'node:path';
 export function prependGuiNodePaths(currentPath: string | undefined, home = homedir()): string {
   if (process.platform === 'win32') return currentPath ?? '';
   const candidates = [
+    ...(process.env.PNPM_HOME ? [process.env.PNPM_HOME] : []),
     '/opt/homebrew/bin',
     '/usr/local/bin',
     path.join(home, '.volta', 'bin'),
     path.join(home, '.local', 'bin'),
+    path.join(home, 'Library', 'pnpm', 'bin'),
+    path.join(home, 'Library', 'pnpm'),
+    path.join(home, '.local', 'share', 'pnpm'),
     path.join(home, '.asdf', 'shims'),
     path.join(home, '.mise', 'shims'),
   ];

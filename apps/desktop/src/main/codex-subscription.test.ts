@@ -1,34 +1,7 @@
 import assert from 'node:assert/strict';
-import childProcess from 'node:child_process';
-import { EventEmitter } from 'node:events';
-import { PassThrough } from 'node:stream';
-import test, { type TestContext } from 'node:test';
+import test from 'node:test';
 import path from 'node:path';
 import { prependGuiNodePaths } from './cli-runtime';
-import { readCodexSubscription } from './codex-subscription';
-
-function mockCodex(t: TestContext) {
-  const child = Object.assign(new EventEmitter(), {
-    stdin: new PassThrough(),
-    stdout: new PassThrough(),
-    stderr: new PassThrough(),
-    kill: t.mock.fn(() => true),
-  });
-  const requests: { id?: number; method: string }[] = [];
-  child.stdin.on('data', (chunk: Buffer) => {
-    for (const line of chunk.toString().trim().split('\n')) requests.push(JSON.parse(line));
-  });
-  // Every launch is intercepted, so tests cannot execute the user's Codex CLI.
-  t.mock.method(childProcess, 'spawn', () => child as unknown as childProcess.ChildProcessWithoutNullStreams);
-  const respond = (id: number, result: unknown) => child.stdout.write(`${JSON.stringify({ id, result })}\n`);
-  return { child, requests, respond };
-}
-
-function assertCliRecoveryHint(message: string | null) {
-  assert.match(message ?? '', /codex --version/);
-  assert.match(message ?? '', /若出现系统安全警告/);
-  assert.match(message ?? '', /官方渠道升级 Codex CLI/);
-}
 
 test('adds GUI-safe Node locations ahead of Finder PATH without removing it', {
   skip: process.platform !== 'darwin',
@@ -37,140 +10,98 @@ test('adds GUI-safe Node locations ahead of Finder PATH without removing it', {
   const entries = result.split(path.delimiter);
   assert.ok(entries.indexOf('/opt/homebrew/bin') < entries.indexOf('/usr/bin'));
   assert.ok(entries.includes('/usr/local/bin'));
+  assert.ok(entries.indexOf('/Users/tester/Library/pnpm/bin') < entries.indexOf('/usr/bin'));
   assert.deepEqual(entries.slice(-2), ['/usr/bin', '/bin']);
 });
 
-test('reads allowances through the app-server handshake without starting a model request', async (t) => {
-  const { child, requests, respond } = mockCodex(t);
-  const pending = readCodexSubscription();
-  assert.deepEqual(requests.map(({ method }) => method), ['initialize']);
-  child.stdout.write('startup banner\nnull\n');
-  child.stdout.write('{"id":1,"res');
-  child.stdout.write('ult":{}}\n');
-  assert.deepEqual(requests.map(({ method }) => method), ['initialize', 'initialized', 'account/read']);
-  respond(2, { account: { type: 'chatgpt', planType: 'plus' } });
-  assert.equal(requests.at(-1)?.method, 'account/rateLimits/read');
-  respond(3, {
-    rateLimits: {
-      primary: { usedPercent: 25, windowDurationMins: 300, resetsAt: 1_800_000_000 },
-      secondary: { usedPercent: 60, windowDurationMins: 10080, resetsAt: 1_800_100_000 },
+
+import { createCodexSubscriptionReader, mapCodexUsage, parseCodexCredentials } from './codex-subscription';
+const jwt = (data: object) => `header.${Buffer.from(JSON.stringify(data)).toString('base64url')}.signature`;
+const auth = (account = 'one', expiry = 2000000000) => JSON.stringify({
+  auth_mode: 'chatgpt', tokens: { account_id: account, access_token: jwt({ exp: expiry }), id_token: jwt({ 'https://api.openai.com/auth': { chatgpt_account_id: 'fallback', chatgpt_plan_type: 'plus' } }) },
+});
+const payload = { plan_type: 'plus', rate_limit: { primary_window: { used_percent: 12, limit_window_seconds: 18000, reset_at: 1800000000 }, secondary_window: { used_percent: 34, limit_window_seconds: 604800 } } };
+test('maps wham windows without inventing missing percentages', () => {
+  assert.equal(mapCodexUsage(payload).fiveHour?.usedPercent, 12);
+  assert.equal(mapCodexUsage(payload).weekly?.usedPercent, 34);
+  assert.equal(mapCodexUsage({ rate_limit: { primary_window: { used_percent: null, limit_window_seconds: 18000 } } }).fiveHour, null);
+  assert.equal(mapCodexUsage({}).weekly, null);
+  const parsed = parseCodexCredentials({ tokens: { access_token: 'opaque', id_token: jwt({ 'https://api.openai.com/auth': { chatgpt_account_id: 'fallback' } }) } });
+  assert.equal(parsed.accountId, 'fallback');
+  assert.equal(parsed.expiresAt, null);
+});
+test('direct request authenticates, merges callers, isolates changed credentials and never exposes tokens', async () => {
+  let raw = auth(), calls = 0;
+  const read = createCodexSubscriptionReader({ readAuth: async () => raw, now: () => 1800000000000,
+    fetch: async (url, options) => {
+      calls++;
+      assert.equal(url, 'https://chatgpt.com/backend-api/wham/usage');
+      assert.equal((options?.headers as Record<string,string>)['ChatGPT-Account-Id'], JSON.parse(raw).tokens.account_id);
+      assert.match((options?.headers as Record<string,string>).Authorization, /^Bearer /);
+      assert.equal(options?.redirect, 'error');
+      return Response.json(payload);
     },
   });
-  assert.deepEqual(await pending, {
-    status: 'ready',
-    planLabel: 'Plus',
-    fiveHour: { usedPercent: 25, resetsAt: 1_800_000_000 },
-    weekly: { usedPercent: 60, resetsAt: 1_800_100_000 },
-    message: null,
-  });
-  assert.equal(child.kill.mock.callCount(), 1);
-  child.stdout.write('{"id":1,"result":{}}\n');
-  child.stdin.emit('error', Object.assign(new Error('broken pipe'), { code: 'EPIPE' }));
-  child.emit('exit', 0, null);
-  assert.equal(requests.length, 4);
-  assert.equal(child.kill.mock.callCount(), 1);
+  const results = await Promise.all([read(), read(), read()]);
+  assert.equal(calls, 1);
+  assert.equal(results[0].status, 'ready');
+  assert.equal(JSON.stringify(results).includes('signature'), false);
+  await read(); assert.equal(calls, 1);
+  raw = auth('two'); await read(); assert.equal(calls, 2);
+  raw = '{}'; assert.equal((await read()).status, 'not-signed-in');
 });
-
-test('distinguishes a missing Codex CLI from a CLI that cannot start', async (t) => {
-  const { child } = mockCodex(t);
-  const pending = readCodexSubscription();
-  child.emit('error', Object.assign(new Error('not found'), { code: 'ENOENT' }));
-  const snapshot = await pending;
-  assert.equal(snapshot.status, 'not-installed');
-  assert.match(snapshot.message ?? '', /安装后重试/);
-  assert.equal(child.kill.mock.callCount(), 1);
+test('temporary failures retain only same-account success; refusal clears old data', async () => {
+  let now = 1800000000000, status = 200, raw = auth();
+  const read = createCodexSubscriptionReader({ readAuth: async () => raw, now: () => now, fetch: async () => status === 200 ? Response.json(payload) : new Response('', { status }) });
+  await read(); now += 61000; status = 429;
+  assert.equal((await read()).stale, true);
+  now += 61000; status = 401;
+  const expired = await read(); assert.equal(expired.status, 'expired'); assert.equal(expired.fiveHour, null); assert.equal(expired.hasAccount, true);
+  raw = auth('two'); status = 503;
+  assert.equal((await read()).fiveHour, null);
+  now += 61000; status = 403;
+  assert.equal((await read()).status, 'access-denied');
 });
-
-test('gives conditional recovery advice when the CLI cannot start', async (t) => {
-  const { child } = mockCodex(t);
-  const pending = readCodexSubscription();
-  child.emit('error', Object.assign(new Error('permission denied'), { code: 'EACCES' }));
-  const snapshot = await pending;
-  assert.equal(snapshot.status, 'unavailable');
-  assert.match(snapshot.message ?? '', /无法启动/);
-  assertCliRecoveryHint(snapshot.message);
-});
-
-test('reports premature CLI exit without assuming a revoked certificate', async (t) => {
-  const { child } = mockCodex(t);
-  const pending = readCodexSubscription();
-  child.emit('exit', null, 'SIGKILL');
-  const snapshot = await pending;
-  assert.equal(snapshot.status, 'unavailable');
-  assert.match(snapshot.message ?? '', /意外退出/);
-  assertCliRecoveryHint(snapshot.message);
-  assert.doesNotMatch(snapshot.message ?? '', /证书.*吊销|恶意软件/);
-});
-
-test('handles an asynchronous stdin EPIPE without crashing', async (t) => {
-  const { child } = mockCodex(t);
-  const pending = readCodexSubscription();
-  child.stdin.emit('error', Object.assign(new Error('broken pipe'), { code: 'EPIPE' }));
-  const snapshot = await pending;
-  assert.equal(snapshot.status, 'unavailable');
-  assert.match(snapshot.message ?? '', /连接已中断/);
-  assertCliRecoveryHint(snapshot.message);
-  assert.equal(child.kill.mock.callCount(), 1);
-});
-
-test('handles a synchronous stdin write failure without rejecting the request', async (t) => {
-  const { child } = mockCodex(t);
-  t.mock.method(child.stdin, 'write', () => { throw new Error('stream closed'); });
-  const snapshot = await readCodexSubscription();
-  assert.equal(snapshot.status, 'unavailable');
-  assert.match(snapshot.message ?? '', /连接已中断/);
-  assertCliRecoveryHint(snapshot.message);
-});
-
-test('times out a silent CLI with actionable advice and stops its process', async (t) => {
-  t.mock.timers.enable({ apis: ['setTimeout'] });
-  const { child } = mockCodex(t);
-  const pending = readCodexSubscription();
-  t.mock.timers.tick(10_000);
-  const snapshot = await pending;
-  assert.equal(snapshot.status, 'unavailable');
-  assert.match(snapshot.message ?? '', /超时/);
-  assertCliRecoveryHint(snapshot.message);
-  assert.equal(child.kill.mock.callCount(), 1);
-});
-
-test('suggests upgrading when CLI initialization is rejected', async (t) => {
-  const { child } = mockCodex(t);
-  const pending = readCodexSubscription();
-  child.stdout.write('{"id":1,"error":{"code":-32601,"message":"unsupported"}}\n');
-  const snapshot = await pending;
-  assert.equal(snapshot.status, 'unavailable');
-  assert.match(snapshot.message ?? '', /初始化失败.*升级 Codex CLI/);
-});
-
-test('keeps the known plan when reading allowances fails and exposes no RPC error detail', async (t) => {
-  const { child, respond } = mockCodex(t);
-  const pending = readCodexSubscription();
-  respond(1, {});
-  respond(2, { account: { type: 'chatgpt', planType: 'plus' } });
-  child.stdout.write('{"id":3,"error":{"message":"private authentication detail"}}\n');
-  const snapshot = await pending;
-  assert.equal(snapshot.status, 'unavailable');
-  assert.equal(snapshot.planLabel, 'Plus');
-  assert.match(snapshot.message ?? '', /确认登录状态和网络后重试/);
-  assert.doesNotMatch(snapshot.message ?? '', /private authentication detail/);
-});
-
-test('keeps signed-out and unsupported accounts distinct from CLI failures', async (t) => {
-  for (const [account, status] of [
-    [null, 'not-signed-in'],
-    [{ type: 'apiKey' }, 'unsupported-account'],
-  ] as const) {
-    await t.test(status, async (subtest) => {
-      const { requests, respond } = mockCodex(subtest);
-      const pending = readCodexSubscription();
-      respond(1, {});
-      respond(2, { account });
-      const snapshot = await pending;
-      assert.equal(snapshot.status, status);
-      assert.equal(snapshot.fiveHour, null);
-      assert.equal(snapshot.weekly, null);
-      assert.equal(requests.length, 3);
-    });
+test('missing, malformed, expired and API-key credentials never make a request', async () => {
+  for (const raw of ['{broken', '{}', auth('one', 1), '{"auth_mode":"apikey"}']) {
+    const read = createCodexSubscriptionReader({ readAuth: async () => raw, now: () => 1800000000000, fetch: async () => { assert.fail('must not request'); } });
+    assert.notEqual((await read()).status, 'ready');
   }
+  const read = createCodexSubscriptionReader({ readAuth: async () => { throw Object.assign(new Error(), { code: 'ENOENT' }); }, fetch });
+  assert.equal((await read()).hasAccount, false);
+});
+test('invalid response and abort return a bounded unavailable snapshot', async () => {
+  for (const request of [async () => Response.json({}), async () => { throw new DOMException('timeout', 'TimeoutError'); }]) {
+    const read = createCodexSubscriptionReader({ readAuth: async () => auth(), now: () => 1800000000000, fetch: request });
+    assert.equal((await read()).status, 'unavailable');
+  }
+});
+
+test('a late reading from the previous account cannot overwrite the current cache', async () => {
+  let raw = auth('one'), release: (() => void) | undefined;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  const read = createCodexSubscriptionReader({ now: () => 1800000000000, readAuth: async () => raw,
+    fetch: async (_url, options) => {
+      if ((options?.headers as Record<string,string>)['ChatGPT-Account-Id'] === 'one') await gate;
+      return Response.json(payload);
+    },
+  });
+  const first = read();
+  await new Promise(resolve => setImmediate(resolve));
+  raw = auth('two');
+  const second = await read();
+  release?.(); await first;
+  assert.equal(await read(), second);
+});
+
+test('explicit retry bypasses a cached transient failure', async () => {
+  let failing = true, calls = 0;
+  const read = createCodexSubscriptionReader({ readAuth: async () => auth(), now: () => 1800000000000,
+    fetch: async () => { calls++; return failing ? new Response('', { status: 503 }) : Response.json(payload); },
+  });
+  assert.equal((await read()).status, 'unavailable');
+  failing = false;
+  assert.equal((await read()).status, 'unavailable');
+  assert.equal((await read({ forceRefresh: true })).status, 'ready');
+  assert.equal(calls, 2);
 });

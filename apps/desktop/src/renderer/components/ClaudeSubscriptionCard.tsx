@@ -9,6 +9,7 @@ import { SubscriptionBrandIcon } from './SubscriptionBrandIcon';
 const INITIAL_SNAPSHOT: ClaudeSubscriptionSnapshot = {
   status: 'authorization-required',
   planLabel: null,
+  hasAccount: false,
   fiveHour: null,
   sevenDay: null,
   fetchedAt: null,
@@ -16,7 +17,7 @@ const INITIAL_SNAPSHOT: ClaudeSubscriptionSnapshot = {
   message: null,
 };
 
-/** Claude.ai allowance summary; failures intentionally collapse to an empty state. */
+/** Claude Code allowance summary with actionable failures for signed-in accounts. */
 export function ClaudeSubscriptionCard() {
   const [snapshot, setSnapshot] = useState<ClaudeSubscriptionSnapshot>(INITIAL_SNAPSHOT);
   const [loading, setLoading] = useState(true);
@@ -71,6 +72,8 @@ export function ClaudeSubscriptionCard() {
           },
         ],
         planLabel: snapshot.planLabel,
+        hasAccount: snapshot.hasAccount,
+        message: snapshot.message,
         stale: snapshot.stale,
         title: 'Claude',
       }}
