@@ -5,7 +5,12 @@ import { join } from 'node:path';
 import test from 'node:test';
 
 import { AggregateCache, touchedLocalDates } from '../src/aggregate-cache.js';
-import { createAggregateCache } from '../src/server/state.js';
+import {
+  BucketStore,
+  createAggregateCache,
+  createApplyAfterSync,
+} from '../src/server/state.js';
+import type { SyncResult } from '../src/sync/index.js';
 import { addLocalDays, localDateNow } from '../src/timezone.js';
 import type { QueueBucket } from '../src/types.js';
 
@@ -193,6 +198,98 @@ test('AggregateCache merge keeps 8-decimal costs so two 4.516 days do not become
     assert.equal(breakdown.models.length, 1);
     assert.equal(breakdown.models[0]?.costUsd, 9.032);
     assert.notEqual(breakdown.models[0]?.costUsd, 9.04);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+function emptySyncResult(): SyncResult {
+  return {
+    source: 'codex',
+    eventsParsed: 0,
+    filesProcessed: 0,
+    bucketsWritten: 0,
+    writtenBuckets: [],
+  };
+}
+
+test('empty sync seals every unsealed day after the calendar rolls', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'tud-agg-empty-seal-'));
+  try {
+    const today = localDateNow();
+    const yesterday = addLocalDays(today, -1);
+    const twoDaysAgo = addLocalDays(today, -2);
+    const fourDaysAgo = addLocalDays(today, -4);
+    const fiveDaysAgo = addLocalDays(today, -5);
+    const rows = [
+      makeRow(`${fiveDaysAgo}T04:00:00.000Z`, 50),
+      makeRow(`${fourDaysAgo}T04:00:00.000Z`, 80),
+      makeRow(`${twoDaysAgo}T04:00:00.000Z`, 120),
+      makeRow(`${yesterday}T04:00:00.000Z`, 200),
+    ];
+
+    await new AggregateCache(dir).rebuildFromRows(rows);
+    const path = join(dir, 'cache', 'daily-sealed.json');
+    const saved = JSON.parse(await readFile(path, 'utf8')) as {
+      sealedAsOf: string;
+      days: Record<string, unknown>;
+    };
+    // Last seal ran while fourDaysAgo was still "today", then the process
+    // stayed up with no new buckets.
+    saved.sealedAsOf = fourDaysAgo;
+    delete saved.days[fourDaysAgo];
+    delete saved.days[twoDaysAgo];
+    delete saved.days[yesterday];
+    await writeFile(path, JSON.stringify(saved));
+
+    const cache = new AggregateCache(dir);
+    await cache.ensureLoaded();
+    const store = new BucketStore();
+    store.apply(rows);
+    const before = cache.getDaily(store.getRows(), 7, '1970-01-01T00:00:00.000Z');
+    assert.equal(before.days.find((day) => day.date === fiveDaysAgo)?.tokens, 50);
+    assert.equal(before.days.find((day) => day.date === fourDaysAgo), undefined);
+    assert.equal(before.days.find((day) => day.date === yesterday), undefined);
+
+    const apply = createApplyAfterSync({
+      getBucketStore: () => store,
+      getAggregateCache: () => cache,
+    });
+    await apply([emptySyncResult()]);
+
+    const after = cache.getDaily(store.getRows(), 7, '1970-01-01T00:00:00.000Z');
+    assert.equal(after.days.find((day) => day.date === fiveDaysAgo)?.tokens, 50);
+    assert.equal(after.days.find((day) => day.date === fourDaysAgo)?.tokens, 80);
+    assert.equal(after.days.find((day) => day.date === twoDaysAgo)?.tokens, 120);
+    assert.equal(after.days.find((day) => day.date === yesterday)?.tokens, 200);
+    assert.equal(cache.needsCalendarSeal(), false);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('empty sync leaves days already sealed through today in place', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'tud-agg-empty-noop-'));
+  try {
+    const today = localDateNow();
+    const yesterday = addLocalDays(today, -1);
+    const rows = [makeRow(`${yesterday}T04:00:00.000Z`, 200)];
+    const cache = new AggregateCache(dir);
+    await cache.rebuildFromRows(rows);
+    const sealed = cache.sealedDayCount();
+    const store = new BucketStore();
+    store.apply(rows);
+
+    const apply = createApplyAfterSync({
+      getBucketStore: () => store,
+      getAggregateCache: () => cache,
+    });
+    await apply([emptySyncResult()]);
+
+    const daily = cache.getDaily(store.getRows(), 7, '1970-01-01T00:00:00.000Z');
+    assert.equal(cache.sealedDayCount(), sealed);
+    assert.equal(daily.days.find((day) => day.date === yesterday)?.tokens, 200);
+    assert.equal(cache.needsCalendarSeal(), false);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

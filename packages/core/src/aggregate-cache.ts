@@ -679,6 +679,16 @@ export class AggregateCache {
   }
 
   /**
+   * Closed days are not sealed for the current calendar day yet.
+   * A process that stays up across midnight must seal even when sync wrote nothing;
+   * otherwise yesterday stays out of the sealed cache and reads as 0.
+   */
+  needsCalendarSeal(): boolean {
+    if (!this.loaded) return true;
+    return this.sealedAsOf !== localDateNow(this.timeZone);
+  }
+
+  /**
    * Lightweight per-day token totals for desktop pet sync feedback.
    * Reads sealed-day scalars plus today's rows only — no models/projects copy.
    */
