@@ -10,29 +10,7 @@ import { bucketToIngestEvent } from '../src/upload/events.js';
 
 const SINCE = '2020-01-01T00:00:00.000Z';
 
-/** 建一个与 KinetAios v3.6.4+ 同构的最小 history.db(cost_log + conversations)。 */
-async function makeDb(rows: Array<[string, number, number, number, string | null, string | null]>) {
-  const dir = await mkdtemp(join(tmpdir(), 'tud-kinetaios-'));
-  const dbPath = join(dir, 'history.db');
-  const db = new DatabaseSync(dbPath);
-  db.exec(`CREATE TABLE conversations(
-    id TEXT PRIMARY KEY, engine TEXT, cwd TEXT, model TEXT);
-  CREATE TABLE cost_log(
-    id TEXT PRIMARY KEY, conv_id TEXT, engine TEXT, amount REAL, tokens INTEGER, ts REAL,
-    tokens_in INTEGER DEFAULT 0, tokens_out INTEGER DEFAULT 0);`);
-  for (const [convId, , , , model, cwd] of rows) {
-    db.prepare('INSERT INTO conversations VALUES (?, ?, ?, ?)').run(convId, 'direct', cwd, model);
-  }
-  db.close();
-  return dbPath;
-}
-
-void makeDb;
-
-test('parseKinetaiosIncremental skips CLI-engine rows (no double counting)', async () => {
-  // KinetAios 的 Claude Code / Codex 引擎是 spawn 官方 CLI,CLI 自己在 ~/.claude、~/.codex
-  // 写原生用量(上游 claude/codex parser 采)。cost_log 里这两类引擎的行必须排除,
-  // 否则同一批请求被原生 parser + 本 source 各算一次。
+async function createFixtureDb(): Promise<{ dbPath: string; db: DatabaseSync }> {
   const dir = await mkdtemp(join(tmpdir(), 'tud-kinetaios-'));
   const dbPath = join(dir, 'history.db');
   const db = new DatabaseSync(dbPath);
@@ -40,6 +18,14 @@ test('parseKinetaiosIncremental skips CLI-engine rows (no double counting)', asy
   CREATE TABLE cost_log(
     id TEXT PRIMARY KEY, conv_id TEXT, engine TEXT, amount REAL, tokens INTEGER, ts REAL,
     tokens_in INTEGER DEFAULT 0, tokens_out INTEGER DEFAULT 0);`);
+  return { dbPath, db };
+}
+
+test('parseKinetaiosIncremental skips CLI-engine rows (no double counting)', async () => {
+  // KinetAios 的 Claude Code / Codex 引擎是 spawn 官方 CLI,CLI 自己在 ~/.claude、~/.codex
+  // 写原生用量(上游 claude/codex parser 采)。cost_log 里这两类引擎的行必须排除,
+  // 否则同一批请求被原生 parser + 本 source 各算一次。
+  const { dbPath, db } = await createFixtureDb();
   db.prepare('INSERT INTO conversations VALUES (?, ?, ?, ?)').run(
     'c1', 'claudeCode', '/Users/me/demo', 'claude-sonnet-4-5',
   );
@@ -72,13 +58,7 @@ test('parseKinetaiosIncremental skips CLI-engine rows (no double counting)', asy
 });
 
 test('parseKinetaiosIncremental reads cost_log with model/cwd join + reported cost', async () => {
-  const dir = await mkdtemp(join(tmpdir(), 'tud-kinetaios-'));
-  const dbPath = join(dir, 'history.db');
-  const db = new DatabaseSync(dbPath);
-  db.exec(`CREATE TABLE conversations(id TEXT PRIMARY KEY, engine TEXT, cwd TEXT, model TEXT);
-  CREATE TABLE cost_log(
-    id TEXT PRIMARY KEY, conv_id TEXT, engine TEXT, amount REAL, tokens INTEGER, ts REAL,
-    tokens_in INTEGER DEFAULT 0, tokens_out INTEGER DEFAULT 0);`);
+  const { dbPath, db } = await createFixtureDb();
   db.prepare('INSERT INTO conversations VALUES (?, ?, ?, ?)').run(
     'c1', 'direct', '/Users/me/demo', 'glm-5.3-flash',
   );
@@ -120,13 +100,7 @@ test('parseKinetaiosIncremental reads cost_log with model/cwd join + reported co
 });
 
 test('parseKinetaiosIncremental dedups same-millisecond rows via seenIds', async () => {
-  const dir = await mkdtemp(join(tmpdir(), 'tud-kinetaios-'));
-  const dbPath = join(dir, 'history.db');
-  const db = new DatabaseSync(dbPath);
-  db.exec(`CREATE TABLE conversations(id TEXT PRIMARY KEY, engine TEXT, cwd TEXT, model TEXT);
-  CREATE TABLE cost_log(
-    id TEXT PRIMARY KEY, conv_id TEXT, engine TEXT, amount REAL, tokens INTEGER, ts REAL,
-    tokens_in INTEGER DEFAULT 0, tokens_out INTEGER DEFAULT 0);`);
+  const { dbPath, db } = await createFixtureDb();
   const ts = Date.parse('2026-09-23T11:30:05.000Z'); // 同一半小时桶、同一毫秒
   db.prepare('INSERT INTO cost_log VALUES (?, ?, ?, ?, ?, ?, ?, ?)').run('a1', 'c1', 'direct', 0.01, 10, ts, 8, 2);
   db.prepare('INSERT INTO cost_log VALUES (?, ?, ?, ?, ?, ?, ?, ?)').run('a2', 'c1', 'direct', 0.02, 20, ts, 15, 5);
@@ -144,6 +118,38 @@ test('parseKinetaiosIncremental dedups same-millisecond rows via seenIds', async
 
     const again = await parseKinetaiosIncremental(cursors, SINCE);
     assert.equal(again.result.eventsParsed, 0);
+  } finally {
+    if (prev === undefined) delete process.env.AI_USAGE_KINETAIOS_DB;
+    else process.env.AI_USAGE_KINETAIOS_DB = prev;
+  }
+});
+
+test('parseKinetaiosIncremental picks up late same-ms rows after cursor advances', async () => {
+  // 水位闭区间：第一轮推进 lastTs 后，同毫秒晚写入的行下一轮仍能被扫到，靠 seenIds 去重。
+  const { dbPath, db } = await createFixtureDb();
+  const ts = Date.parse('2026-09-23T11:30:05.000Z');
+  db.prepare('INSERT INTO cost_log VALUES (?, ?, ?, ?, ?, ?, ?, ?)').run('a1', 'c1', 'direct', 0.01, 10, ts, 8, 2);
+  db.close();
+
+  const prev = process.env.AI_USAGE_KINETAIOS_DB;
+  process.env.AI_USAGE_KINETAIOS_DB = dbPath;
+  try {
+    const first = await parseKinetaiosIncremental({}, SINCE);
+    assert.equal(first.result.eventsParsed, 1);
+    assert.equal(first.cursors.kinetaios?.lastTs, ts);
+
+    const db2 = new DatabaseSync(dbPath);
+    db2.prepare('INSERT INTO cost_log VALUES (?, ?, ?, ?, ?, ?, ?, ?)').run('a2', 'c1', 'direct', 0.02, 20, ts, 15, 5);
+    db2.close();
+
+    const second = await parseKinetaiosIncremental(first.cursors, SINCE);
+    assert.equal(second.result.eventsParsed, 1);
+    assert.equal(second.result.buckets[0]!.input_tokens, 15);
+    assert.equal(second.result.buckets[0]!.output_tokens, 5);
+    assert.ok(Math.abs(second.result.buckets[0]!.reported_cost_usd! - 0.02) < 1e-9);
+
+    const third = await parseKinetaiosIncremental(second.cursors, SINCE);
+    assert.equal(third.result.eventsParsed, 0);
   } finally {
     if (prev === undefined) delete process.env.AI_USAGE_KINETAIOS_DB;
     else process.env.AI_USAGE_KINETAIOS_DB = prev;

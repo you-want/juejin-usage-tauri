@@ -14,9 +14,10 @@
  * `KinetAios`（不随 productName/brand.json 变化），故默认路径是稳定的。
  *
  * 增量策略：`cost_log.id` 是每行唯一主键（uuid），cursor 记录已见 id 的最近窗口 +
- * 已处理行的 max(ts)。查询按 `ts > max(lastTs, statsSince)` 过滤后用 seenIds 去重
- * 兜底同毫秒写入。单价（amount）是 KinetAios 按 profile 价格表算出的真实美元成本，
- * 聚到 bucket 上走 `reported_cost_usd`（与 Cursor CSV 同通道），成本视图零估算误差。
+ * 已处理行的 max(ts)。查询按 `ts >= max(lastTs, statsSince)` 过滤后用 seenIds 去重：
+ * 水位用闭区间，同毫秒晚到的行下一轮仍能进结果集；已见 id 再丢掉。单价（amount）
+ * 是 KinetAios 按 profile 价格表算出的真实美元成本，聚到 bucket 上走
+ * `reported_cost_usd`（与 Cursor CSV 同通道），成本视图零估算误差。
  */
 import { existsSync } from 'node:fs';
 import { homedir, platform } from 'node:os';
@@ -91,7 +92,7 @@ const COST_QUERY = `SELECT
     co.cwd
   FROM cost_log c
   LEFT JOIN conversations co ON co.id = c.conv_id
-  WHERE c.engine NOT IN ('claudeCode', 'codex') AND c.ts > `;
+  WHERE c.engine NOT IN ('claudeCode', 'codex') AND c.ts >= `;
 
 export async function parseKinetaiosIncremental(
   cursors: CursorsFile,
@@ -152,7 +153,9 @@ export async function parseKinetaiosIncremental(
     const output = toCount(row.tokens_out);
     const total = input + output;
     if (total === 0) {
-      seenIds.add(id); // 空行也记 seen，防止 cursor 推进后同批行被反复扫描
+      // 空行也记 seen + 推进水位，防止闭区间水位下同批行被反复扫描。
+      seenIds.add(id);
+      if (ts > cur.lastTs) cur.lastTs = ts;
       continue;
     }
 

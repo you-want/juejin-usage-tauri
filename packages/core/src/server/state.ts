@@ -437,13 +437,16 @@ export function createApplyAfterSync(deps: {
 ) => Promise<void> {
   return async (results, opts) => {
     const written = collectWrittenBuckets(results);
+    const store = deps.getBucketStore();
+    const cache = deps.getAggregateCache();
     if (written.length > 0) {
-      const store = deps.getBucketStore();
       store.apply(written);
-      const cache = deps.getAggregateCache();
-      if (cache) {
-        await cache.onBucketsChanged(store.getRows(), written);
-      }
+    }
+    // History (`date < today`) is read only from the sealed cache. Yesterday is
+    // still "today" until midnight, so an empty poll after the day rolls never
+    // reaches onBucketsChanged and the panel shows that day as 0 until restart.
+    if (cache && (written.length > 0 || cache.needsCalendarSeal())) {
+      await cache.onBucketsChanged(store.getRows(), written);
     }
     // Skip Renderer poke when sync wrote nothing (unless forceNotify for round end).
     if (opts?.quiet) return;
