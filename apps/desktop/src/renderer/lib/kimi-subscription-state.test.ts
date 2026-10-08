@@ -54,14 +54,12 @@ test('returns a whole snapshot without combining plans, quotas or failure messag
   assert.equal(selectKimiSubscription([{ ...desktop, stale: true }, staleCode]), staleCode);
 });
 
-test('keeps confirmed Free and actionable feedback only when no successful reading is available', () => {
+test('keeps confirmed Free and custom-provider feedback only when no successful reading is available', () => {
   const signedOut = { ...firstFailure, status: 'not-signed-in' as const };
   const free = { ...firstFailure, planLabel: 'Free', stale: true };
-  assert.equal(selectKimiSubscription([signedOut]), signedOut);
-  for (const status of ['expired', 'custom-provider'] as const) {
-    const actionable = { ...firstFailure, source: 'code' as const, status };
-    assert.equal(selectKimiSubscription([signedOut, actionable]), actionable);
-  }
+  assert.equal(selectKimiSubscription([signedOut]), null);
+  const customProvider = { ...firstFailure, source: 'code' as const, status: 'custom-provider' as const };
+  assert.equal(selectKimiSubscription([signedOut, customProvider]), customProvider);
   assert.equal(selectKimiSubscription([signedOut, free]), free);
   assert.equal(selectKimiSubscription([free, code]), code);
   assert.equal(selectKimiSubscription([firstFailure]), null);
@@ -93,9 +91,28 @@ for (const planLabel of ['Go', 'Plus', 'Pro', 'Max', 'Future Tier']) {
   });
 }
 
-test('keeps confirmed Free metadata and actionable login/configuration feedback visible', () => {
-  assert.equal(isKimiSubscriptionVisible({ ...firstFailure, planLabel: 'Free', stale: true }), true);
-  for (const status of ['not-signed-in', 'expired', 'custom-provider'] as const) {
-    assert.equal(isKimiSubscriptionVisible({ ...firstFailure, status }), true);
+test('hides the card when neither desktop nor Code has an active login', () => {
+  for (const desktopStatus of ['not-installed', 'not-signed-in', 'expired'] as const) {
+    for (const codeStatus of ['not-installed', 'not-signed-in', 'expired'] as const) {
+      assert.equal(selectKimiSubscription([
+        { ...firstFailure, source: 'desktop', status: desktopStatus },
+        { ...firstFailure, source: 'code', status: codeStatus },
+      ]), null, `${desktopStatus} desktop / ${codeStatus} Code`);
+    }
   }
+});
+
+test('hides signed-out and expired accounts even when old plan metadata is present', () => {
+  for (const source of ['desktop', 'code'] as const) {
+    for (const status of ['not-signed-in', 'expired'] as const) {
+      assert.equal(isKimiSubscriptionVisible({ ...firstFailure, source, status }), false);
+      assert.equal(isKimiSubscriptionVisible({ ...desktop, source, status, stale: true }), false);
+      assert.equal(isKimiSubscriptionVisible({ ...desktop, source, status, planLabel: 'Free' }), false);
+    }
+  }
+});
+
+test('keeps confirmed Free metadata and custom-provider feedback visible', () => {
+  assert.equal(isKimiSubscriptionVisible({ ...firstFailure, planLabel: 'Free', stale: true }), true);
+  assert.equal(isKimiSubscriptionVisible({ ...firstFailure, status: 'custom-provider' }), true);
 });

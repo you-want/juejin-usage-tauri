@@ -6,7 +6,7 @@ export function selectKimiSubscription(snapshots: KimiSubscriptionSnapshot[]): K
   let candidates = visible.filter((snapshot) => snapshot.status === 'ready');
   if (candidates.length === 0) {
     return visible.find((snapshot) => snapshot.planLabel === 'Free')
-      ?? visible.find((snapshot) => snapshot.status === 'expired' || snapshot.status === 'custom-provider')
+      ?? visible.find((snapshot) => snapshot.status === 'custom-provider')
       ?? visible[0] ?? null;
   }
   // Prefer fresh, useful readings. Code can provide both the shared pool and
@@ -28,9 +28,10 @@ export function selectKimiSubscription(snapshots: KimiSubscriptionSnapshot[]): K
 export function isKimiSubscriptionVisible(
   snapshot: KimiSubscriptionSnapshot | null,
 ): snapshot is KimiSubscriptionSnapshot {
-  if (!snapshot || snapshot.status === 'not-installed') return false;
+  if (!snapshot || snapshot.status === 'not-installed'
+    || snapshot.status === 'not-signed-in' || snapshot.status === 'expired') return false;
   // A failed first lookup has no paid plan or allowance to show. Keep confirmed
-  // Free metadata, successful readings and explicit login/configuration feedback.
+  // Free metadata, successful readings and custom-provider feedback.
   return snapshot.status !== 'temporarily-unavailable'
     || snapshot.fetchedAt !== null
     || snapshot.planLabel === 'Free';
