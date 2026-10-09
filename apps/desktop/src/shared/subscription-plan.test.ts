@@ -32,3 +32,9 @@ test('hides absent and free subscription plan labels', () => {
   assert.equal(visibleSubscriptionPlanLabel('Free'), null);
   assert.equal(visibleSubscriptionPlanLabel(' FREE '), null);
 });
+
+test('allows an explicitly supported Free plan badge without changing other cards', () => {
+  assert.equal(visibleSubscriptionPlanLabel('free', true), 'Free');
+  assert.equal(visibleSubscriptionPlanLabel('Free'), null);
+  assert.equal(visibleSubscriptionPlanLabel(null, true), null);
+});

@@ -150,8 +150,8 @@ const tudApi = {
   getGrokSubscription: (): Promise<GrokSubscriptionSnapshot> =>
     ipcRenderer.invoke(GROK_SUBSCRIPTION_GET_CHANNEL),
 
-  getKimiSubscription: (): Promise<KimiSubscriptionSnapshot> =>
-    ipcRenderer.invoke(KIMI_SUBSCRIPTION_GET_CHANNEL),
+  getKimiSubscription: (options?: { forceRefresh?: boolean }): Promise<KimiSubscriptionSnapshot[]> =>
+    ipcRenderer.invoke(KIMI_SUBSCRIPTION_GET_CHANNEL, options),
 
   getZcodeSubscription: (): Promise<ZcodeSubscriptionSnapshot> =>
     ipcRenderer.invoke(ZCODE_SUBSCRIPTION_GET_CHANNEL),

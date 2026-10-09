@@ -42,8 +42,8 @@ declare global {
       getGrokSubscription: () => Promise<
         import('../shared/grok-subscription').GrokSubscriptionSnapshot
       >;
-      getKimiSubscription: () => Promise<
-        import('../shared/kimi-subscription').KimiSubscriptionSnapshot
+      getKimiSubscription: (options?: { forceRefresh?: boolean }) => Promise<
+        import('../shared/kimi-subscription').KimiSubscriptionSnapshot[]
       >;
       getZcodeSubscription: () => Promise<
         import('../shared/zcode-subscription').ZcodeSubscriptionSnapshot
