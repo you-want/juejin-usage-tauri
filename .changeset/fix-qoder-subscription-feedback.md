@@ -2,4 +2,4 @@
 '@juejin-opensource/jusage-desktop': patch
 ---
 
-在无法读取 Qoder 订阅额度时显示具体原因，不再隐藏 Qoder 卡片。
+已登录 Qoder App 但无法读取订阅额度时显示具体原因；未安装或未登录时仍隐藏卡片。

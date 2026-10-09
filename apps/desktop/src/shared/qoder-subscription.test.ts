@@ -38,7 +38,7 @@ test('clamps Qoder remaining percentage', () => {
   assert.equal(qoderRemainingPercent(150), 0);
 });
 
-test('keeps Qoder subscription failures visible when no quota is available', () => {
+test('hides Qoder when unavailable because it is not installed or signed in', () => {
   assert.equal(qoderSubscriptionFeedback({
     status: 'not-signed-in',
     planLabel: null,
@@ -46,7 +46,27 @@ test('keeps Qoder subscription failures visible when no quota is available', () 
     fetchedAt: null,
     stale: false,
     message: '请先登录 Qoder',
-  }), '请先登录 Qoder');
+  }), null);
+
+  assert.equal(qoderSubscriptionFeedback({
+    status: 'not-installed',
+    planLabel: null,
+    limits: [],
+    fetchedAt: null,
+    stale: false,
+    message: '未检测到本机 Qoder',
+  }), null);
+});
+
+test('keeps logged-in Qoder subscription failures visible when no quota is available', () => {
+  assert.equal(qoderSubscriptionFeedback({
+    status: 'temporarily-unavailable',
+    planLabel: null,
+    limits: [],
+    fetchedAt: null,
+    stale: false,
+    message: '已登录 Qoder，但暂时无法读取订阅额度',
+  }), '已登录 Qoder，但暂时无法读取订阅额度');
 
   assert.equal(qoderSubscriptionFeedback({
     status: 'ready',

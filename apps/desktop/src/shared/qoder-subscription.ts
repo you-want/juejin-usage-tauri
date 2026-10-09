@@ -92,5 +92,7 @@ export function qoderRemainingPercent(usedPercent: number): number {
  * disappear. A successful quota still speaks for itself through its metrics.
  */
 export function qoderSubscriptionFeedback(snapshot: QoderSubscriptionSnapshot): string | null {
-  return snapshot.limits.length === 0 ? snapshot.message : null;
+  if (snapshot.limits.length > 0) return null;
+  if (snapshot.status === 'not-installed' || snapshot.status === 'not-signed-in') return null;
+  return snapshot.message;
 }
