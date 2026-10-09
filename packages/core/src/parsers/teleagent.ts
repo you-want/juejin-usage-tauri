@@ -15,15 +15,19 @@
  * 聚合到 queue。TeleAgent 采用积分（quota）计费，日志中 cost 恒为 $0，因此
  * 不计费用。
  *
- * 路径覆盖：
- *   - AI_USAGE_TELEAGENT_LOGS — 自定义日志根目录（默认 ~/.local/share/TeleAgent/users）
+ * 路径覆盖（跨平台候选，`AI_USAGE_TELEAGENT_LOGS` 覆盖优先）：
+ *   - Linux / 其它：~/.local/share/TeleAgent/users（已实测确认）
+ *   - macOS：~/Library/Application Support/TeleAgent/users、~/Library/Logs/TeleAgent/users
+ *   - Windows：%LOCALAPPDATA%/TeleAgent/users
+ *   桌面端（mac/win）路径尚未实测，若不符请用 AI_USAGE_TELEAGENT_LOGS 指向真实目录。
  */
-import { existsSync, readdirSync, createReadStream } from 'node:fs';
+import { existsSync, readdirSync } from 'node:fs';
 import { createHash } from 'node:crypto';
-import { homedir } from 'node:os';
+import { homedir, platform } from 'node:os';
 import { join } from 'node:path';
-import { createInterface } from 'node:readline';
 import { stat } from 'node:fs/promises';
+
+import { createJsonlLineReader } from './jsonl-tail.js';
 
 import type { CursorsFile, QueueBucket, TokenTotals } from '../types.js';
 import { toUtcHalfHourStart } from '../queue/keys.js';
@@ -52,11 +56,32 @@ type TeleagentExtCursors = CursorsFile & {
   };
 };
 
-/** TeleAgent 本地数据根目录（`~/.local/share/TeleAgent/users`）。 */
-export function teleagentLogsRoot(): string {
-  const env = process.env.AI_USAGE_TELEAGENT_LOGS?.trim();
-  if (env) return env;
-  return join(homedir(), '.local', 'share', 'TeleAgent', 'users');
+/**
+ * TeleAgent 日志根目录候选（跨平台）。`AI_USAGE_TELEAGENT_LOGS` 覆盖优先。
+ *
+ * - Linux / 其它：已实测确认 `~/.local/share/TeleAgent/users`。
+ * - macOS / Windows：星辰服务端主要跑在 Linux，桌面端路径尚未实测，下面按
+ *   应用支持 / LocalAppData 惯例给候选；若实际不符请用 `AI_USAGE_TELEAGENT_LOGS`
+ *   指向真实目录。
+ */
+export function teleagentLogRoots(env: NodeJS.ProcessEnv = process.env): string[] {
+  const explicit = env.AI_USAGE_TELEAGENT_LOGS?.trim();
+  if (explicit) return [explicit];
+
+  const home = env.HOME?.trim() || homedir();
+  const plat = platform();
+  if (plat === 'darwin') {
+    return [
+      join(home, 'Library', 'Application Support', 'TeleAgent', 'users'),
+      join(home, 'Library', 'Logs', 'TeleAgent', 'users'),
+    ];
+  }
+  if (plat === 'win32') {
+    const local = env.LOCALAPPDATA?.trim() || join(home, 'AppData', 'Local');
+    return [join(local, 'TeleAgent', 'users')];
+  }
+  const xdg = env.XDG_DATA_HOME?.trim() || join(home, '.local', 'share');
+  return [join(xdg, 'TeleAgent', 'users')];
 }
 
 function walkLogFiles(dir: string, depth: number, out: string[]): void {
@@ -78,10 +103,12 @@ function walkLogFiles(dir: string, depth: number, out: string[]): void {
   }
 }
 
-/** 递归发现所有 `super-agent-server-*.log` 日志文件。 */
+/** 递归发现所有 `super-agent-server-*.log` 日志文件（遍历各平台候选根）。 */
 export function findTeleagentLogFiles(): string[] {
   const out: string[] = [];
-  walkLogFiles(teleagentLogsRoot(), 0, out);
+  for (const root of teleagentLogRoots()) {
+    walkLogFiles(root, 0, out);
+  }
   out.sort((a, b) => a.localeCompare(b));
   return out;
 }
@@ -179,21 +206,23 @@ export async function parseTeleagentIncremental(
     const startOffset = sameInode && !truncated ? (prev.offset ?? 0) : 0;
     if (sameInode && !truncated && startOffset >= st.size) continue;
 
-    const stream = createReadStream(filePath, { start: startOffset });
-    const rl = createInterface({ input: stream, crlfDelay: Infinity });
-
-    let fileOffset = startOffset;
-    for await (const raw of rl) {
-      const line = raw;
-      const lineStart = fileOffset;
-      fileOffset += Buffer.byteLength(line, 'utf8') + 1;
+    // 字节精确增量读取：复用 jsonl-tail，自动处理 CRLF，并把未写完的尾行
+    // 留给下一轮（nextOffset 回到尾行起点）。避免手算 byteLength+1 在 CRLF /
+    // 末行无换行时游标偏掉、被误判 truncate 全量重扫（seenHashes 防双计但多 IO）。
+    const reader = createJsonlLineReader(filePath, startOffset);
+    let lineByteStart = startOffset;
+    for await (const line of reader) {
+      const lineStart = lineByteStart;
+      lineByteStart = reader.nextOffset;
 
       if (!line.trim()) continue;
 
-      // 模型行：记录 request_id → model
+      // 模型行：记录 request_id → model。delete+set 刷新插入序（LRU），
+      // 避免 FIFO 把仍活跃的 request_id 误踢成 unknown。
       const model = extractModel(line);
       const requestId = extractRequestId(line);
       if (model && requestId) {
+        lastModels.delete(requestId);
         lastModels.set(requestId, model);
         if (lastModels.size > MAX_LAST_MODELS) {
           const first = lastModels.keys().next().value;
@@ -211,15 +240,14 @@ export async function parseTeleagentIncremental(
       if (!hourStart) continue;
       if (new Date(hourStart).getTime() < sinceMs) continue;
 
-      // 去重：同一行内容不会重复入账
+      // 去重：同一物理行（路径 + 字节起点 + 内容）不会重复入账
       const dedup = createHash('sha256')
         .update(`${filePath}|${lineStart}|${line}`)
         .digest('hex');
       if (seenHashes.has(dedup)) continue;
       seenHashes.add(dedup);
 
-      const modelName =
-        (requestId ? lastModels.get(requestId) : undefined) ?? 'unknown';
+      const modelName = (requestId ? lastModels.get(requestId) : undefined) ?? 'unknown';
       accumulateBucket(
         bucketState,
         'teleagent',
@@ -236,9 +264,15 @@ export async function parseTeleagentIncremental(
       inode,
       size: st.size,
       mtimeMs: st.mtimeMs,
-      offset: fileOffset,
+      offset: reader.nextOffset,
     };
     filesProcessed += 1;
+  }
+
+  // 清理已消失文件的游标（logrotate / 删除的按天日志）。下次出现会从 0 重读，
+  // seenHashes 去重保证不会重复入账。
+  for (const missing of Object.keys(fileCursors)) {
+    if (!existsSync(missing)) delete fileCursors[missing];
   }
 
   ext.teleagent.seenHashes = Array.from(seenHashes).slice(-MAX_SEEN_HASHES);

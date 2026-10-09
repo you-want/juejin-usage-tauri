@@ -194,3 +194,44 @@ test('truncated file restarts from the top without error', async () => {
     },
   );
 });
+
+test('CRLF logs: cursor is byte-exact and an unterminated trailing line is deferred then billed', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'tud-teleagent-crlf-'));
+  const logDir = join(dir, 'u-1', 'log');
+  await mkdir(logDir, { recursive: true });
+  const file = join(logDir, 'super-agent-server-test.log');
+
+  const prev = process.env.AI_USAGE_TELEAGENT_LOGS;
+  process.env.AI_USAGE_TELEAGENT_LOGS = dir;
+  const cursors = emptyCursors();
+  try {
+    // 正常 CRLF，行尾带 \r\n
+    await writeFile(
+      file,
+      [modelLine('a-0001', 'chat-pro'), costLine('a-0001', 10, 2, 0)].join('\r\n') + '\r\n',
+    );
+    const first = await parseTeleagentIncremental(cursors, SINCE);
+    assert.equal(first.result.eventsParsed, 1, 'CRLF cost line committed');
+
+    // 立即重跑：游标应停在文件尾，不重复计费（证明 CRLF 未让游标偏掉）
+    const again = await parseTeleagentIncremental(cursors, SINCE);
+    assert.equal(again.result.eventsParsed, 0, 'CRLF cursor not drifted');
+
+    // 写入半行（cost 行无换行）→ 应被推迟，不立即计费
+    await appendFile(
+      file,
+      modelLine('b-0002', 'deepseek-v3') + '\r\n' + costLine('b-0002', 7, 1, 0),
+    );
+    const partial = await parseTeleagentIncremental(cursors, SINCE);
+    assert.equal(partial.result.eventsParsed, 0, 'unterminated trailing cost line deferred');
+
+    // 补全换行 → 尾行完成，下一轮入账且模型正确解析
+    await appendFile(file, '\r\n');
+    const completed = await parseTeleagentIncremental(cursors, SINCE);
+    assert.equal(completed.result.eventsParsed, 1, 'deferred cost line billed once completed');
+    assert.equal(completed.result.buckets[0]!.model, 'deepseek-v3');
+  } finally {
+    if (prev === undefined) delete process.env.AI_USAGE_TELEAGENT_LOGS;
+    else process.env.AI_USAGE_TELEAGENT_LOGS = prev;
+  }
+});
