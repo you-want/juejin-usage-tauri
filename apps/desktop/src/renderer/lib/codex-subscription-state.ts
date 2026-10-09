@@ -10,32 +10,15 @@ export const INITIAL_CODEX_SUBSCRIPTION_STATE: CodexSubscriptionState = {
   lastUpdatedAt: null,
 };
 
-/** Retain in-memory allowance only across transient failures, never sign-out. */
+/** The main process owns account-aware caching; the renderer never merges allowances. */
 export function updateCodexSubscriptionState(
-  previous: CodexSubscriptionState,
+  _previous: CodexSubscriptionState,
   snapshot: CodexSubscriptionSnapshot,
-  now: number,
+  _now: number,
 ): CodexSubscriptionState {
-  // A missing CLI or non-ChatGPT session has no subscription to display.
-  if (snapshot.status !== 'ready' && snapshot.status !== 'unavailable') {
-    return INITIAL_CODEX_SUBSCRIPTION_STATE;
-  }
-
-  const old = previous.snapshot;
-  const keepAllowance = snapshot.status === 'unavailable'
-    && old !== null
-    && previous.lastUpdatedAt !== null
-    && (snapshot.planLabel === null || snapshot.planLabel === old.planLabel);
-
+  if (!snapshot.hasAccount) return INITIAL_CODEX_SUBSCRIPTION_STATE;
   return {
-    snapshot: keepAllowance ? {
-      ...snapshot,
-      planLabel: old.planLabel,
-      fiveHour: old.fiveHour,
-      weekly: old.weekly,
-    } : snapshot,
-    lastUpdatedAt: snapshot.status === 'ready'
-      ? now
-      : keepAllowance ? previous.lastUpdatedAt : null,
+    snapshot,
+    lastUpdatedAt: snapshot.fetchedAt === null ? null : snapshot.fetchedAt * 1000,
   };
 }

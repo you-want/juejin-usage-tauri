@@ -1,151 +1,84 @@
-import { existsSync } from 'node:fs';
-import { spawn } from 'node:child_process';
+import { readFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+import { homedir } from 'node:os';
 import path from 'node:path';
-import { guiCliEnvironment } from './cli-runtime';
-import {
-  codexPlanLabel,
-  mapCodexRateLimitWindows,
-  type CodexSubscriptionSnapshot,
-} from '../shared/codex-subscription';
+import { codexPlanLabel, mapCodexRateLimitWindows, type CodexSubscriptionSnapshot } from '../shared/codex-subscription';
+import { createSubscriptionCache } from './subscription-cache';
 
-const REQUEST_TIMEOUT_MS = 10_000;
-const CLI_CHECK_HINT = '请在终端运行 codex --version 检查；若出现系统安全警告，请从官方渠道升级 Codex CLI 后重试。';
-const RATE_LIMIT_FAILURE = '暂时无法读取 Codex 订阅额度，请确认登录状态和网络后重试';
-
-type JsonRpcMessage = { id?: number; result?: unknown; error?: { message?: unknown } };
-type AccountResult = { account?: { type?: unknown; planType?: unknown } | null };
-type RateLimitResult = { rateLimits?: { primary?: unknown; secondary?: unknown } | null };
-
-function asRecord(value: unknown): Record<string, unknown> | null {
-  return value && typeof value === 'object' ? value as Record<string, unknown> : null;
+const USAGE_URL = 'https://chatgpt.com/backend-api/wham/usage';
+function record(value: unknown): Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
 }
-
-function unavailable(status: CodexSubscriptionSnapshot['status'], message: string, planLabel: string | null = null): CodexSubscriptionSnapshot {
-  return { status, planLabel, fiveHour: null, weekly: null, message };
+function claims(token: unknown): Record<string, unknown> {
+  if (typeof token !== 'string') return {};
+  try { return record(JSON.parse(Buffer.from(token.split('.')[1], 'base64url').toString('utf8'))); }
+  catch { return {}; }
 }
-
-interface CodexLaunch {
-  command: string;
-  args: string[];
+function text(value: unknown): string { return typeof value === 'string' ? value.trim() : ''; }
+export function parseCodexCredentials(value: unknown) {
+  const auth = record(value), tokens = record(auth.tokens);
+  const info = record(claims(tokens.id_token)['https://api.openai.com/auth']);
+  return {
+    unsupported: auth.auth_mode === 'apikey' || (!tokens.access_token && Boolean(auth.OPENAI_API_KEY)),
+    accessToken: text(tokens.access_token),
+    accountId: text(tokens.account_id) || text(info.chatgpt_account_id),
+    planLabel: codexPlanLabel(info.chatgpt_plan_type),
+    expiresAt: typeof claims(tokens.access_token).exp === 'number' ? Number(claims(tokens.access_token).exp) * 1000 : null,
+  };
 }
-
-/** Locate standalone Codex first, then the CLI bundled by ChatGPT/Codex Desktop. */
-export function resolveCodexLaunch(): CodexLaunch {
-  const override = process.env.CODEX_CLI_PATH?.trim();
-  if (override && existsSync(override)) return { command: override, args: ['app-server', '--stdio'] };
-  const home = process.env.HOME ?? '';
-  const standalone = process.platform === 'win32'
-    ? [path.join(process.env.APPDATA ?? '', 'npm', 'codex.cmd')]
-    : [
-        path.join(home, '.local', 'bin', 'codex'),
-        path.join(home, 'Library', 'pnpm', 'codex'),
-        '/opt/homebrew/bin/codex',
-        '/usr/local/bin/codex',
-      ];
-  const command = standalone.find((candidate) => candidate && existsSync(candidate));
-  if (command) return { command, args: ['app-server', '--stdio'] };
-  if (process.platform === 'darwin') {
-    const roots = ['/Applications', path.join(home, 'Applications')];
-    for (const root of roots) {
-      for (const appName of ['ChatGPT.app', 'Codex.app']) {
-        const bundled = path.join(root, appName, 'Contents', 'Resources', 'codex');
-        if (existsSync(bundled)) return { command: bundled, args: ['app-server', '--listen', 'stdio://'] };
-      }
+export function mapCodexUsage(value: unknown) {
+  const data = record(value), limits = record(data.rate_limit);
+  const window = (value: unknown) => {
+    const raw = record(value);
+    return { usedPercent: raw.used_percent, resetsAt: raw.reset_at, windowDurationMins: Number(raw.limit_window_seconds) / 60 };
+  };
+  return { planLabel: codexPlanLabel(data.plan_type), ...mapCodexRateLimitWindows({ primary: window(limits.primary_window), secondary: window(limits.secondary_window) }) };
+}
+function unavailable(status: CodexSubscriptionSnapshot['status'], message: string, hasAccount = false, planLabel: string | null = null): CodexSubscriptionSnapshot {
+  return { status, message, hasAccount, planLabel, fiveHour: null, weekly: null, fetchedAt: null, stale: false };
+}
+export function createCodexSubscriptionReader(deps: {
+  readAuth: () => Promise<string>; fetch: typeof fetch; now?: () => number;
+}) {
+  const now = deps.now ?? Date.now;
+  const cache = createSubscriptionCache<CodexSubscriptionSnapshot>(now);
+  return async (options: { forceRefresh?: boolean } = {}): Promise<CodexSubscriptionSnapshot> => {
+    let raw: string;
+    try { raw = await deps.readAuth(); }
+    catch (error) {
+      const denied = (error as NodeJS.ErrnoException).code === 'EACCES' || (error as NodeJS.ErrnoException).code === 'EPERM';
+      return cache('missing', async () => unavailable(denied ? 'access-denied' : 'not-signed-in', denied ? '无法读取 Codex 登录信息，请检查文件权限' : '请先使用 ChatGPT 账号登录 Codex', denied));
     }
-  }
-  return { command: 'codex', args: ['app-server', '--stdio'] };
-}
-
-/** Fetch via Codex app-server without reading or exposing auth.json. */
-export function readCodexSubscription(): Promise<CodexSubscriptionSnapshot> {
-  return new Promise((resolve) => {
-    const launch = resolveCodexLaunch();
-    const child = spawn(launch.command, launch.args, {
-      env: guiCliEnvironment(),
-      stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true,
-    });
-    let settled = false;
-    let stdout = '';
-    let planLabel: string | null = null;
-    const finish = (snapshot: CodexSubscriptionSnapshot) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timeout);
-      child.kill();
-      resolve(snapshot);
-    };
-    const fail = (message: string) => finish(unavailable('unavailable', message, planLabel));
-    const failCli = (reason: string) => fail(`${reason}。${CLI_CHECK_HINT}`);
-    const send = (message: object) => {
-      if (settled) return;
+    const key = createHash('sha256').update(raw).digest('hex');
+    return cache(key, async () => {
+      let auth: unknown;
+      try { auth = JSON.parse(raw); } catch { return unavailable('access-denied', 'Codex 登录信息损坏，请重新登录', true); }
+      const credentials = parseCodexCredentials(auth);
+      const fail = (status: CodexSubscriptionSnapshot['status'], message: string) => unavailable(status, message, true, credentials.planLabel);
+      if (credentials.unsupported) return unavailable('unsupported-account', '当前 Codex 使用 API key，无法读取订阅额度');
+      if (!credentials.accessToken) return unavailable('not-signed-in', '请先使用 ChatGPT 账号登录 Codex');
+      if (credentials.expiresAt !== null && credentials.expiresAt <= now()) return fail('expired', 'Codex 登录已过期，请重新登录');
+      if (!credentials.accountId) return fail('access-denied', 'Codex 登录信息缺少账号标识，请重新登录');
       try {
-        child.stdin.write(`${JSON.stringify(message)}\n`);
-      } catch {
-        failCli('与本机 Codex CLI 的连接已中断');
-      }
-    };
-    const timeout = setTimeout(() => failCli('读取 Codex 订阅额度超时，请检查网络后重试'), REQUEST_TIMEOUT_MS);
-
-    child.once('error', (error) => {
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-        finish(unavailable('not-installed', '未检测到本机 Codex CLI，请先从官方渠道安装后重试'));
-      } else {
-        failCli('无法启动本机 Codex CLI');
-      }
-    });
-    child.once('exit', () => failCli('Codex CLI 在读取订阅额度时意外退出'));
-    // A blocked or exiting CLI can close stdin before an RPC write completes.
-    // Keep the listener after settlement to absorb late stream errors as well.
-    child.stdin.on('error', () => failCli('与本机 Codex CLI 的连接已中断'));
-    // The protocol is stdout-only; drain diagnostics so a noisy CLI cannot
-    // block while the tray is waiting for its small account response.
-    child.stderr.resume();
-    child.stdout.on('data', (chunk: Buffer) => {
-      if (settled) return;
-      stdout += chunk.toString('utf8');
-      for (;;) {
-        if (settled) return;
-        const newline = stdout.indexOf('\n');
-        if (newline < 0) break;
-        const line = stdout.slice(0, newline);
-        stdout = stdout.slice(newline + 1);
-        if (!line.trim()) continue;
-        let message: JsonRpcMessage;
-        try { message = JSON.parse(line) as JsonRpcMessage; } catch { continue; }
-        if (!message || typeof message !== 'object') continue;
-        if (message.id === 1) {
-          if (message.error) { fail('Codex CLI 初始化失败，请从官方渠道升级 Codex CLI 后重试'); continue; }
-          send({ jsonrpc: '2.0', method: 'initialized', params: {} });
-          send({ jsonrpc: '2.0', id: 2, method: 'account/read', params: {} });
-          continue;
-        }
-        if (message.id === 2) {
-          if (message.error) { finish(unavailable('not-signed-in', '请先使用 ChatGPT 账号登录 Codex')); continue; }
-          const account = (message.result as AccountResult | undefined)?.account;
-          if (!account) { finish(unavailable('not-signed-in', '请先使用 ChatGPT 账号登录 Codex')); continue; }
-          if (account.type !== 'chatgpt') { finish(unavailable('unsupported-account', '当前 Codex 未使用 ChatGPT 订阅')); continue; }
-          planLabel = codexPlanLabel(account.planType);
-          send({ jsonrpc: '2.0', id: 3, method: 'account/rateLimits/read', params: {} });
-          continue;
-        }
-        if (message.id === 3) {
-          if (message.error) { fail(RATE_LIMIT_FAILURE); continue; }
-          const rateLimits = (message.result as RateLimitResult | undefined)?.rateLimits;
-          const windows = mapCodexRateLimitWindows({
-            primary: asRecord(rateLimits?.primary),
-            secondary: asRecord(rateLimits?.secondary),
-          });
-          finish({
-            status: windows.fiveHour || windows.weekly ? 'ready' : 'unavailable',
-            planLabel, ...windows,
-            message: windows.fiveHour || windows.weekly ? null : RATE_LIMIT_FAILURE,
-          });
-        }
-      }
-    });
-    send({
-      jsonrpc: '2.0', id: 1, method: 'initialize',
-      params: { clientInfo: { name: 'jusage-desktop', version: '0.1.0' }, capabilities: { optOutNotificationMethods: ['thread/started'] } },
-    });
-  });
+        const response = await deps.fetch(USAGE_URL, {
+          headers: { Authorization: `Bearer ${credentials.accessToken}`, 'ChatGPT-Account-Id': credentials.accountId, Accept: 'application/json' },
+          signal: AbortSignal.timeout(20_000), redirect: 'error',
+        });
+        if (response.status === 401) return fail('expired', 'Codex 登录已过期，请重新登录');
+        if (response.status === 403) return fail('access-denied', 'Codex 额度访问受限，请检查账号权限');
+        if (response.status === 429) return fail('unavailable', 'Codex 额度请求过于频繁，请稍后重试');
+        if (!response.ok) return fail('unavailable', '暂时无法读取 Codex 额度');
+        const windows = mapCodexUsage(await response.json());
+        if (!windows.fiveHour && !windows.weekly) return fail('unavailable', 'Codex 暂未返回可用额度');
+        return { status: 'ready', hasAccount: true, ...windows, planLabel: windows.planLabel ?? credentials.planLabel, fetchedAt: Math.floor(now() / 1000), stale: false, message: null };
+      } catch { return fail('unavailable', '网络异常或读取超时，暂时无法读取 Codex 额度'); }
+    }, options.forceRefresh);
+  };
 }
+function authPath(): string {
+  const configured = process.env.CODEX_HOME?.trim();
+  const home = configured === '~' ? homedir() : configured?.startsWith('~/') ? path.join(homedir(), configured.slice(2)) : configured;
+  return path.join(home ? path.resolve(home) : path.join(homedir(), '.codex'), 'auth.json');
+}
+/** Read subscription usage with local credentials; never rotate or persist tokens. */
+export const readCodexSubscription = createCodexSubscriptionReader({ readAuth: () => readFile(authPath(), 'utf8'), fetch: (...args) => fetch(...args) });
