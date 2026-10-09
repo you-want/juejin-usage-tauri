@@ -25,7 +25,8 @@ import piIcon from '@lobehub/icons-static-svg/icons/pi.svg';
 import qoderIcon from '@lobehub/icons-static-svg/icons/qoder-color.svg';
 import qwenIcon from '@lobehub/icons-static-svg/icons/qwen-color.svg';
 import qwenWorkIcon from '@/assets/brand-logos/qwenwork.ico';
-import teleagentIcon from '@/assets/brand-logos/teleagent.ico';
+// TeleAgent brand logo hosted on the official CDN (svg); replaces a bundled .ico.
+const teleagentIcon = 'https://cdn02.teleai.com.cn/ssr_static/img/fili-logo.MwxJ1UIF.svg';
 import roocodeIcon from '@lobehub/icons-static-svg/icons/roocode.svg';
 import traeIcon from '@lobehub/icons-static-svg/icons/trae-color.svg';
 import windsurfIcon from '@lobehub/icons-static-svg/icons/windsurf.svg';
