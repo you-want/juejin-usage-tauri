@@ -18,7 +18,7 @@
  * 路径覆盖（跨平台候选，`AI_USAGE_TELEAGENT_LOGS` 覆盖优先）：
  *   - Linux / 其它：~/.local/share/TeleAgent/users（已实测确认）
  *   - macOS：~/Library/Application Support/TeleAgent/users、~/Library/Logs/TeleAgent/users
- *   - Windows：%LOCALAPPDATA%/TeleAgent/users
+ *   - Windows：%LOCALAPPDATA%/TeleAgent/users（已实测确认）
  *   桌面端（mac/win）路径尚未实测，若不符请用 AI_USAGE_TELEAGENT_LOGS 指向真实目录。
  */
 import { existsSync, readdirSync } from 'node:fs';
@@ -57,12 +57,11 @@ type TeleagentExtCursors = CursorsFile & {
 };
 
 /**
- * TeleAgent 日志根目录候选（跨平台）。`AI_USAGE_TELEAGENT_LOGS` 覆盖优先。
+ * TeleAgent 日志根目录候选（按平台划分）。`AI_USAGE_TELEAGENT_LOGS` 覆盖优先。
  *
- * - Linux / 其它：已实测确认 `~/.local/share/TeleAgent/users`。
- * - macOS / Windows：星辰服务端主要跑在 Linux，桌面端路径尚未实测，下面按
- *   应用支持 / LocalAppData 惯例给候选；若实际不符请用 `AI_USAGE_TELEAGENT_LOGS`
- *   指向真实目录。
+ * - Linux / 其它：`~/.local/share/TeleAgent/users` 或 `$XDG_DATA_HOME/TeleAgent`
+ * - macOS：`~/.local/share/TeleAgent`、`~/Library/Application Support/TeleAgent`、`~/Library/Logs/TeleAgent`
+ * - Windows：`~/.local/share/TeleAgent`（跨平台/GitBash习惯）、`%LOCALAPPDATA%/TeleAgent`
  */
 export function teleagentLogRoots(env: NodeJS.ProcessEnv = process.env): string[] {
   const explicit = env.AI_USAGE_TELEAGENT_LOGS?.trim();
@@ -70,22 +69,38 @@ export function teleagentLogRoots(env: NodeJS.ProcessEnv = process.env): string[
 
   const home = env.HOME?.trim() || homedir();
   const plat = platform();
+
   if (plat === 'darwin') {
-    return [
-      join(home, 'Library', 'Application Support', 'TeleAgent', 'users'),
-      join(home, 'Library', 'Logs', 'TeleAgent', 'users'),
-    ];
+    return Array.from(
+      new Set([
+        join(home, '.local', 'share', 'TeleAgent', 'users'),
+        join(home, 'Library', 'Application Support', 'TeleAgent', 'users'),
+        join(home, 'Library', 'Logs', 'TeleAgent', 'users'),
+      ]),
+    );
   }
+
   if (plat === 'win32') {
     const local = env.LOCALAPPDATA?.trim() || join(home, 'AppData', 'Local');
-    return [join(local, 'TeleAgent', 'users')];
+    return Array.from(
+      new Set([
+        join(home, '.local', 'share', 'TeleAgent', 'users'),
+        join(local, 'TeleAgent', 'users'),
+      ]),
+    );
   }
+
   const xdg = env.XDG_DATA_HOME?.trim() || join(home, '.local', 'share');
-  return [join(xdg, 'TeleAgent', 'users')];
+  return Array.from(
+    new Set([
+      join(home, '.local', 'share', 'TeleAgent', 'users'),
+      join(xdg, 'TeleAgent', 'users'),
+    ]),
+  );
 }
 
-function walkLogFiles(dir: string, depth: number, out: string[]): void {
-  if (depth > 4 || !existsSync(dir)) return;
+function walkLogFiles(dir: string, depth: number, out: Set<string>): void {
+  if (depth > 6 || !existsSync(dir)) return;
   let entries;
   try {
     entries = readdirSync(dir, { withFileTypes: true });
@@ -95,22 +110,20 @@ function walkLogFiles(dir: string, depth: number, out: string[]): void {
   for (const ent of entries) {
     const full = join(dir, ent.name);
     if (ent.isDirectory()) {
-      // 只下探到 <users>/<userId>/log 层级，避免深入整个数据目录
       walkLogFiles(full, depth + 1, out);
-    } else if (/^super-agent-server-.+\.log$/.test(ent.name)) {
-      out.push(full);
+    } else if (/^super-agent-server.*\.log$/.test(ent.name)) {
+      out.add(full);
     }
   }
 }
 
 /** 递归发现所有 `super-agent-server-*.log` 日志文件（遍历各平台候选根）。 */
 export function findTeleagentLogFiles(): string[] {
-  const out: string[] = [];
+  const out = new Set<string>();
   for (const root of teleagentLogRoots()) {
     walkLogFiles(root, 0, out);
   }
-  out.sort((a, b) => a.localeCompare(b));
-  return out;
+  return Array.from(out).sort((a, b) => a.localeCompare(b));
 }
 
 /** `2026/09/21 09:49:46.820855`（本地时间）→ epoch ms。 */
