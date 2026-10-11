@@ -141,26 +141,26 @@ const tudApi = {
   }): Promise<ClaudeSubscriptionSnapshot> =>
     ipcRenderer.invoke(CLAUDE_SUBSCRIPTION_GET_CHANNEL, options),
 
-  getCursorSubscription: (): Promise<CursorSubscriptionSnapshot> =>
-    ipcRenderer.invoke(CURSOR_SUBSCRIPTION_GET_CHANNEL),
+  getCursorSubscription: (options?: { forceRefresh?: boolean }): Promise<CursorSubscriptionSnapshot> =>
+    ipcRenderer.invoke(CURSOR_SUBSCRIPTION_GET_CHANNEL, options),
 
-  getCopilotSubscription: (): Promise<CopilotSubscriptionSnapshot> =>
-    ipcRenderer.invoke(COPILOT_SUBSCRIPTION_GET_CHANNEL),
+  getCopilotSubscription: (options?: { forceRefresh?: boolean }): Promise<CopilotSubscriptionSnapshot> =>
+    ipcRenderer.invoke(COPILOT_SUBSCRIPTION_GET_CHANNEL, options),
 
-  getGrokSubscription: (): Promise<GrokSubscriptionSnapshot> =>
-    ipcRenderer.invoke(GROK_SUBSCRIPTION_GET_CHANNEL),
+  getGrokSubscription: (options?: { forceRefresh?: boolean }): Promise<GrokSubscriptionSnapshot> =>
+    ipcRenderer.invoke(GROK_SUBSCRIPTION_GET_CHANNEL, options),
 
   getKimiSubscription: (options?: { forceRefresh?: boolean }): Promise<KimiSubscriptionSnapshot[]> =>
     ipcRenderer.invoke(KIMI_SUBSCRIPTION_GET_CHANNEL, options),
 
-  getZcodeSubscription: (): Promise<ZcodeSubscriptionSnapshot> =>
-    ipcRenderer.invoke(ZCODE_SUBSCRIPTION_GET_CHANNEL),
+  getZcodeSubscription: (options?: { forceRefresh?: boolean }): Promise<ZcodeSubscriptionSnapshot> =>
+    ipcRenderer.invoke(ZCODE_SUBSCRIPTION_GET_CHANNEL, options),
 
-  getAntigravitySubscription: (): Promise<AntigravitySubscriptionSnapshot> =>
-    ipcRenderer.invoke(ANTIGRAVITY_SUBSCRIPTION_GET_CHANNEL),
+  getAntigravitySubscription: (options?: { forceRefresh?: boolean }): Promise<AntigravitySubscriptionSnapshot> =>
+    ipcRenderer.invoke(ANTIGRAVITY_SUBSCRIPTION_GET_CHANNEL, options),
 
-  getQoderSubscription: (): Promise<QoderSubscriptionSnapshot> =>
-    ipcRenderer.invoke(QODER_SUBSCRIPTION_GET_CHANNEL),
+  getQoderSubscription: (options?: { forceRefresh?: boolean }): Promise<QoderSubscriptionSnapshot> =>
+    ipcRenderer.invoke(QODER_SUBSCRIPTION_GET_CHANNEL, options),
 
   getMiniMaxSubscription: (options?: { forceRefresh?: boolean }): Promise<MiniMaxSubscriptionSnapshot> =>
     ipcRenderer.invoke(MINIMAX_SUBSCRIPTION_GET_CHANNEL, options),
