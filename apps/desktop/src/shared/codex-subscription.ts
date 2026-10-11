@@ -17,6 +17,8 @@ export interface CodexRateLimitWindow {
 }
 
 export interface CodexSubscriptionSnapshot {
+  resetCredits?: { availableCount: number };
+  credits?: { balance?: number; unlimited?: boolean; hasCredits?: boolean };
   status: CodexSubscriptionStatus;
   hasAccount: boolean;
   fetchedAt: number | null;

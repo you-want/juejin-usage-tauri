@@ -1,3 +1,4 @@
+import { nonNegativeNumber } from '../shared/subscription-amounts';
 import { readFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { homedir } from 'node:os';
@@ -32,7 +33,17 @@ export function mapCodexUsage(value: unknown) {
     const raw = record(value);
     return { usedPercent: raw.used_percent, resetsAt: raw.reset_at, windowDurationMins: Number(raw.limit_window_seconds) / 60 };
   };
-  return { planLabel: codexPlanLabel(data.plan_type), ...mapCodexRateLimitWindows({ primary: window(limits.primary_window), secondary: window(limits.secondary_window) }) };
+  const rawCredits = record(data.credits);
+  const resetCount = nonNegativeNumber(record(data.rate_limit_reset_credits).available_count);
+  const resetCredits = resetCount !== null && Number.isSafeInteger(resetCount)
+    ? { availableCount: resetCount } : undefined;
+  const balance = nonNegativeNumber(rawCredits.balance);
+  const credits = {
+    ...(balance === null ? {} : { balance }),
+    ...(typeof rawCredits.unlimited === 'boolean' ? { unlimited: rawCredits.unlimited } : {}),
+    ...(typeof rawCredits.has_credits === 'boolean' ? { hasCredits: rawCredits.has_credits } : {}),
+  };
+  return { ...(resetCredits ? { resetCredits } : {}), ...(Object.keys(credits).length ? { credits } : {}), planLabel: codexPlanLabel(data.plan_type), ...mapCodexRateLimitWindows({ primary: window(limits.primary_window), secondary: window(limits.secondary_window) }) };
 }
 function unavailable(status: CodexSubscriptionSnapshot['status'], message: string, hasAccount = false, planLabel: string | null = null): CodexSubscriptionSnapshot {
   return { status, message, hasAccount, planLabel, fiveHour: null, weekly: null, fetchedAt: null, stale: false };
@@ -69,7 +80,7 @@ export function createCodexSubscriptionReader(deps: {
         if (response.status === 429) return fail('unavailable', 'Codex 额度请求过于频繁，请稍后重试');
         if (!response.ok) return fail('unavailable', '暂时无法读取 Codex 额度');
         const windows = mapCodexUsage(await response.json());
-        if (!windows.fiveHour && !windows.weekly) return fail('unavailable', 'Codex 暂未返回可用额度');
+        if (!windows.fiveHour && !windows.weekly && !windows.credits && !windows.resetCredits) return fail('unavailable', 'Codex 暂未返回可用额度');
         return { status: 'ready', hasAccount: true, ...windows, planLabel: windows.planLabel ?? credentials.planLabel, fetchedAt: Math.floor(now() / 1000), stale: false, message: null };
       } catch { return fail('unavailable', '网络异常或读取超时，暂时无法读取 Codex 额度'); }
     }, options.forceRefresh);
