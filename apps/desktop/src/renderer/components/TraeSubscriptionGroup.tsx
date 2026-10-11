@@ -15,14 +15,14 @@ export function TraeSubscriptionGroup({
         <TraeSubscriptionCard
           region="global"
           title="TRAE"
-          fetcher={() => window.tud.getTraeGlobalSubscription() as Promise<TraeSubscriptionSnapshot>}
+          fetcher={(options) => window.tud.getTraeGlobalSubscription(options) as Promise<TraeSubscriptionSnapshot>}
         />
       ) : null}
       {showMainland ? (
         <TraeSubscriptionCard
           region="mainland"
           title="TRAE CN"
-          fetcher={() => window.tud.getTraeCnSubscription() as Promise<TraeSubscriptionSnapshot>}
+          fetcher={(options) => window.tud.getTraeCnSubscription(options) as Promise<TraeSubscriptionSnapshot>}
         />
       ) : null}
     </>

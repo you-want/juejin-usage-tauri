@@ -1,3 +1,4 @@
+import { subscriptionDetails, subscriptionPoolKey } from '../lib/subscription-details';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   claudeRemainingPercent,
@@ -23,12 +24,14 @@ export function ClaudeSubscriptionCard() {
   const [loading, setLoading] = useState(true);
   const requestInFlight = useRef(false);
 
-  const reload = useCallback(async () => {
+  const reload = useCallback(async (forceRefresh = false) => {
     if (requestInFlight.current) return;
     requestInFlight.current = true;
+    setLoading(true);
     try {
       setSnapshot(await window.tud.getClaudeSubscription({
         allowCredentialAccess: true,
+        forceRefresh,
       }));
     } catch {
       setSnapshot({
@@ -52,10 +55,12 @@ export function ClaudeSubscriptionCard() {
   return (
     <SubscriptionUsageCard
       data={{
+        details: subscriptionDetails(snapshot, 'Claude Code CLI', '重置时间'),
         icon: <SubscriptionBrandIcon brand="claude" />,
         metrics: [
           {
             color: '#7dcf00',
+            poolKey: subscriptionPoolKey('Claude Code CLI', { label: '5h' }),
             label: '5h',
             remainingPercent: snapshot.fiveHour
               ? claudeRemainingPercent(snapshot.fiveHour.usedPercent)
@@ -64,6 +69,7 @@ export function ClaudeSubscriptionCard() {
           },
           {
             color: '#2b7eff',
+            poolKey: subscriptionPoolKey('Claude Code CLI', { label: '7d' }),
             label: '7d',
             remainingPercent: snapshot.sevenDay
               ? claudeRemainingPercent(snapshot.sevenDay.usedPercent)
@@ -78,6 +84,7 @@ export function ClaudeSubscriptionCard() {
         title: 'Claude',
       }}
       loading={loading}
+      onRefresh={() => void reload(true)}
     />
   );
 }
