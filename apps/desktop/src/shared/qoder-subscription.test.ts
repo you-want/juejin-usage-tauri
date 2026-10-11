@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { mapQoderQuota, qoderRemainingPercent } from './qoder-subscription';
 
-test('maps Qoder official personal and add-on credit pools only', () => {
+test('retains personal, add-on and shared Qoder pools separately', () => {
   const mapped = mapQoderQuota({
     data: {
       userQuota: { total: 1_000, used: 250 },
@@ -13,8 +13,9 @@ test('maps Qoder official personal and add-on credit pools only', () => {
   }, { data: { planTierName: 'Qoder Pro' } });
   assert.equal(mapped.planLabel, 'Qoder Pro');
   assert.deepEqual(mapped.limits.map((limit) => [limit.id, limit.label, limit.usedPercent]), [
-    ['plan', '套餐', 25],
-    ['add-on', '加购', 19.5],
+    ['plan', 'Credits', 25],
+    ['add-on', 'Add-on Credits', 19.5],
+    ['shared', 'Shared Credits', 3],
   ]);
   assert.equal(mapped.limits[0].resetsAt, 1_900_000_000);
 });
