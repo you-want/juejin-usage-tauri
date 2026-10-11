@@ -32,10 +32,6 @@ function codeUsageResponse(used = 25): Response {
   return new Response(JSON.stringify({ usage: { used, limit: 100 } }));
 }
 
-function codePlanResponse(plan = 'Pro'): Response {
-  return new Response(JSON.stringify({ user_id: 'code-user', user_level_name: plan }));
-}
-
 function subscriptionResponse(
   ratio = 0.0923,
   withQuota = true,
@@ -466,12 +462,12 @@ test('validates the desktop IPC identity before publishing success or stale quot
 test('Code uses its original quota API while arbitrary base URLs cannot receive a token', async () => {
   const code: KimiAccount = { ...desktopAccount, source: 'code', origin: 'https://api.kimi.ai/coding/v1', planLabel: null };
   const read = createKimiSubscriptionReader(async () => code, async (url, init) => {
-    assert.ok(url === 'https://api.kimi.ai/coding/v1/usages' || url === 'https://api.kimi.ai/coding/v1/me');
+    assert.equal(url, 'https://api.kimi.ai/coding/v1/usages');
     assert.equal(init?.method, 'GET');
     assert.equal(init?.redirect, 'error');
     assert.equal(new Headers(init?.headers).has('x-msh-platform'), false);
     assert.equal(new Headers(init?.headers).has('X-Language'), false);
-    return String(url).endsWith('/me') ? codePlanResponse() : codeUsageResponse(5);
+    return codeUsageResponse(5);
   });
   assert.equal((await read()).limits[0]?.usedPercent, 5);
   let calls = 0;
@@ -497,16 +493,16 @@ test('returns desktop and Code plans independently when both accounts are signed
       }
       assert.equal(token, 'Bearer code-token');
       assert.equal(init?.redirect, 'error');
-      return address.endsWith('/me') ? codePlanResponse() : codeUsageResponse();
+      return codeUsageResponse();
     },
   });
   const snapshots = await read();
   assert.deepEqual(snapshots.map(({ source, planLabel }) => ({ source, planLabel })), [
-    { source: 'desktop', planLabel: 'Free' }, { source: 'code', planLabel: 'Pro' },
+    { source: 'desktop', planLabel: 'Free' }, { source: 'code', planLabel: null },
   ]);
   assert.equal(snapshots[1]?.limits[0]?.usedPercent, 25);
   await read();
-  assert.equal(requests.length, 3);
+  assert.equal(requests.length, 2);
 });
 
 test('desktop sign-out or loader failure never hides a valid Code subscription', async () => {
@@ -517,14 +513,14 @@ test('desktop sign-out or loader failure never hides a valid Code subscription',
       return { status: 'not-signed-in', source: 'desktop', planLabel: null, limits: [], fetchedAt: null, stale: false, message: 'signed out' };
     },
     loadCodeAccount: async () => codeAccount,
-    fetchImpl: async (url) => String(url).endsWith('/me') ? codePlanResponse() : codeUsageResponse(),
+    fetchImpl: async () => codeUsageResponse(),
   });
   assert.equal((await read())[1]?.status, 'ready');
   failDesktop = true;
   const snapshots = await read();
   assert.equal(snapshots[0]?.source, 'desktop');
   assert.equal(snapshots[0]?.status, 'temporarily-unavailable');
-  assert.equal(snapshots[1]?.planLabel, 'Pro');
+  assert.equal(snapshots[1]?.planLabel, null);
 });
 
 test('each source retains only its own stale data and logout or switching clears only that source', async () => {
@@ -536,7 +532,7 @@ test('each source retains only its own stale data and logout or switching clears
     fetchImpl: async (url) => {
       if (String(url).startsWith('https://www.kimi.com/')) return subscriptionResponse();
       if (failCode) throw new Error('Code offline');
-      return String(url).endsWith('/me') ? codePlanResponse() : codeUsageResponse();
+      return codeUsageResponse();
     },
   });
   await read();
@@ -544,7 +540,7 @@ test('each source retains only its own stale data and logout or switching clears
   let snapshots = await read({ forceRefresh: true });
   assert.equal(snapshots[0]?.stale, false);
   assert.equal(snapshots[1]?.stale, true);
-  assert.equal(snapshots[1]?.planLabel, 'Pro');
+  assert.equal(snapshots[1]?.planLabel, null);
   currentCode = { ...codeAccount, userId: 'bob', accessToken: 'code-bob' };
   snapshots = await read();
   assert.equal(snapshots[0]?.planLabel, 'Free');
@@ -557,81 +553,42 @@ test('each source retains only its own stale data and logout or switching clears
   assert.equal(snapshots[1]?.status, 'not-signed-in');
 });
 
-test('Code plan lookup failures keep useful quota and the same account last successful plan', async () => {
-  let planStatus = 503;
-  let used = 20;
-  const read = createKimiSubscriptionReader(async () => codeAccount, async (url) => String(url).endsWith('/me')
-    ? planStatus === 200 ? codePlanResponse() : new Response(null, { status: planStatus })
-    : codeUsageResponse(used));
-  const initial = await read();
-  assert.equal(initial.status, 'ready');
-  assert.equal(initial.planLabel, null);
-  assert.equal(initial.limits[0]?.usedPercent, 20);
-  assert.equal(initial.stale, false);
-  planStatus = 200;
-  assert.equal((await read({ forceRefresh: true })).planLabel, 'Pro');
-  planStatus = 503;
-  used = 30;
-  const retained = await read({ forceRefresh: true });
-  assert.equal(retained.planLabel, 'Pro');
-  assert.equal(retained.limits[0]?.usedPercent, 30);
-  assert.equal(retained.stale, true);
-  assert.match(retained.message ?? '', /套餐.*上次/);
-  used = 35;
-  const retried = await read();
-  assert.equal(retried.stale, true);
-  assert.equal(retried.limits[0]?.usedPercent, 35);
-  assert.match(retried.message ?? '', /套餐.*上次/);
-  planStatus = 200;
-  used = 40;
-  const recovered = await read();
-  assert.equal(recovered.stale, false);
-  assert.equal(recovered.message, null);
-  assert.equal(recovered.limits[0]?.usedPercent, 40);
-});
-
-test('a Code plan change is never combined with a quota reading from the previous plan', async () => {
-  let newPlan = false;
-  const read = createKimiSubscriptionReader(async () => codeAccount, async (url) => String(url).endsWith('/me')
-    ? codePlanResponse(newPlan ? 'Max' : 'Pro')
-    : newPlan ? new Response(null, { status: 503 }) : codeUsageResponse(70));
-  await read();
-  newPlan = true;
-  const snapshot = await read({ forceRefresh: true });
-  assert.equal(snapshot.planLabel, 'Pro');
-  assert.equal(snapshot.limits[0]?.usedPercent, 70);
-  assert.equal(snapshot.stale, true);
-});
-
-test('Code authentication failure from me clears otherwise valid quota', async () => {
+test('Code only requests usages and preserves quota across refresh, failure and recovery', async () => {
   let status = 200;
-  const read = createKimiSubscriptionReader(async () => codeAccount, async (url) => String(url).endsWith('/me')
-    ? status === 200 ? codePlanResponse() : new Response(null, { status })
-    : codeUsageResponse());
-  await read();
-  status = 401;
-  const snapshot = await read({ forceRefresh: true });
-  assert.equal(snapshot.status, 'expired');
-  assert.equal(snapshot.planLabel, null);
-  assert.deepEqual(snapshot.limits, []);
-});
-
-test('a first paid Code usage failure stays unavailable without becoming a success cache', async () => {
   let calls = 0;
-  let plan = 'Pro';
   const read = createKimiSubscriptionReader(async () => codeAccount, async (url) => {
     calls++;
-    return String(url).endsWith('/me') ? codePlanResponse(plan) : new Response(null, { status: 503 });
+    assert.equal(String(url), 'https://api.kimi.com/coding/v1/usages');
+    return status === 200 ? codeUsageResponse(20) : new Response(null, { status });
   });
-  const paid = await read();
-  assert.equal(paid.status, 'temporarily-unavailable');
-  assert.equal(paid.planLabel, 'Pro');
-  assert.deepEqual(paid.limits, []);
-  await read();
-  assert.equal(calls, 4);
-  plan = 'Free';
-  const free = await read();
-  assert.equal(free.status, 'temporarily-unavailable');
-  assert.equal(free.planLabel, 'Free');
-  assert.deepEqual(free.limits, []);
+  assert.equal((await read()).limits[0]?.usedPercent, 20);
+  assert.equal((await read()).planLabel, null);
+  assert.equal(calls, 1);
+  status = 503;
+  const cached = await read({ forceRefresh: true });
+  assert.equal(cached.stale, true);
+  assert.equal(cached.limits[0]?.usedPercent, 20);
+  status = 200;
+  assert.equal((await read()).stale, false);
+  for (const code of [401, 403]) {
+    status = code;
+    const expired = await read({ forceRefresh: true });
+    assert.equal(expired.status, 'expired');
+    assert.deepEqual(expired.limits, []);
+  }
+});
+
+test('initial Code usage failure stays unavailable and retries without a cached success', async () => {
+  let calls = 0;
+  const read = createKimiSubscriptionReader(async () => codeAccount, async () => {
+    calls++;
+    return new Response(null, { status: 503 });
+  });
+  for (let i = 0; i < 2; i++) {
+    const snapshot = await read();
+    assert.equal(snapshot.status, 'temporarily-unavailable');
+    assert.equal(snapshot.planLabel, null);
+    assert.deepEqual(snapshot.limits, []);
+  }
+  assert.equal(calls, 2);
 });
