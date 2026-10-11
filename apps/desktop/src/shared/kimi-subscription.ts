@@ -1,3 +1,4 @@
+import { subscriptionAmounts, type SubscriptionAmounts } from './subscription-amounts';
 import { canonicalSubscriptionPlanLabel } from './subscription-plan';
 
 export type KimiSubscriptionStatus =
@@ -9,6 +10,7 @@ export type KimiSubscriptionStatus =
   | 'temporarily-unavailable';
 
 export interface KimiRateLimitWindow {
+  amounts?: SubscriptionAmounts;
   id: string;
   label: string;
   usedPercent: number;
@@ -70,9 +72,12 @@ function toWindow(
 ): KimiRateLimitWindow | null {
   const record = asRecord(value);
   if (!record) return null;
-  const used = finiteNumber(record.used);
+  const remaining = finiteNumber(record.remaining);
+  const explicitUsed = finiteNumber(record.used);
   const limit = finiteNumber(record.limit);
-  if (used === null || limit === null || limit <= 0) return null;
+  if (limit === null || limit <= 0) return null;
+  const used = explicitUsed ?? (remaining !== null && remaining >= 0 && remaining <= limit ? limit - remaining : null);
+  if (used === null || used < 0) return null;
   const label = typeof record.name === 'string' && record.name.trim()
     ? record.name.trim()
     : windowLabel(window, fallback);
@@ -80,6 +85,7 @@ function toWindow(
     id: label.toLowerCase().replace(/\s+/g, '-'),
     label,
     usedPercent: boundedPercent(used / limit * 100),
+    amounts: subscriptionAmounts(limit, explicitUsed, remaining),
     resetsAt: resetAt(record.resetTime ?? record.reset_at ?? record.resetAt),
   };
 }
@@ -124,15 +130,7 @@ export function mapKimiUsage(value: unknown): KimiRateLimitWindow[] {
     .sort((left, right) => {
       const rank = (label: string) => label === '5h' ? 0 : label === '7d' ? 1 : 2;
       return rank(left.label) - rank(right.label);
-    })
-    .slice(0, 3);
-}
-
-/** Code `/me` supplies its plan name; numeric tiers differ between domains. */
-export function mapKimiCodePlan(value: unknown): string | null {
-  const root = asRecord(value);
-  const payload = asRecord(root?.data) ?? root;
-  return canonicalSubscriptionPlanLabel(payload?.user_level_name);
+    });
 }
 
 export function kimiRemainingPercent(usedPercent: number): number {
