@@ -17,10 +17,10 @@ test('maps a DeepSeek balance_infos payload into a single CNY balance window', (
   assert.equal(window?.remaining, 12.5);
   assert.equal(window?.total, 12.5);
   assert.equal(window?.usedPercent, 0);
-  assert.equal(window?.description, '余额 ¥12.50 / ¥12.50');
+  assert.equal(window?.description, '余额 ¥12.50');
 });
 
-test('computes the used percentage from granted + topped-up when total is missing', () => {
+test('falls back to the complete balance breakdown when total is missing', () => {
   const result = mapDeepSeekBalance({
     granted_balance: 30,
     topped_up_balance: 20,
@@ -29,7 +29,7 @@ test('computes the used percentage from granted + topped-up when total is missin
   assert.equal(window?.total, 50);
   assert.equal(window?.remaining, 50);
   assert.equal(window?.usedPercent, 0);
-  assert.equal(window?.description, '余额 ¥50.00 / ¥50.00');
+  assert.equal(window?.description, '余额 ¥50.00');
 });
 
 test('returns zero-window snapshot when the DeepSeek payload is missing or malformed', () => {
