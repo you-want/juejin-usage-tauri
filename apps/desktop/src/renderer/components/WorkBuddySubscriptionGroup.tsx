@@ -15,14 +15,14 @@ export function WorkBuddySubscriptionGroup({
         <WorkBuddySubscriptionCard
           region="global"
           title="Workbuddy"
-          fetcher={() => window.tud.getWorkBuddyGlobalSubscription() as Promise<WorkBuddySubscriptionSnapshot>}
+          fetcher={(options) => window.tud.getWorkBuddyGlobalSubscription(options) as Promise<WorkBuddySubscriptionSnapshot>}
         />
       ) : null}
       {showMainland ? (
         <WorkBuddySubscriptionCard
           region="mainland"
           title="Workbuddy CN"
-          fetcher={() => window.tud.getWorkBuddyMainlandSubscription() as Promise<WorkBuddySubscriptionSnapshot>}
+          fetcher={(options) => window.tud.getWorkBuddyMainlandSubscription(options) as Promise<WorkBuddySubscriptionSnapshot>}
         />
       ) : null}
     </>

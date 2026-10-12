@@ -1,3 +1,4 @@
+import { nonNegativeNumber } from './subscription-amounts';
 /** Read-only subset of the local DeepSeek account balance snapshot. */
 export type DeepSeekSubscriptionStatus =
   | 'ready'
@@ -8,21 +9,25 @@ export type DeepSeekSubscriptionStatus =
   | 'temporarily-unavailable';
 
 export interface DeepSeekBalanceWindow {
+  granted?: number;
+  toppedUp?: number;
+  available?: boolean;
   id: 'balance-cny';
   label: string;
-  /** Percentage used to drive the tray ring (used / total * 100, clamped). */
+  /** Legacy compatibility field; a balance has no quota denominator. Do not render as progress. */
   usedPercent: number;
-  /** Free-form description shown beneath the ring, e.g. "余额 ¥X.XX / ¥Y.YY". */
+  /** Literal current balance summary, e.g. "余额 ¥X.XX". */
   description: string | null;
-  /** Remaining CNY amount, formatted to two decimals; null when unknown. */
+  /** Remaining CNY amount; null when unknown. */
   remaining: number | null;
-  /** Total CNY amount; null when unknown. */
+  /** Current total CNY balance, not a subscription allowance. */
   total: number | null;
   /** Unix timestamp in seconds (DeepSeek currently returns no expiry, so always null). */
   resetsAt: number | null;
 }
 
 export interface DeepSeekSubscriptionSnapshot {
+  source?: string;
   status: DeepSeekSubscriptionStatus;
   planLabel: string | null;
   limits: DeepSeekBalanceWindow[];
@@ -39,8 +44,7 @@ function asRecord(value: unknown): Record<string, unknown> | null {
 }
 
 function finiteNumber(value: unknown): number | null {
-  const number = Number(value);
-  return Number.isFinite(number) ? number : null;
+  return nonNegativeNumber(value);
 }
 
 function boundedPercent(used: number | null, total: number | null): number {
@@ -90,13 +94,12 @@ export function mapDeepSeekBalance(value: unknown): Pick<
     cnyRecord?.topped_up_balance ?? cnyRecord?.toppedUpBalance ?? root.topped_up_balance,
   );
 
-  const remaining = [grantedBalance, toppedUpBalance].some((value) => value !== null)
-    ? Math.max(0, (grantedBalance ?? 0) + (toppedUpBalance ?? 0))
-    : totalBalance;
+  const remaining = totalBalance ?? (grantedBalance !== null && toppedUpBalance !== null
+    ? grantedBalance + toppedUpBalance : null);
 
   const total = totalBalance ?? remaining;
-  const description = total !== null && remaining !== null
-    ? `余额 ${formatCurrency(remaining)} / ${formatCurrency(total)}`
+  const description = remaining !== null
+    ? `余额 ${formatCurrency(remaining)}`
     : null;
 
   const window: DeepSeekBalanceWindow = {
@@ -110,6 +113,9 @@ export function mapDeepSeekBalance(value: unknown): Pick<
     remaining,
     total,
     resetsAt: null,
+    ...(grantedBalance === null ? {} : { granted: grantedBalance }),
+    ...(toppedUpBalance === null ? {} : { toppedUp: toppedUpBalance }),
+    ...(typeof root.is_available === 'boolean' ? { available: root.is_available } : {}),
   };
 
   return { planLabel: null, limits: [window] };

@@ -21,6 +21,22 @@ const auth = (account = 'one', expiry = 2000000000) => JSON.stringify({
   auth_mode: 'chatgpt', tokens: { account_id: account, access_token: jwt({ exp: expiry }), id_token: jwt({ 'https://api.openai.com/auth': { chatgpt_account_id: 'fallback', chatgpt_plan_type: 'plus' } }) },
 });
 const payload = { plan_type: 'plus', rate_limit: { primary_window: { used_percent: 12, limit_window_seconds: 18000, reset_at: 1800000000 }, secondary_window: { used_percent: 34, limit_window_seconds: 604800 } } };
+test('reads reset card counts from the usage response, preserving zero and rejecting invalid counts', () => {
+  for (const count of [0, 2, '2']) {
+    assert.deepEqual(mapCodexUsage({ rate_limit_reset_credits: { available_count: count, secret: 'hidden' } }).resetCredits, { availableCount: Number(count) });
+  }
+  for (const count of [null, undefined, '', false, -1, 1.5, Infinity, NaN]) {
+    assert.equal(mapCodexUsage({ rate_limit_reset_credits: { available_count: count } }).resetCredits, undefined);
+  }
+  assert.equal(mapCodexUsage({}).resetCredits, undefined);
+});
+
+test('passes real reset card counts through the subscription reader', async () => {
+  const read = createCodexSubscriptionReader({ readAuth: async () => auth(), now: () => 1800000000000,
+    fetch: async () => Response.json({ ...payload, rate_limit_reset_credits: { available_count: 2 } }),
+  });
+  assert.deepEqual((await read()).resetCredits, { availableCount: 2 });
+});
 test('maps wham windows without inventing missing percentages', () => {
   assert.equal(mapCodexUsage(payload).fiveHour?.usedPercent, 12);
   assert.equal(mapCodexUsage(payload).weekly?.usedPercent, 34);

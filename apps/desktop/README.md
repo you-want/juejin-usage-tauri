@@ -88,7 +88,7 @@ apps/desktop/
 
 订阅区统一显示一张「Kimi」卡片，桌面版和 Code 仅作为底层独立读取来源。优先使用新鲜、带有效额度与套餐名的完整读数；Code 同时提供月度共享额度和滚动限额时可在同一卡片展示，其他情况下优先使用确认的共享额度。一端没有登录或读取失败时，可使用另一端的有效读数；不会拼接不同来源的套餐与额度，也不会把共享池相加。
 
-只登录 Code 时无需打开或登录桌面版。Code 使用官方 `/me` 返回的套餐名（包括 Free、Go、Plus、Pro、Max 及未知新名称），使用 `/usages` 返回的 5 小时、周限额及可选月度共享额度；缺失字段不补零，`limit_month_code` 是月度用量构成，不与共享总量相加。两端缓存和账号切换仍独立；付费套餐首次读取失败、没有有效读数时隐藏卡片，窗口再次聚焦后自动重试。已成功读取的同账号数据可在网络异常时保留并标为「旧」，已确认的 Free 套餐信息、登录或配置异常仍可展示提示并重试。
+只登录 Code 时无需打开或登录桌面版。Code 仅请求 main 已验证的 `/usages`，获取 5 小时、周限额及可选月度共享额度；缺失字段不补零，`limit_month_code` 是月度用量构成，不与共享总量相加。两端缓存和账号切换仍独立；Code 首次读取失败、没有有效读数时隐藏卡片，窗口再次聚焦后自动重试。已成功读取的同账号数据可在网络异常时保留并标为「旧」，已确认的 Free 套餐信息、登录或配置异常仍可展示提示并重试。
 
 桌面版数据默认位于 macOS 的 `~/Library/Application Support/kimi-desktop`、Windows 的 `%APPDATA%/kimi-desktop`、Linux 的 `$XDG_CONFIG_HOME/kimi-desktop`（未设置时为 `~/.config/kimi-desktop`），可用 `KIMI_DESKTOP_HOME` 覆盖。支持 `daimon-storage.json` 中的绝对 `shareDir` 迁移路径。
 
@@ -181,3 +181,7 @@ pnpm dev:desktop
 - Claude 使用本机 Claude Code 的 `-p /usage --output-format json`；在临时目录运行，关闭工具、MCP、用户/项目 settings 和会话保存，应用不读取 Keychain 或调用 Anthropic OAuth usage 接口。官方账户校验仍排除自定义 provider。
 - 两个渠道共享主窗口与托盘的一分钟内存缓存、合并并发请求；账号改变或认证失效时不沿用旧额度。临时失败可显示同账号上次额度和旧数据标记。
 - 有登录记录但读取失败时保留卡片并展示原因；没有登录记录的渠道隐藏。
+
+### DeepSeek Harness 余额
+
+优先只读 `$DSH_HOME/.credentials.yaml`（默认 `~/.dsh/.credentials.yaml`）中的官方账号 grant，通过 `platform.deepseek.com/api/v0/users/get_user_summary` 读取 CNY 充值与赠送余额；不会刷新、覆盖或删除 Harness 凭证。未找到账号 grant 时兼容 Harness 的 `refs.DEEPSEEK_API_KEY`，再回退到原有 DeepSeek / OpenCode 凭证。显示接口返回的真实余额。

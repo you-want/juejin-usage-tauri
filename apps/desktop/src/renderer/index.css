@@ -136,7 +136,30 @@
   }
 }
 
+.subscription-usage-card {
+  transition: opacity 180ms ease-out;
+}
+
+.subscription-usage-card[data-visible="false"] {
+  opacity: 0;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .subscription-usage-card[data-visible="true"] {
+    animation: subscription-card-appear 220ms ease-out;
+  }
+}
+
+@keyframes subscription-card-appear {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
 @media (prefers-reduced-motion: reduce) {
+  .subscription-usage-card {
+    transition: none;
+  }
+
   ::view-transition-old(root),
   ::view-transition-new(root) {
     animation: none;

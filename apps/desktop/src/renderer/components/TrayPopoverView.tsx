@@ -391,7 +391,7 @@ export function TrayPopoverView() {
           <h1 className="text-md text-foreground">用量概览</h1>
           <ThemeToggle />
         </div>
-        <SubscriptionUsageGrid className="grid-cols-2 gap-2.5" />
+        <SubscriptionUsageGrid className="grid-cols-1 gap-2.5" />
         <div className="flex min-w-0 items-center gap-2">
           <Tabs
             className="w-fit shrink-0 text-center"

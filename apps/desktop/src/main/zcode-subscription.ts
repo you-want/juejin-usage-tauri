@@ -5,6 +5,7 @@ import { homedir, userInfo } from 'node:os';
 import path from 'node:path';
 import {
   mapZcodeQuota,
+  mapZcodeResetCredits,
   zcodePlanLabel,
   zcodeResponseAuthFailed,
   type ZcodeSubscriptionSnapshot,
@@ -29,6 +30,7 @@ interface ZcodeAccountCredentials {
    * of the zcode JWT that authorizes the billing endpoint.
    */
   quotaToken?: string;
+  resetAuth?: { zcodeToken: string; platformToken: string };
   provider: 'zai' | 'bigmodel';
 }
 
@@ -131,6 +133,7 @@ async function readZcodeCredentials(): Promise<ZcodeAccountCredentials | null> {
     const quotaToken = [`oauth:${active}:access_token`, 'oauth:bigmodel:access_token']
       .map((key) => decryptZcodeCredential(root?.[key]))
       .find((value) => typeof value === 'string' && value.length > 20) ?? undefined;
+    const resetPlatformToken = decryptZcodeCredential(root?.[`oauth:${active}:access_token`]);
     const primary = token && token.length > 20
       ? token
       : quotaToken && quotaToken.length > 20
@@ -140,6 +143,8 @@ async function readZcodeCredentials(): Promise<ZcodeAccountCredentials | null> {
     return {
       token: primary,
       quotaToken,
+      ...(token && token.length > 20 && resetPlatformToken && resetPlatformToken.length > 20
+        ? { resetAuth: { zcodeToken: token, platformToken: resetPlatformToken } } : {}),
       provider: active,
     };
   } catch {
@@ -244,9 +249,10 @@ async function fetchFreshZcodeSubscription(): Promise<ZcodeSubscriptionSnapshot>
   }
 
   try {
-    const [billing, quota] = await Promise.all([
+    const [billing, quota, resetCredits] = await Promise.all([
       fetchJson(ZCODE_BILLING_URL, credentials.token),
       fetchJson(quotaUrl(credentials.provider), credentials.quotaToken ?? credentials.token),
+      readZcodeResetCredits(credentials),
     ]);
     // BigModel wraps auth failures in an HTTP 200 body (`code: 401`), so the
     // body-level signal has to participate in the expiry decision.
@@ -269,6 +275,7 @@ async function fetchFreshZcodeSubscription(): Promise<ZcodeSubscriptionSnapshot>
     }
     const snapshot: ZcodeSubscriptionSnapshot = {
       status: 'ready',
+      ...(resetCredits ? { resetCredits } : {}),
       planLabel: extractBillingPlan(billing.value) ?? mapped.planLabel,
       provider: credentials.provider,
       limits: mapped.limits,
@@ -301,3 +308,22 @@ export async function readZcodeSubscription(
 }
 
 export { extractBillingPlan };
+
+/** Read-only status query. No opportunity, use, or history mutation endpoints. */
+export async function readZcodeResetCredits(
+  credentials: ZcodeAccountCredentials,
+  fetcher: typeof fetch = fetch,
+): Promise<ZcodeSubscriptionSnapshot['resetCredits']> {
+  if (!credentials.resetAuth) return undefined;
+  try {
+    const response = await fetcher('https://zcode.z.ai/api/v1/coding-plan/reset/status', {
+      method: 'GET', redirect: 'error', signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      headers: {
+        Authorization: `Bearer ${credentials.resetAuth.zcodeToken}`,
+        'X-Bigmodel-Authorization': credentials.resetAuth.platformToken,
+        'Bigmodel-Target-Type': 'PERSONAL', Accept: 'application/json',
+      },
+    });
+    return response.ok ? mapZcodeResetCredits(await response.json()) : undefined;
+  } catch { return undefined; }
+}

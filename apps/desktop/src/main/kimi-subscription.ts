@@ -5,7 +5,6 @@ import { homedir } from 'node:os';
 import path from 'node:path';
 import { readKimiDesktopContext, type KimiDesktopContext } from './kimi-desktop-context';
 import {
-  mapKimiCodePlan,
   mapKimiDesktopSubscription,
   mapKimiUsage,
   type KimiSubscriptionSnapshot,
@@ -197,35 +196,25 @@ async function fetchKimiCodeSubscription(
   fetchImpl: typeof fetch,
   previous: KimiSubscriptionSnapshot | null,
 ): Promise<KimiSubscriptionSnapshot> {
-  const results = await Promise.allSettled(['usages', 'me'].map(async (endpoint) => {
-    const response = await fetchImpl(`${account.origin}/${endpoint}`, {
-      method: 'GET',
-      headers: { Accept: 'application/json', Authorization: `Bearer ${account.accessToken}` },
-      redirect: 'error',
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-    });
-    return { status: response.status, value: response.ok ? await response.json() as unknown : null };
-  }));
-  if (results.some((result) => result.status === 'fulfilled' && (result.value.status === 401 || result.value.status === 403))) {
+  const response = await fetchImpl(`${account.origin}/usages`, {
+    method: 'GET',
+    headers: { Accept: 'application/json', Authorization: `Bearer ${account.accessToken}` },
+    redirect: 'error',
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+  });
+  if (response.status === 401 || response.status === 403) {
     return unavailable('expired', 'Kimi Code 登录已过期，请重新登录', 'code');
   }
-  const [usage, profile] = results;
-  const limits = usage?.status === 'fulfilled' ? mapKimiUsage(usage.value.value) : [];
-  const currentPlan = profile?.status === 'fulfilled' ? mapKimiCodePlan(profile.value.value) : null;
-  const planLabel = currentPlan ?? previous?.planLabel ?? null;
+  const limits = response.ok ? mapKimiUsage(await response.json()) : [];
   if (limits.length > 0) {
-    const retainedPlan = currentPlan === null && planLabel !== null;
     return {
-      status: 'ready', source: 'code', planLabel, limits,
-      fetchedAt: Math.floor(Date.now() / 1_000), stale: retainedPlan,
-      message: retainedPlan ? '套餐名称沿用上次读取结果，额度已更新' : null,
+      status: 'ready', source: 'code', planLabel: null, limits,
+      fetchedAt: Math.floor(Date.now() / 1_000), stale: false, message: null,
     };
   }
   const message = '暂时无法读取 Kimi Code 订阅额度';
-  if (previous) return { ...previous, stale: true, message };
-  // A verified plan alone is not a successful quota reading. Free can still be
-  // shown by the UI, while an initial paid-plan failure stays unavailable.
-  return { ...unavailable('temporarily-unavailable', message, 'code'), planLabel };
+  return previous ? { ...previous, stale: true, message }
+    : unavailable('temporarily-unavailable', message, 'code');
 }
 
 async function fetchKimiSubscription(

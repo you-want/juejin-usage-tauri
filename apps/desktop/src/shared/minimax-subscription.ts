@@ -1,3 +1,4 @@
+import { nonNegativeNumber, subscriptionAmounts, type SubscriptionAmounts } from './subscription-amounts';
 import { canonicalSubscriptionPlanLabel } from './subscription-plan';
 
 /** Read-only subset of the local MiniMax Code account and rate-limit snapshot. */
@@ -12,6 +13,9 @@ export type MiniMaxSubscriptionStatus =
 
 export interface MiniMaxRateLimitWindow {
   id: 'five-hour' | 'weekly';
+  amounts?: SubscriptionAmounts;
+  unlimited?: boolean;
+  modelName?: string;
   label: string;
   usedPercent: number;
   /** Unix timestamp in seconds. */
@@ -24,6 +28,7 @@ export interface MiniMaxSubscriptionSnapshot {
   /** 'global' | 'mainland' | null — which official region the snapshot belongs to. */
   region: 'global' | 'mainland' | null;
   limits: MiniMaxRateLimitWindow[];
+  modelLimits?: MiniMaxRateLimitWindow[];
   /** Unix timestamp in seconds. */
   fetchedAt: number | null;
   stale: boolean;
@@ -40,9 +45,12 @@ function boundedPercent(value: unknown): number | null {
   // The account API reports percentages as strings like "4%"; those are
   // already 0..100 and must not go through the fraction heuristic below.
   if (typeof value === 'string' && value.trim().endsWith('%')) {
-    const percent = Number(value.trim().slice(0, -1));
+    const text = value.trim().slice(0, -1).trim();
+    if (!text) return null;
+    const percent = Number(text);
     return Number.isFinite(percent) ? Math.round(Math.min(100, Math.max(0, percent)) * 100) / 100 : null;
   }
+  if (typeof value !== 'number' && (typeof value !== 'string' || !value.trim())) return null;
   const number = Number(value);
   if (!Number.isFinite(number)) return null;
   // Proto3 omits scalar zeros. Accept either 0..1 fractions or 0..100 percentages.
@@ -94,11 +102,12 @@ function pickWindow(raw: RawMiniMaxWindow | null): MiniMaxRateLimitWindow | null
 /** Normalize MiniMax Code's Coding Plan `token_plan/remains` response. */
 export function mapMiniMaxQuota(value: unknown): Pick<
   MiniMaxSubscriptionSnapshot,
-  'planLabel' | 'limits'
+  'planLabel' | 'limits' | 'modelLimits'
 > {
   const root = asRecord(value);
   const data = asRecord(root?.data) ?? root;
   if (!data) return { planLabel: null, limits: [] };
+  if (Array.isArray(data.model_remains)) return mapMiniMaxAccountQuota({ token_plan_tier: data.plan ?? data.plan_name }, data);
 
   const planLabel = miniMaxPlanLabel(
     data.plan ?? data.planType ?? data.level ?? data.plan_name ?? data.planName,
@@ -141,44 +150,51 @@ export function miniMaxResponseAuthFailed(value: unknown): boolean {
   return code === 401 || code === 403 || code === 1002 || code === 1004;
 }
 
-interface RawMavisRemainsEntry {
-  model_name?: unknown;
-  end_time?: unknown;
-  weekly_end_time?: unknown;
-  current_interval_used_percent?: unknown;
-  current_interval_status?: unknown;
-  current_weekly_used_percent?: unknown;
-}
-
-/**
- * Normalize the mcode account API pair: `commerce/get_membership_info` for the
- * Token Plan tier and `token_plan/remains_percent` for the 5h/weekly windows.
- */
+/** Preserve each reported model group; only the general pool drives the summary. */
 export function mapMiniMaxAccountQuota(
   membership: unknown,
   remains: unknown,
-): Pick<MiniMaxSubscriptionSnapshot, 'planLabel' | 'limits'> {
+): Pick<MiniMaxSubscriptionSnapshot, 'planLabel' | 'limits' | 'modelLimits'> {
   const member = asRecord(membership);
   const planLabel = miniMaxPlanLabel(member?.token_plan_tier ?? member?.plan_name);
-
   const root = asRecord(remains);
   const entries = Array.isArray(root?.model_remains) ? root.model_remains : [];
-  const general = entries.find((item) => asRecord(item)?.model_name === 'general');
-  const entry = asRecord(general ?? entries[0]) as RawMavisRemainsEntry | null;
-  if (!entry) return { planLabel, limits: [] };
-
-  const limits: MiniMaxRateLimitWindow[] = [];
-  // status 3 marks an unlimited interval; render it as a fresh window.
-  const unlimitedFiveHour = Number(entry.current_interval_status) === 3;
-  const fiveHour = unlimitedFiveHour
-    ? 0
-    : boundedPercent(entry.current_interval_used_percent);
-  if (fiveHour !== null) {
-    limits.push({ id: 'five-hour', label: '5h', usedPercent: fiveHour, resetsAt: resetAt(entry.end_time) });
+  const modelLimits: MiniMaxRateLimitWindow[] = [];
+  for (const item of entries) {
+    const entry = asRecord(item);
+    if (!entry) continue;
+    const modelName = typeof entry.model_name === 'string' ? entry.model_name.trim() : '';
+    if (modelName !== 'general' && entry.current_interval_status === 3 && entry.current_weekly_status === 3 && entry.current_interval_total_count === 0 && entry.current_weekly_total_count === 0) continue;
+    for (const [id, label, prefix, end] of [
+      ['five-hour', '5h', 'current_interval', 'end_time'],
+      ['weekly', '7d', 'current_weekly', 'weekly_end_time'],
+    ] as const) {
+      const status = nonNegativeNumber(entry[`${prefix}_status`]);
+      const unlimited = status === 3;
+      const total = nonNegativeNumber(entry[`${prefix}_total_count`]);
+      const used = nonNegativeNumber(entry[`${prefix}_usage_count`]);
+      // remains uses 0..100 remaining_percent; remains_percent uses used_percent.
+      const left = nonNegativeNumber(entry[`${prefix}_remaining_percent`]);
+      const usedPercent = unlimited ? 0 : status === 2 ? 100
+        : boundedPercent(entry[`${prefix}_used_percent`])
+          ?? (left === null ? null : Math.min(100, Math.max(0, 100 - left)));
+      if (usedPercent === null) continue;
+      // Some versions report remaining count in usage_count. Publish counts
+      // only when one interpretation agrees with the independently reported ratio.
+      let amounts: SubscriptionAmounts | undefined;
+      if (!unlimited && total !== null && total > 0 && used !== null && used <= total) {
+        const candidates = [used, total - used].sort((a, b) => Math.abs(a / total * 100 - usedPercent) - Math.abs(b / total * 100 - usedPercent));
+        const normalizedUsed = candidates[0]!;
+        if (Math.abs(normalizedUsed / total * 100 - usedPercent) <= 1) amounts = subscriptionAmounts(total, normalizedUsed, total - normalizedUsed, '次');
+      }
+      modelLimits.push({ id, label, usedPercent, resetsAt: resetAt(entry[end]),
+        ...(modelName ? { modelName } : {}),
+        ...(unlimited ? { unlimited: true } : {}),
+        ...(amounts ? { amounts } : {}),
+      });
+    }
   }
-  const weekly = boundedPercent(entry.current_weekly_used_percent);
-  if (weekly !== null) {
-    limits.push({ id: 'weekly', label: '7d', usedPercent: weekly, resetsAt: resetAt(entry.weekly_end_time) });
-  }
-  return { planLabel, limits };
+  const modelName = (modelLimits.find((item) => item.modelName === 'general') ?? modelLimits[0])?.modelName;
+  const limits = modelLimits.filter((item) => item.modelName === modelName);
+  return { planLabel, limits, ...(modelLimits.length ? { modelLimits } : {}) };
 }

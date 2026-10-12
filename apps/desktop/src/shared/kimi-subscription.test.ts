@@ -1,16 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { kimiRemainingPercent, mapKimiCodePlan, mapKimiDesktopSubscription, mapKimiUsage } from './kimi-subscription';
+import { kimiRemainingPercent, mapKimiDesktopSubscription, mapKimiUsage } from './kimi-subscription';
 
-test('reads Code plan names without guessing from numeric membership levels', () => {
-  for (const name of ['Free', 'Go', 'Plus', 'Pro', 'Max', 'Kimi Future']) {
-    assert.equal(mapKimiCodePlan({ user_id: 'code-user', user_level_name: name, user_level: 20 }), name);
-  }
-  assert.equal(mapKimiCodePlan({ data: { user_level_name: ' plus ' } }), 'Plus');
-  for (const value of [null, {}, { user_level: 20 }, { user_level_name: '' }, { user_level_name: 20 }]) {
-    assert.equal(mapKimiCodePlan(value), null);
-  }
-});
 
 test('keeps monthly shared total separate from its Code usage contribution', () => {
   const limits = mapKimiUsage({ usages: {

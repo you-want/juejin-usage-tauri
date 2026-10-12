@@ -2,6 +2,8 @@ import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import path from 'node:path';
+import { createHash } from 'node:crypto';
+import { parse as parseYaml } from 'yaml';
 import {
   mapDeepSeekBalance,
   type DeepSeekSubscriptionSnapshot,
@@ -13,10 +15,12 @@ const OFFICIAL_HOSTS = new Set(['https://api.deepseek.com']);
 
 interface DeepSeekCredentials {
   token: string;
+  kind?: 'harness-account' | 'harness-api-key';
 }
 
 let lastSuccess: DeepSeekSubscriptionSnapshot | null = null;
 let requestInFlight: Promise<DeepSeekSubscriptionSnapshot> | null = null;
+let activeCredentialKey: string | null = null;
 
 function expandHome(value: string): string {
   if (value === '~') return homedir();
@@ -90,6 +94,33 @@ export function parseDeepSeekCredentials(value: unknown): DeepSeekCredentials | 
   return null;
 }
 
+/** Read Harness's documented versioned store without modifying its grant. */
+export function parseDeepSeekHarnessCredentials(text: string): DeepSeekCredentials | null {
+  try {
+    const root = asRecord(parseYaml(text, { maxAliasCount: 0 }));
+    if (root?.version !== 1) return null;
+    const record = asRecord(asRecord(root.records)?.['deepseek-account-platform/default']);
+    const payload = asRecord(record?.payload);
+    if (record?.kind === 'grant' && payload?.version === 1
+      && payload.issuer === 'https://platform.deepseek.com'
+      && typeof payload.token === 'string' && /^[\x21-\x7e]+$/.test(payload.token)) {
+      return { token: payload.token, kind: 'harness-account' };
+    }
+    const apiKey = asRecord(root.refs)?.DEEPSEEK_API_KEY;
+    return typeof apiKey === 'string' && apiKey.trim().length > 12
+      ? { token: apiKey.trim(), kind: 'harness-api-key' } : null;
+  } catch { return null; }
+}
+
+async function readHarnessCredentials(): Promise<DeepSeekCredentials | null> {
+  const home = process.env.DSH_HOME?.trim();
+  try {
+    return parseDeepSeekHarnessCredentials(await readFile(
+      path.join(home ? expandHome(home) : path.join(homedir(), '.dsh'), '.credentials.yaml'), 'utf8',
+    ));
+  } catch { return null; }
+}
+
 async function readLocalCredentials(): Promise<DeepSeekCredentials | null> {
   const home = deepseekHome();
   const candidates = [
@@ -132,38 +163,85 @@ export function hasCustomDeepSeekConfiguration(env: NodeJS.ProcessEnv): boolean 
   return Boolean(baseUrl) && !OFFICIAL_HOSTS.has(baseUrl);
 }
 
-async function fetchBalance(token: string): Promise<{ ok: boolean; status: number; value: unknown }> {
-  const origin = 'https://api.deepseek.com';
-  const response = await fetch(`${origin}/user/balance`, {
-    headers: { Accept: 'application/json', Authorization: `Bearer ${token}` },
+export async function fetchDeepSeekBalance(credentials: DeepSeekCredentials, fetcher: typeof fetch = fetch): Promise<{ ok: boolean; status: number; value: unknown }> {
+  const account = credentials.kind === 'harness-account';
+  const response = await fetcher(account
+    ? 'https://platform.deepseek.com/api/v0/users/get_user_summary'
+    : 'https://api.deepseek.com/user/balance', {
+    headers: account
+      ? { Accept: 'application/json', 'x-dsh-auth-token': credentials.token }
+      : { Accept: 'application/json', Authorization: `Bearer ${credentials.token}` },
     signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    redirect: 'error',
   });
+  const value: unknown = response.ok ? await response.json() : null;
+  if (account && response.ok) {
+    const envelope = asRecord(value), data = asRecord(envelope?.data);
+    if (envelope?.code === 40003) return { ok: false, status: 401, value: null };
+    if (envelope?.code !== 0 || data?.biz_code !== 0) return { ok: false, status: 502, value: null };
+    return { ok: true, status: response.status, value: mapHarnessWalletBalance(data.biz_data) };
+  }
   return {
     ok: response.ok,
     status: response.status,
-    value: response.ok ? await response.json() : null,
+    value,
   };
 }
 
-async function fetchFreshDeepSeekSubscription(): Promise<DeepSeekSubscriptionSnapshot> {
+/** Convert the account's CNY recharge + bonus wallets to the API balance shape. */
+export function mapHarnessWalletBalance(value: unknown): unknown {
+  const data = asRecord(value);
+  const sum = (wallets: unknown): number | null => {
+    if (!Array.isArray(wallets)) return null;
+    let total = 0;
+    for (const item of wallets) {
+      const wallet = asRecord(item);
+      if (wallet?.currency !== 'CNY') continue;
+      const raw = wallet.balance;
+      if ((typeof raw !== 'string' || !raw.trim()) && typeof raw !== 'number') return null;
+      const amount = Number(raw);
+      if (!Number.isFinite(amount) || amount < 0) return null;
+      total += amount;
+    }
+    return Number.isFinite(total) ? total : null;
+  };
+  const toppedUp = sum(data?.normal_wallets), granted = sum(data?.bonus_wallets);
+  if (toppedUp === null || granted === null) return null;
+  return { balance_infos: [{ currency: 'CNY', total_balance: toppedUp + granted, granted_balance: granted, topped_up_balance: toppedUp }] };
+}
+
+async function fetchFreshDeepSeekSubscription(forceRefresh = false): Promise<DeepSeekSubscriptionSnapshot> {
+  const harness = await readHarnessCredentials();
+  if (harness) return queryBalance(harness, forceRefresh);
   if (!existsSync(deepseekHome())) {
     const openCodeCredentials = await readOpenCodeAuth();
     if (!openCodeCredentials) {
+      lastSuccess = null;
       return unavailable('not-installed', '未检测到本机 DeepSeek');
     }
-    return queryBalance(openCodeCredentials);
+    return queryBalance(openCodeCredentials, forceRefresh);
   }
 
   const localCredentials = await readLocalCredentials();
   const credentials = localCredentials ?? (await readOpenCodeAuth());
-  if (!credentials) return unavailable('not-signed-in', '请先登录 DeepSeek');
-  return queryBalance(credentials);
+  if (!credentials) {
+    lastSuccess = null;
+    return unavailable('not-signed-in', '请先登录 DeepSeek');
+  }
+  return queryBalance(credentials, forceRefresh);
 }
 
-async function queryBalance(credentials: DeepSeekCredentials): Promise<DeepSeekSubscriptionSnapshot> {
+async function queryBalance(credentials: DeepSeekCredentials, forceRefresh = false): Promise<DeepSeekSubscriptionSnapshot> {
+  const credentialKey = createHash('sha256').update(`${credentials.kind ?? 'api-key'}:${credentials.token}`).digest('hex');
+  if (credentialKey !== activeCredentialKey) {
+    activeCredentialKey = credentialKey;
+    lastSuccess = null;
+  }
+  if (!forceRefresh && lastSuccess?.fetchedAt && Date.now() - lastSuccess.fetchedAt * 1_000 <= CACHE_TTL_MS) return lastSuccess;
   try {
-    const response = await fetchBalance(credentials.token);
+    const response = await fetchDeepSeekBalance(credentials);
     if (response.status === 401 || response.status === 403) {
+      lastSuccess = null;
       return unavailable('expired', 'DeepSeek 登录已过期，请重新登录');
     }
     if (response.status === 429) {
@@ -186,6 +264,7 @@ async function queryBalance(credentials: DeepSeekCredentials): Promise<DeepSeekS
       fetchedAt: Math.floor(Date.now() / 1_000),
       stale: false,
       message: null,
+      source: credentials.kind === 'harness-account' ? 'DeepSeek Harness 账号余额' : 'DeepSeek API 余额',
     };
     lastSuccess = snapshot;
     return snapshot;
@@ -201,12 +280,8 @@ export async function readDeepSeekSubscription(
   if (hasCustomDeepSeekConfiguration(process.env)) {
     return unavailable('custom-provider', '自定义模型无法获取余额');
   }
-  const cacheAge = lastSuccess?.fetchedAt
-    ? Date.now() - lastSuccess.fetchedAt * 1_000
-    : Number.POSITIVE_INFINITY;
-  if (!options.forceRefresh && lastSuccess && cacheAge <= CACHE_TTL_MS) return lastSuccess;
   if (requestInFlight) return requestInFlight;
-  requestInFlight = fetchFreshDeepSeekSubscription();
+  requestInFlight = fetchFreshDeepSeekSubscription(options.forceRefresh);
   try {
     return await requestInFlight;
   } finally {

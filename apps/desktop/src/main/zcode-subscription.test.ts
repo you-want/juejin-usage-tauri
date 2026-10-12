@@ -4,7 +4,7 @@ import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
-import { decryptZcodeCredential, extractBillingPlan, readOpenCodeAuth } from './zcode-subscription';
+import { readZcodeResetCredits, decryptZcodeCredential, extractBillingPlan, readOpenCodeAuth } from './zcode-subscription';
 
 function encrypt(plain: string, secret: string): string {
   const nonce = randomBytes(12);
@@ -59,3 +59,24 @@ test('reads Z.ai and BigModel credentials from OpenCode auth.json', async (t) =>
   delete process.env.OPENCODE_HOME;
 });
 
+
+test('reset cards use only GET with both local account tokens, failures remain unknown', async () => {
+  let calls = 0;
+  const fetcher: typeof fetch = async (url, init) => {
+    calls++;
+    assert.equal(url, 'https://zcode.z.ai/api/v1/coding-plan/reset/status');
+    assert.equal(init?.method, 'GET');
+    assert.equal(init?.redirect, 'error');
+    const headers = init?.headers as Record<string, string>;
+    assert.equal(headers.Authorization, 'Bearer fake-zcode');
+    assert.equal(headers['X-Bigmodel-Authorization'], 'fake-platform');
+    return Response.json({ code: 0, data: { available_five_hour_resets: [], available_week_resets: [{ expire_at: 1900000000 }] } });
+  };
+  const credentials = { token: 'fake', provider: 'bigmodel' as const };
+  assert.equal(await readZcodeResetCredits(credentials, fetcher), undefined);
+  assert.equal(calls, 0);
+  const result = await readZcodeResetCredits({ ...credentials, resetAuth: { zcodeToken: 'fake-zcode', platformToken: 'fake-platform' } }, fetcher);
+  assert.equal(result?.weekly.length, 1);
+  assert.equal(calls, 1);
+  assert.equal(await readZcodeResetCredits({ ...credentials, resetAuth: { zcodeToken: 'fake-zcode', platformToken: 'fake-platform' } }, async () => { throw new Error('timeout'); }), undefined);
+});

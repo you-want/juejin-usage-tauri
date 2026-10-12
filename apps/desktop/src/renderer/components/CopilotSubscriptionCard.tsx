@@ -1,3 +1,4 @@
+import { subscriptionDetails, subscriptionPoolKey } from '../lib/subscription-details';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { CopilotSubscriptionSnapshot } from '../../shared/copilot-subscription';
 import { SubscriptionUsageCard, type SubscriptionUsageMetric } from './SubscriptionUsageCard';
@@ -18,11 +19,12 @@ export function CopilotSubscriptionCard() {
   const [loading, setLoading] = useState(true);
   const requestInFlight = useRef(false);
 
-  const reload = useCallback(async () => {
+  const reload = useCallback(async (forceRefresh = false) => {
     if (requestInFlight.current) return;
     requestInFlight.current = true;
+    setLoading(true);
     try {
-      setSnapshot(await window.tud.getCopilotSubscription());
+      setSnapshot(await window.tud.getCopilotSubscription({ forceRefresh }));
     } catch {
       setSnapshot({
         ...INITIAL_SNAPSHOT,
@@ -43,6 +45,7 @@ export function CopilotSubscriptionCard() {
 
   const metrics: SubscriptionUsageMetric[] = snapshot.limits.map((limit) => ({
     color: limit.id === 'completions' ? '#7dcf00' : '#2b7eff',
+    poolKey: subscriptionPoolKey('GitHub Copilot', limit),
     label: limit.label,
     remainingPercent: limit.exhausted ? 0 : limit.unlimited ? 100 : limit.remainingPercent,
     resetsAt: limit.resetsAt,
@@ -52,13 +55,15 @@ export function CopilotSubscriptionCard() {
   return (
     <SubscriptionUsageCard
       data={{
+        details: subscriptionDetails(snapshot, 'GitHub Copilot', '重置时间'),
         icon: <SubscriptionBrandIcon brand="copilot" />,
         metrics,
         planLabel: snapshot.planLabel,
         stale: snapshot.stale,
-        title: snapshot.planLabel === 'Free' ? 'Copilot Free' : 'Copilot',
+        title: 'GitHub Copilot',
       }}
       loading={loading}
+      onRefresh={() => void reload(true)}
     />
   );
 }

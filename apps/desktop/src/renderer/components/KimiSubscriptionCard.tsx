@@ -1,3 +1,4 @@
+import { subscriptionPoolKey } from '../lib/subscription-details';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Button } from '@heroui/react';
 import {
@@ -47,6 +48,7 @@ export function KimiSubscriptionCard() {
         icon: <SubscriptionBrandIcon brand="kimi" />,
         metrics: snapshot.limits.map((limit, index) => ({
           color: index === 0 && snapshot.limits.length > 1 ? '#7dcf00' : '#2b7eff',
+          poolKey: subscriptionPoolKey(snapshot.source === 'desktop' ? 'Kimi Desktop' : 'Kimi Code', limit),
           label: limit.label,
           remainingPercent: kimiRemainingPercent(limit.usedPercent),
           resetsAt: limit.resetsAt,
@@ -56,7 +58,8 @@ export function KimiSubscriptionCard() {
         stale: snapshot.stale,
         title,
       }}
-      loading={false}
+      loading={loading}
+      onRefresh={() => void reload(true)}
       feedback={feedback ? (
         <div className="grid gap-2 text-xs leading-relaxed">
           <p className="break-words text-muted" role="status">{feedback}</p>

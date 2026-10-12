@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { mapZcodeQuota, zcodeRemainingPercent, zcodeResponseAuthFailed } from './zcode-subscription';
+import { mapZcodeResetCredits, mapZcodeQuota, zcodeRemainingPercent, zcodeResponseAuthFailed } from './zcode-subscription';
 
 test('maps ZCode Coding Plan quota pools and retains MCP outside tray selection', () => {
   const result = mapZcodeQuota({
@@ -33,4 +33,22 @@ test('detects BigModel auth failures wrapped in HTTP 200 bodies', () => {
   assert.equal(zcodeResponseAuthFailed({ code: 200, success: true }), false);
   assert.equal(zcodeResponseAuthFailed({ code: 0, data: {} }), false);
   assert.equal(zcodeResponseAuthFailed(null), false);
+});
+
+test('reset card status preserves zero and normalizes reported expirations only', () => {
+  assert.deepEqual(mapZcodeResetCredits({ code: 0, data: { available_five_hour_resets: [{ expire_at: 1900000000000 }], available_week_resets: [] } }), { fiveHour: [{ expiresAt: 1900000000 }], weekly: [] });
+  assert.deepEqual(mapZcodeResetCredits({ code: 0, data: { available_five_hour_resets: [], available_week_resets: [] } }), { fiveHour: [], weekly: [] });
+  for (const value of [{}, { code: 401 }, { code: 0, data: {} }, { code: 0, data: { available_five_hour_resets: [{}], available_week_resets: [] } }]) assert.equal(mapZcodeResetCredits(value), undefined);
+});
+test('missing ZCode percentages do not invent an MCP allowance', () => {
+  for (const percentage of [null, '', false, undefined]) assert.equal(mapZcodeQuota({ limits: [{ type: 'TIME_LIMIT', percentage }] }).limits.length, 0);
+});
+
+test('MCP uses the monthly tool pool, not unrelated TIME_LIMIT windows', () => {
+  const result = mapZcodeQuota({ limits: [
+    { type: 'TIME_LIMIT', unit: 3, number: 5, percentage: 10 },
+    { type: 'TIME_LIMIT', unit: 5, number: 1, percentage: 88 },
+  ] });
+  assert.equal(result.limits.length, 1);
+  assert.equal(result.limits[0].usedPercent, 88);
 });

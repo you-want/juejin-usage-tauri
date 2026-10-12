@@ -18,36 +18,36 @@ export type SubscriptionBrand =
   | 'antigravity' | 'claude' | 'codebuddy' | 'codex' | 'copilot' | 'cursor' | 'deepseek'
   | 'grok' | 'kimi' | 'minimax' | 'opencode' | 'qoder' | 'trae' | 'workbuddy' | 'zcode';
 
-const iconClassName = 'size-6 shrink-0';
+const iconClassName = 'size-4.5 shrink-0';
 const monoIconClassName = `${iconClassName} text-foreground`;
 
 /** Fixed-size LobeHub brand mark; mono variants inherit the active theme. */
 export function SubscriptionBrandIcon({ brand }: { brand: SubscriptionBrand }) {
   switch (brand) {
-    case 'antigravity': return <Antigravity.Color aria-hidden className={iconClassName} size={24} />;
-    case 'claude': return <Claude.Color aria-hidden className={iconClassName} size={24} />;
-    case 'codebuddy': return <CodeBuddy.Color aria-hidden className={iconClassName} size={24} />;
-    case 'codex': return <Codex.Color aria-hidden className={iconClassName} size={24} />;
-    case 'copilot': return <GithubCopilot aria-hidden className={monoIconClassName} size={24} />;
-    case 'cursor': return <Cursor aria-hidden className={monoIconClassName} size={24} />;
-    case 'deepseek': return <DeepSeek.Color aria-hidden className={iconClassName} size={24} />;
-    case 'grok': return <Grok aria-hidden className={monoIconClassName} size={24} />;
-    case 'kimi': return <Kimi aria-hidden className={monoIconClassName} size={24} />;
-    case 'minimax': return <Minimax.Color aria-hidden className={iconClassName} size={24} />;
-    case 'opencode': return <OpenCode aria-hidden className={monoIconClassName} size={24} />;
-    case 'qoder': return <Qoder.Color aria-hidden className={iconClassName} size={24} />;
-    case 'trae': return <Trae.Color aria-hidden className={iconClassName} size={24} />;
+    case 'antigravity': return <Antigravity.Color aria-hidden className={iconClassName} size={18} />;
+    case 'claude': return <Claude.Color aria-hidden className={iconClassName} size={18} />;
+    case 'codebuddy': return <CodeBuddy.Color aria-hidden className={iconClassName} size={18} />;
+    case 'codex': return <Codex.Color aria-hidden className={iconClassName} size={18} />;
+    case 'copilot': return <GithubCopilot aria-hidden className={monoIconClassName} size={18} />;
+    case 'cursor': return <Cursor aria-hidden className={monoIconClassName} size={18} />;
+    case 'deepseek': return <DeepSeek.Color aria-hidden className={iconClassName} size={18} />;
+    case 'grok': return <Grok aria-hidden className={monoIconClassName} size={18} />;
+    case 'kimi': return <Kimi aria-hidden className={monoIconClassName} size={18} />;
+    case 'minimax': return <Minimax.Color aria-hidden className={iconClassName} size={18} />;
+    case 'opencode': return <OpenCode aria-hidden className={monoIconClassName} size={18} />;
+    case 'qoder': return <Qoder.Color aria-hidden className="size-4 shrink-0" size={16} />;
+    case 'trae': return <Trae.Color aria-hidden className={iconClassName} size={18} />;
     case 'workbuddy':
       return (
         <img
           alt=""
           aria-hidden
           className={`${iconClassName} object-contain`}
-          height={24}
+          height={18}
           src={workBuddyIcon}
-          width={24}
+          width={18}
         />
       );
-    case 'zcode': return <ZAI aria-hidden className={monoIconClassName} size={24} />;
+    case 'zcode': return <ZAI aria-hidden className={monoIconClassName} size={18} />;
   }
 }
