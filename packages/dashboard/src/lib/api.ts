@@ -565,6 +565,8 @@ export async function applyCalibrate(
   deleted: number;
   upserted: number;
   floored: number;
+  skipped: number;
+  skippedEvents?: Array<{ event_id: string; reason: string }>;
   preview: CalibratePreviewResponse;
 }> {
   const { others } = apiPrefixes();

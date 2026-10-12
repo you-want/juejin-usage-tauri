@@ -158,7 +158,10 @@ test('applyCalibrateSelectedDates reports the failing date and window on 422', a
       JSON.stringify({
         success: false,
         message: 'INVALID_USAGE_EVENT',
-        data: null,
+        data: {
+          detail:
+            'event 550e8400-e29b-41d4-a716-446655440099 occurred_at is outside [from, to)',
+        },
       }),
       { status: 422 },
     )) as typeof fetch;
@@ -172,7 +175,7 @@ test('applyCalibrateSelectedDates reports the failing date and window on 422', a
         assert.ok(err.message.startsWith(`${date} 校准失败`));
         assert.match(err.message, /1 条事件/);
         assert.match(err.message, /窗口 .*T16:00:00\.000Z ~ .*T16:00:00\.000Z/);
-        assert.match(err.message, /INVALID_USAGE_EVENT/);
+        assert.match(err.message, /occurred_at is outside \[from, to\)/);
         return true;
       },
     );

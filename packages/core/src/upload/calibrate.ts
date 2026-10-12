@@ -125,10 +125,17 @@ export interface ReconcileBatch {
   events: IngestEventPayload[];
 }
 
+export interface ReconcileSkippedEvent {
+  event_id: string;
+  reason: string;
+}
+
 export interface ReconcileBatchResult {
   deleted_count: number;
   upserted_count: number;
   floored_count: number;
+  /** Soft-skipped events (e.g. occurred_at outside [from, to)). */
+  skipped?: ReconcileSkippedEvent[];
   received_at: string;
 }
 
@@ -636,8 +643,20 @@ export async function postReconcileBatch(
   );
   if (!res.ok) {
     const text = await res.text().catch(() => '');
+    let detail = '';
+    try {
+      const parsed = JSON.parse(text) as {
+        message?: string;
+        data?: { detail?: string } | null;
+      };
+      const reason = parsed.data?.detail?.trim() || parsed.message?.trim();
+      if (reason) detail = reason;
+    } catch {
+      // keep raw text fallback below
+    }
+    const suffix = detail || (text ? text.slice(0, 400) : '');
     throw new Error(
-      `reconcile failed: HTTP ${res.status}${text ? ` ${text.slice(0, 200)}` : ''}`,
+      `reconcile failed: HTTP ${res.status}${suffix ? ` ${suffix}` : ''}`,
     );
   }
   const body = (await res.json()) as {
@@ -660,6 +679,8 @@ export async function applyCalibrateSelectedDates(
   deleted: number;
   upserted: number;
   floored: number;
+  skipped: number;
+  skippedEvents: ReconcileSkippedEvent[];
 }> {
   if (selectedDates.length === 0) {
     throw new Error('请先选择要对齐的日期');
@@ -684,6 +705,7 @@ export async function applyCalibrateSelectedDates(
   let deleted = 0;
   let upserted = 0;
   let floored = 0;
+  const skippedEvents: ReconcileSkippedEvent[] = [];
   for (const batch of batches) {
     let result: ReconcileBatchResult;
     try {
@@ -699,6 +721,9 @@ export async function applyCalibrateSelectedDates(
     deleted += result.deleted_count;
     upserted += result.upserted_count;
     floored += result.floored_count;
+    if (Array.isArray(result.skipped)) {
+      skippedEvents.push(...result.skipped);
+    }
   }
 
   const selectedSet = new Set(selectedDates);
@@ -718,5 +743,12 @@ export async function applyCalibrateSelectedDates(
     setUploadSlot(file, target.apiUrl, target.deviceId, nextSlot),
   );
 
-  return { batches: batches.length, deleted, upserted, floored };
+  return {
+    batches: batches.length,
+    deleted,
+    upserted,
+    floored,
+    skipped: skippedEvents.length,
+    skippedEvents,
+  };
 }

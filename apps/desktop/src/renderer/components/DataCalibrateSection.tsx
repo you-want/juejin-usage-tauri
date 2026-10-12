@@ -84,11 +84,30 @@ export function DataCalibrateSection({
       const result = await applyCalibrate(dates);
       setPreview(result.preview);
       setConfirmOpen(false);
+      const skipped = result.skipped ?? 0;
+      const parts = [
+        `删除 ${result.deleted}`,
+        `写入 ${result.upserted}`,
+      ];
+      if (skipped > 0) {
+        parts.push(`跳过 ${skipped}（窗口外，请排查）`);
+      }
       onNotify({
-        title: '校对完成',
-        description: `删除 ${result.deleted} · 写入 ${result.upserted}`,
+        title: skipped > 0 ? '校对完成（有跳过）' : '校对完成',
+        description: parts.join(' · '),
         variant: 'success',
       });
+      if (skipped > 0) {
+        const sample = (result.skippedEvents ?? [])
+          .slice(0, 3)
+          .map((row) => `${row.event_id} (${row.reason})`)
+          .join('；');
+        setError(
+          `有 ${skipped} 条事件因窗口外被跳过未写入${sample ? `：${sample}` : ''}${
+            skipped > 3 ? '…' : ''
+          }`,
+        );
+      }
     } catch (e) {
       const message = e instanceof Error ? e.message : '校对失败';
       setError(message);
