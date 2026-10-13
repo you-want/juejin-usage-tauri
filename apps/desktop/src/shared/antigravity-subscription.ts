@@ -29,6 +29,7 @@ function asRecord(value: unknown): Record<string, unknown> | null {
 }
 
 function percent(value: unknown): number | null {
+  if (typeof value !== 'number' && (typeof value !== 'string' || !value.trim())) return null;
   const number = Number(value);
   if (!Number.isFinite(number)) return null;
   return Math.min(100, Math.max(0, number <= 1 ? number * 100 : number));
@@ -40,7 +41,7 @@ function resetAt(value: unknown): number | null {
   return Number.isFinite(timestamp) ? Math.floor(timestamp / 1_000) : null;
 }
 
-/** Maps Antigravity's official model quota payload, keeping only two useful pools. */
+/** Maps Antigravity's official model quota payload, retaining every reported model pool. */
 export function mapAntigravityModels(value: unknown): AntigravityRateLimitWindow[] {
   const root = asRecord(value);
   const models = asRecord(root?.models) ?? asRecord(asRecord(root?.data)?.models);
@@ -63,8 +64,7 @@ export function mapAntigravityModels(value: unknown): AntigravityRateLimitWindow
   }
 
   return limits
-    .sort((left, right) => left.usedPercent - right.usedPercent)
-    .slice(0, 2);
+    .sort((left, right) => left.usedPercent - right.usedPercent);
 }
 
 export function antigravityRemainingPercent(usedPercent: number): number {

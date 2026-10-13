@@ -1,10 +1,9 @@
+import { codexSubscriptionDetails } from '../lib/codex-subscription-details';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Button } from '@heroui/react';
 import { format } from 'date-fns';
-import {
-  codexRemainingPercent,
-  type CodexSubscriptionSnapshot,
-} from '../../shared/codex-subscription';
+import { PlayingCardsFan } from 'lucide-react';
+import { codexRemainingPercent, type CodexSubscriptionSnapshot } from '../../shared/codex-subscription';
 import {
   INITIAL_CODEX_SUBSCRIPTION_STATE,
   updateCodexSubscriptionState,
@@ -14,6 +13,9 @@ import { SubscriptionBrandIcon } from './SubscriptionBrandIcon';
 
 const UNAVAILABLE_SNAPSHOT: CodexSubscriptionSnapshot = {
   status: 'unavailable',
+  hasAccount: false,
+  fetchedAt: null,
+  stale: false,
   planLabel: null,
   fiveHour: null,
   weekly: null,
@@ -26,20 +28,21 @@ export function CodexSubscriptionCard() {
   const [loading, setLoading] = useState(true);
   const requestInFlight = useRef(false);
   const refreshOnFocus = useRef(true);
+  const hasAccount = useRef(false);
 
-  const reload = useCallback(async () => {
+  const reload = useCallback(async (forceRefresh = false) => {
     if (requestInFlight.current) return;
     requestInFlight.current = true;
     setLoading(true);
     let next: CodexSubscriptionSnapshot;
     try {
-      next = await window.tud.getCodexSubscription();
+      next = await window.tud.getCodexSubscription({ forceRefresh });
     } catch {
-      next = UNAVAILABLE_SNAPSHOT;
+      next = { ...UNAVAILABLE_SNAPSHOT, hasAccount: hasAccount.current };
     }
-    // A blocked CLI may show a system dialog on every launch. Wait for an
-    // explicit retry after failure instead of spawning again on window focus.
-    refreshOnFocus.current = next.status !== 'unavailable';
+    // Failed signed-in channels wait for explicit retry; absent channels can recover on focus.
+    hasAccount.current = next.hasAccount;
+    refreshOnFocus.current = !next.hasAccount || next.message === null;
     setState((previous) => updateCodexSubscriptionState(previous, next, Date.now()));
     requestInFlight.current = false;
     setLoading(false);
@@ -56,12 +59,23 @@ export function CodexSubscriptionCard() {
 
   const { snapshot, lastUpdatedAt } = state;
   if (!snapshot) return null;
-  const failed = snapshot.status === 'unavailable';
-  const stale = failed && lastUpdatedAt !== null;
+  const failed = snapshot.message !== null;
+  const stale = snapshot.stale;
 
   return (
     <SubscriptionUsageCard
       data={{
+        detailRows: snapshot.fiveHour || snapshot.weekly || snapshot.credits || snapshot.resetCredits ? codexSubscriptionDetails(snapshot) : undefined,
+        headerAccessory: snapshot.resetCredits ? (
+          <span
+            aria-label={`重置卡 ${snapshot.resetCredits.availableCount} 张`}
+            title={`重置卡 ${snapshot.resetCredits.availableCount} 张`}
+            className="inline-flex h-4.5 shrink-0 items-center gap-1 rounded-full bg-default px-1.5 text-[11px] leading-4 tabular-nums text-muted"
+          >
+            <PlayingCardsFan aria-hidden="true" className="size-3" />
+            x{snapshot.resetCredits.availableCount}
+          </span>
+        ) : undefined,
         icon: <SubscriptionBrandIcon brand="codex" />,
         metrics: [
           {
@@ -82,16 +96,18 @@ export function CodexSubscriptionCard() {
           },
         ],
         planLabel: snapshot.planLabel,
+        hasAccount: snapshot.hasAccount,
         stale,
         title: 'Codex',
       }}
-      loading={false}
+      loading={loading}
+      onRefresh={() => void reload(true)}
       feedback={failed ? (
         <div className="grid gap-2 text-xs leading-relaxed">
           <div className="grid gap-1" role="status">
             <p className="font-medium text-foreground">订阅额度暂不可用</p>
             <p className="break-words text-muted">{snapshot.message ?? UNAVAILABLE_SNAPSHOT.message}</p>
-            {stale ? (
+            {stale && lastUpdatedAt !== null ? (
               <p className="text-muted">
                 显示上次额度，更新于 {format(lastUpdatedAt, 'M月d日 HH:mm')}
               </p>
@@ -104,7 +120,7 @@ export function CodexSubscriptionCard() {
               aria-label="重试读取 Codex 订阅额度"
               isDisabled={loading}
               isPending={loading}
-              onPress={() => void reload()}
+              onPress={() => void reload(true)}
               size="sm"
               variant="outline"
             >

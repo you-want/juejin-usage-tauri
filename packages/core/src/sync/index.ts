@@ -19,6 +19,7 @@ import { parseAutoclawIncremental } from '../parsers/autoclaw.js';
 import { parseHermesIncremental } from '../parsers/hermes.js';
 import { parseZcodeIncremental } from '../parsers/zcode.js';
 import { parseDshIncremental } from '../parsers/dsh.js';
+import { parseKinetaiosIncremental } from '../parsers/kinetaios.js';
 import { parsePiIncremental } from '../parsers/pi.js';
 import { parseKimiIncremental } from '../parsers/kimi.js';
 import { parseRoocodeIncremental } from '../parsers/roocode.js';
@@ -465,6 +466,10 @@ export async function syncDsh(dataDir: string, config: TudConfig, opts?: SyncSou
   return syncSourceBuckets(dataDir, config, 'dsh', parseDshIncremental, { sharedCursors: opts?.sharedCursors });
 }
 
+export async function syncKinetaios(dataDir: string, config: TudConfig, opts?: SyncSourceOptions): Promise<SyncResult> {
+  return syncSourceBuckets(dataDir, config, 'kinetaios', parseKinetaiosIncremental, { sharedCursors: opts?.sharedCursors });
+}
+
 export async function syncPi(dataDir: string, config: TudConfig, opts?: SyncSourceOptions): Promise<SyncResult> {
   return syncSourceBuckets(dataDir, config, 'pi', parsePiIncremental, { sharedCursors: opts?.sharedCursors });
 }
@@ -833,6 +838,7 @@ export const SYNC_SOURCE_IDS = [
   'hermes',
   'zcode',
   'dsh',
+  'kinetaios',
   'pi',
   'kimi',
   'roocode',
@@ -931,6 +937,8 @@ async function syncOneSource(
       return syncZcode(dataDir, config, opts);
     case 'dsh':
       return syncDsh(dataDir, config, opts);
+    case 'kinetaios':
+      return syncKinetaios(dataDir, config, opts);
     case 'pi':
       return syncPi(dataDir, config, opts);
     case 'kimi':
@@ -1187,6 +1195,10 @@ export function countZcodeRows(rows: QueueBucket[]): number {
 
 export function countDshRows(rows: QueueBucket[]): number {
   return rows.filter((r) => r.source === 'dsh').length;
+}
+
+export function countKinetaiosRows(rows: QueueBucket[]): number {
+  return rows.filter((r) => r.source === 'kinetaios').length;
 }
 
 export function countPiRows(rows: QueueBucket[]): number {

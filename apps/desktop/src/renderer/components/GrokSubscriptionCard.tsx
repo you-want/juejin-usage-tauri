@@ -1,3 +1,4 @@
+import { subscriptionDetails, subscriptionPoolKey } from '../lib/subscription-details';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   grokRemainingPercent,
@@ -21,11 +22,12 @@ export function GrokSubscriptionCard() {
   const [loading, setLoading] = useState(true);
   const requestInFlight = useRef(false);
 
-  const reload = useCallback(async () => {
+  const reload = useCallback(async (forceRefresh = false) => {
     if (requestInFlight.current) return;
     requestInFlight.current = true;
+    setLoading(true);
     try {
-      setSnapshot(await window.tud.getGrokSubscription());
+      setSnapshot(await window.tud.getGrokSubscription({ forceRefresh }));
     } catch {
       setSnapshot({
         ...INITIAL_SNAPSHOT,
@@ -47,9 +49,11 @@ export function GrokSubscriptionCard() {
   return (
     <SubscriptionUsageCard
       data={{
+        details: subscriptionDetails(snapshot, 'Grok Build CLI', '重置时间'),
         icon: <SubscriptionBrandIcon brand="grok" />,
         metrics: snapshot.limits.map((limit, index) => ({
           color: index === 0 && snapshot.limits.length > 1 ? '#7dcf00' : '#2b7eff',
+          poolKey: subscriptionPoolKey('Grok Build CLI', limit),
           label: limit.label,
           remainingPercent: grokRemainingPercent(limit.usedPercent),
           resetsAt: limit.resetsAt,
@@ -59,6 +63,7 @@ export function GrokSubscriptionCard() {
         title: 'Grok',
       }}
       loading={loading}
+      onRefresh={() => void reload(true)}
     />
   );
 }

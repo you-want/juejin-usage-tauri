@@ -16,6 +16,7 @@ import {
   buildReconcileBatches,
   calibrateWindowSinceIso,
   diffCalibrateRows,
+  formatReconcileSkipReason,
   rollupDayDiffs,
   shanghaiDayBounds,
   summarizeCalibrateDays,
@@ -60,6 +61,10 @@ test('diffCalibrateRows classifies missing / only / mismatch including cost', ()
         reasoning_output_tokens: 0,
       },
     }),
+    row({
+      event_id: 'd',
+      occurred_at: '2026-08-01T04:00:00.000Z',
+    }),
   ];
   const remote = [
     row({
@@ -71,24 +76,54 @@ test('diffCalibrateRows classifies missing / only / mismatch including cost', ()
       event_id: 'c',
       occurred_at: '2026-08-02T02:00:00.000Z',
     }),
+    row({
+      event_id: 'd',
+      occurred_at: '2026-08-01T05:00:00.000Z',
+    }),
   ];
   const diffs = diffCalibrateRows(local, remote, null);
   assert.equal(diffs.filter((d) => d.kind === 'online_missing').length, 1);
   assert.equal(diffs.filter((d) => d.kind === 'online_only').length, 1);
-  assert.equal(diffs.filter((d) => d.kind === 'mismatch').length, 1);
+  assert.equal(diffs.filter((d) => d.kind === 'mismatch').length, 2);
 
   const days = rollupDayDiffs(diffs);
   const summary = summarizeCalibrateDays(days);
   assert.equal(summary.diffDayCount, 2);
   assert.equal(summary.onlineMissingRows, 1);
   assert.equal(summary.onlineOnlyRows, 1);
-  assert.equal(summary.mismatchRows, 1);
+  assert.equal(summary.mismatchRows, 2);
 });
 
 test('shanghaiDayBounds uses +08:00 half-open window', () => {
   const { from, to } = shanghaiDayBounds('2026-08-01');
   assert.equal(from, '2026-07-31T16:00:00.000Z');
   assert.equal(to, '2026-08-01T16:00:00.000Z');
+});
+
+test('formatReconcileSkipReason covers window and legacy ownership', () => {
+  assert.equal(
+    formatReconcileSkipReason({
+      event_id: '550e8400-e29b-41d4-a716-446655440000',
+      reason: 'occurred_at_outside_window',
+    }),
+    '550e8400-e29b-41d4-a716-446655440000：不在本次校对日期窗口内',
+  );
+  assert.equal(
+    formatReconcileSkipReason({
+      event_id: '550e8400-e29b-41d4-a716-446655440001',
+      reason: 'owned_by_other_device',
+      existing_device_id: '660e8400-e29b-41d4-a716-446655440000',
+    }),
+    '550e8400-e29b-41d4-a716-446655440001：已归属其他设备 660e8400-e29b-41d4-a716-446655440000',
+  );
+  assert.equal(
+    formatReconcileSkipReason({
+      event_id: '550e8400-e29b-41d4-a716-446655440002',
+      reason: 'owned_by_other_window',
+      existing_occurred_at: '2026-09-20T09:00:00.000Z',
+    }),
+    '550e8400-e29b-41d4-a716-446655440002：线上时间 2026-09-20T09:00:00.000Z 不在本次窗口',
+  );
 });
 
 test('calibrate window is the rolling 90-day online floor', () => {
@@ -105,6 +140,37 @@ test('buildReconcileBatches emits empty events to clear online-only days', () =>
   assert.equal(batches.length, 1);
   assert.deepEqual(batches[0]?.events, []);
   assert.equal(batches[0]?.from, '2026-07-31T16:00:00.000Z');
+});
+
+test('buildReconcileBatches keeps local rows drifted into the online day window', () => {
+  // Local attributes the row to 07-31 Shanghai; online still has it inside 08-01.
+  const local = row({
+    event_id: '550e8400-e29b-41d4-a716-446655440010',
+    occurred_at: '2026-07-31T15:00:00.000Z',
+  });
+  const dayLocal = row({
+    event_id: '550e8400-e29b-41d4-a716-446655440011',
+    occurred_at: '2026-08-01T02:00:00.000Z',
+  });
+  const batches = buildReconcileBatches({
+    deviceId: '550e8400-e29b-41d4-a716-446655440000',
+    selectedDates: ['2026-08-01'],
+    localRows: [local, dayLocal],
+    remoteRows: [
+      row({
+        event_id: local.event_id,
+        occurred_at: '2026-08-01T01:00:00.000Z',
+      }),
+    ],
+  });
+  assert.equal(batches.length, 1);
+  const ids = new Set(batches[0]?.events.map((e) => e.event_id));
+  assert.equal(ids.has(local.event_id), true);
+  assert.equal(ids.has(dayLocal.event_id), true);
+  assert.equal(
+    batches[0]?.events.find((e) => e.event_id === local.event_id)?.occurred_at,
+    local.occurred_at,
+  );
 });
 
 const DEVICE_ID = '550e8400-e29b-41d4-a716-446655440000';
@@ -153,15 +219,33 @@ test('applyCalibrateSelectedDates reports the failing date and window on 422', a
   const date = localDateAndHour(hour, DEFAULT_STATS_TIMEZONE).date;
   const originalFetch = globalThis.fetch;
 
-  globalThis.fetch = (async () =>
-    new Response(
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.includes('tud-usage-device-events')) {
+      return new Response(
+        JSON.stringify({
+          success: true,
+          data: {
+            events: [],
+            next_cursor: null,
+            ingest_min_occurred_at: null,
+          },
+        }),
+        { status: 200 },
+      );
+    }
+    return new Response(
       JSON.stringify({
         success: false,
         message: 'INVALID_USAGE_EVENT',
-        data: null,
+        data: {
+          detail:
+            'event 550e8400-e29b-41d4-a716-446655440099 occurred_at is outside [from, to)',
+        },
       }),
       { status: 422 },
-    )) as typeof fetch;
+    );
+  }) as typeof fetch;
 
   try {
     await appendBuckets(dir, [liveBucket(hour)]);
@@ -172,7 +256,7 @@ test('applyCalibrateSelectedDates reports the failing date and window on 422', a
         assert.ok(err.message.startsWith(`${date} 校准失败`));
         assert.match(err.message, /1 条事件/);
         assert.match(err.message, /窗口 .*T16:00:00\.000Z ~ .*T16:00:00\.000Z/);
-        assert.match(err.message, /INVALID_USAGE_EVENT/);
+        assert.match(err.message, /occurred_at is outside \[from, to\)/);
         return true;
       },
     );

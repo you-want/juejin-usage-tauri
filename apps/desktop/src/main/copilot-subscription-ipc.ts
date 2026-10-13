@@ -5,6 +5,6 @@ export const COPILOT_SUBSCRIPTION_GET_CHANNEL = 'copilot-subscription:get';
 
 export function registerCopilotSubscriptionIpc(): () => void {
   ipcMain.removeHandler(COPILOT_SUBSCRIPTION_GET_CHANNEL);
-  ipcMain.handle(COPILOT_SUBSCRIPTION_GET_CHANNEL, () => readCopilotSubscription());
+  ipcMain.handle(COPILOT_SUBSCRIPTION_GET_CHANNEL, (_event, options?: { forceRefresh?: boolean }) => readCopilotSubscription({ forceRefresh: options?.forceRefresh === true }));
   return () => ipcMain.removeHandler(COPILOT_SUBSCRIPTION_GET_CHANNEL);
 }

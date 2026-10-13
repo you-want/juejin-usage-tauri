@@ -51,3 +51,26 @@ test('converts Cursor usage to remaining allowance', () => {
   assert.equal(cursorRemainingPercent(66.5), 33.5);
   assert.equal(cursorRemainingPercent(120), 0);
 });
+
+test('Grok Bot preserves its own weekly period and only reports confirmed entitlements', async () => {
+  const { mapCursorGrokBotUsage } = await import('./cursor-subscription.js');
+  assert.deepEqual(mapCursorGrokBotUsage({
+    includedLimitZero: false, usagePercent: 35,
+    currentPeriodStart: '2026-10-01T00:00:00Z', nextResetTimestampUtc: '2026-10-08T00:00:00Z',
+  }), { usedPercent: 35, startsAt: 1790812800, resetsAt: 1791417600 });
+  assert.equal(mapCursorGrokBotUsage({ usagePercent: 0 }), null);
+  assert.equal(mapCursorGrokBotUsage({ includedLimitZero: true, hasNonZeroIncludedLimit: true, usagePercent: 10 }), null);
+  assert.equal(mapCursorGrokBotUsage({ hasNonZeroIncludedLimit: true, usagePercent: 100, hasAvailableUsage: false })?.usedPercent, 100);
+  for (const usagePercent of [null, '', false, [], NaN, Infinity]) {
+    assert.equal(mapCursorGrokBotUsage({ includedLimitZero: false, usagePercent }), null);
+  }
+});
+
+test('Grok Bot trial expiry is never displayed as a recurring reset', async () => {
+  const { mapCursorGrokBotUsage } = await import('./cursor-subscription.js');
+  const trial = { includedLimitZero: true, usagePercent: 25, sandTrialExpiresAt: '2026-10-08T00:00:00Z', nextResetTimestampUtc: '2026-10-10T00:00:00Z' };
+  const now = Date.parse('2026-10-01T00:00:00Z');
+  assert.deepEqual(mapCursorGrokBotUsage(trial, now), { usedPercent: 25, resetsAt: null, expiresAt: 1791417600 });
+  assert.equal(mapCursorGrokBotUsage(trial, Date.parse('2026-10-09T00:00:00Z')), null);
+  assert.equal(mapCursorGrokBotUsage({ ...trial, includedLimitZero: false }, now)?.resetsAt, 1791590400);
+});

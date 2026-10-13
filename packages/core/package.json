@@ -50,6 +50,10 @@
     "./local-metrics": {
       "types": "./dist/local-metrics.d.ts",
       "import": "./dist/local-metrics.js"
+    },
+    "./reconcile-skip": {
+      "types": "./dist/reconcile-skip.d.ts",
+      "import": "./dist/reconcile-skip.js"
     }
   },
   "files": [

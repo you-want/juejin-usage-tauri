@@ -25,6 +25,7 @@ import { qwenTmpDir } from '../parsers/qwen.js';
 import { resolveWorkbuddyHome } from '../parsers/workbuddy.js';
 import { zcodeDbPath } from '../parsers/zcode.js';
 import { dshHome } from '../parsers/dsh.js';
+import { kinetaiosDbPath } from '../parsers/kinetaios.js';
 import { zedDbPath } from '../parsers/zed.js';
 import { warpDbPaths } from '../parsers/warp.js';
 import { miniMaxCodeDataPaths } from '../parsers/minimax-code.js';
@@ -36,6 +37,7 @@ import {
   copilotSessionStateDir,
   cursorStateVscdbPath,
   geminiTmpDir,
+  kimiDesktopCodeHome,
   opencodeDbPath,
   opencodeMessagesDir,
   qoderCliProjectsDirs,
@@ -122,6 +124,8 @@ export function isSyncSourcePresent(source: string): boolean {
       return anyExists([zcodeDbPath()]);
     case 'dsh':
       return anyExists([dshHome(), join(dshHome(), 'sessions')]);
+    case 'kinetaios':
+      return anyExists([kinetaiosDbPath()]);
     case 'pi':
       return anyExists([piSessionsDir()]);
     case 'kimi': {
@@ -131,6 +135,7 @@ export function isSyncSourcePresent(source: string): boolean {
         process.env.KIMI_HOME,
         join(home, '.kimi-code'),
         join(home, '.kimi'),
+        kimiDesktopCodeHome(),
       ]);
     }
     case 'roocode':

@@ -1,3 +1,4 @@
+import { subscriptionAmounts, type SubscriptionAmounts } from './subscription-amounts';
 import { canonicalSubscriptionPlanLabel } from './subscription-plan';
 
 export type CopilotSubscriptionStatus =
@@ -7,6 +8,7 @@ export type CopilotSubscriptionStatus =
   | 'temporarily-unavailable';
 
 export interface CopilotRateLimitWindow {
+  amounts?: SubscriptionAmounts;
   id: 'chat' | 'completions' | 'premium_interactions';
   label: string;
   remainingPercent: number | null;
@@ -86,11 +88,13 @@ function readSnapshot(
       : null
   );
   if (!unlimited && remainingPercent === null && !(entitlement !== null && entitlement > 0)) return null;
+  const amounts = unlimited ? undefined : subscriptionAmounts(entitlement, undefined, remaining);
   return {
     id,
     label,
     remainingPercent: unlimited ? null : remainingPercent,
     unlimited,
+    ...(amounts ? { amounts } : {}),
     ...(unlimited && snapshot.has_quota === false ? { exhausted: true } : {}),
     resetsAt: parseTimestamp(snapshot.quota_reset_at) ?? accountReset,
   };
@@ -116,9 +120,9 @@ export function mapCopilotSubscription(value: unknown): Pick<
   // Paid usage-based plans use premium_interactions; Free keeps chat and completions.
   for (const id of ['chat', 'premium_interactions', 'completions'] as const) {
     if (id !== 'premium_interactions' && usageBasedBilling && planLabel !== 'Free') continue;
-    const label = id === 'completions' ? '内联建议'
-      : usageBasedBilling ? '额度'
-        : id === 'chat' ? '聊天消息' : '高级请求';
+    const label = id === 'completions' ? 'Inline Suggestions'
+      : usageBasedBilling ? 'Credits'
+        : id === 'chat' ? 'Chat messages' : 'Premium requests';
     const snapshot = asRecord(snapshots?.[id]);
     let limit = snapshot ? readSnapshot(snapshot, id, label, accountReset) : null;
     if (!snapshot && id !== 'premium_interactions') {
@@ -130,6 +134,7 @@ export function mapCopilotSubscription(value: unknown): Pick<
           label,
           remainingPercent: boundedPercent(left / total * 100),
           unlimited: false,
+          amounts: subscriptionAmounts(total, undefined, left),
           resetsAt: accountReset,
         };
       }

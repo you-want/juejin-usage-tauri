@@ -1,5 +1,5 @@
 import { homedir, platform } from 'node:os';
-import { join, basename, delimiter } from 'node:path';
+import { join, basename, delimiter, isAbsolute } from 'node:path';
 import { existsSync, readdirSync, statSync, readFileSync } from 'node:fs';
 
 export const DEFAULT_DATA_DIR = join(homedir(), '.ai-usage');
@@ -148,6 +148,37 @@ function expandHomePath(value: string): string {
     return join(homedir(), trimmed.slice(2));
   }
   return trimmed;
+}
+
+/** Kimi Desktop's Electron user-data directory, separate from the CLI homes. */
+export function kimiDesktopDataDir(): string {
+  const override = process.env.KIMI_DESKTOP_HOME?.trim();
+  if (override) return expandHomePath(override);
+  if (platform() === 'darwin') {
+    return join(homedir(), 'Library', 'Application Support', 'kimi-desktop');
+  }
+  if (platform() === 'win32') {
+    return join(process.env.APPDATA?.trim() || join(homedir(), 'AppData', 'Roaming'), 'kimi-desktop');
+  }
+  return join(process.env.XDG_CONFIG_HOME?.trim() || join(homedir(), '.config'), 'kimi-desktop');
+}
+
+/** Honor Kimi Desktop's explicit storage migration without scanning other folders. */
+export function kimiDesktopShareDir(): string {
+  const dataDir = kimiDesktopDataDir();
+  try {
+    const config = JSON.parse(readFileSync(join(dataDir, 'daimon-storage.json'), 'utf-8')) as { shareDir?: unknown } | null;
+    const shareDir = typeof config?.shareDir === 'string' ? config.shareDir.trim() : '';
+    if (isAbsolute(shareDir)) return shareDir;
+  } catch {
+    // A missing or invalid migration setting uses the app's default location.
+  }
+  return join(dataDir, 'daimon-share');
+}
+
+/** Embedded Kimi Code runtime; only existing wire logs are collected. */
+export function kimiDesktopCodeHome(): string {
+  return join(kimiDesktopShareDir(), 'daimon', 'runtime', 'kimi-code', 'home');
 }
 
 function hasClaudeProjectsDir(root: string): boolean {

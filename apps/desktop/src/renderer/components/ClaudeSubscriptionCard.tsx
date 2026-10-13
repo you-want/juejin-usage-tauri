@@ -1,3 +1,4 @@
+import { subscriptionDetails, subscriptionPoolKey } from '../lib/subscription-details';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   claudeRemainingPercent,
@@ -9,6 +10,7 @@ import { SubscriptionBrandIcon } from './SubscriptionBrandIcon';
 const INITIAL_SNAPSHOT: ClaudeSubscriptionSnapshot = {
   status: 'authorization-required',
   planLabel: null,
+  hasAccount: false,
   fiveHour: null,
   sevenDay: null,
   fetchedAt: null,
@@ -16,18 +18,20 @@ const INITIAL_SNAPSHOT: ClaudeSubscriptionSnapshot = {
   message: null,
 };
 
-/** Claude.ai allowance summary; failures intentionally collapse to an empty state. */
+/** Claude Code allowance summary with actionable failures for signed-in accounts. */
 export function ClaudeSubscriptionCard() {
   const [snapshot, setSnapshot] = useState<ClaudeSubscriptionSnapshot>(INITIAL_SNAPSHOT);
   const [loading, setLoading] = useState(true);
   const requestInFlight = useRef(false);
 
-  const reload = useCallback(async () => {
+  const reload = useCallback(async (forceRefresh = false) => {
     if (requestInFlight.current) return;
     requestInFlight.current = true;
+    setLoading(true);
     try {
       setSnapshot(await window.tud.getClaudeSubscription({
         allowCredentialAccess: true,
+        forceRefresh,
       }));
     } catch {
       setSnapshot({
@@ -51,10 +55,12 @@ export function ClaudeSubscriptionCard() {
   return (
     <SubscriptionUsageCard
       data={{
+        details: subscriptionDetails(snapshot, 'Claude Code CLI', '重置时间'),
         icon: <SubscriptionBrandIcon brand="claude" />,
         metrics: [
           {
             color: '#7dcf00',
+            poolKey: subscriptionPoolKey('Claude Code CLI', { label: '5h' }),
             label: '5h',
             remainingPercent: snapshot.fiveHour
               ? claudeRemainingPercent(snapshot.fiveHour.usedPercent)
@@ -63,6 +69,7 @@ export function ClaudeSubscriptionCard() {
           },
           {
             color: '#2b7eff',
+            poolKey: subscriptionPoolKey('Claude Code CLI', { label: '7d' }),
             label: '7d',
             remainingPercent: snapshot.sevenDay
               ? claudeRemainingPercent(snapshot.sevenDay.usedPercent)
@@ -71,10 +78,13 @@ export function ClaudeSubscriptionCard() {
           },
         ],
         planLabel: snapshot.planLabel,
+        hasAccount: snapshot.hasAccount,
+        message: snapshot.message,
         stale: snapshot.stale,
         title: 'Claude',
       }}
       loading={loading}
+      onRefresh={() => void reload(true)}
     />
   );
 }

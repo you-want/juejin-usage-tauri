@@ -47,8 +47,9 @@ export function canonicalSubscriptionPlanLabel(value: unknown): string | null {
 /** Returns the compact plan label that may be shown on a subscription card. */
 export function visibleSubscriptionPlanLabel(
   value: string | null | undefined,
+  showFreePlan = false,
 ): string | null {
   const label = canonicalSubscriptionPlanLabel(value);
   // Free accounts deliberately have no subscription badge.
-  return label === 'Free' ? null : label;
+  return label === 'Free' && !showFreePlan ? null : label;
 }

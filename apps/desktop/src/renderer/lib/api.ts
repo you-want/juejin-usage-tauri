@@ -422,6 +422,13 @@ export async function applyCalibrate(
   deleted: number;
   upserted: number;
   floored: number;
+  skipped: number;
+  skippedEvents?: Array<{
+    event_id: string;
+    reason: string;
+    existing_device_id?: string | null;
+    existing_occurred_at?: string;
+  }>;
   preview: CalibratePreviewResponse;
 }> {
   const { others } = apiPrefixes();

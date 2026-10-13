@@ -84,6 +84,20 @@ apps/desktop/
 
 额度来自 [VS Code 使用的内部接口](https://github.com/microsoft/vscode/blob/main/src/vs/workbench/services/chat/common/chatEntitlementService.ts)，成功读数缓存 60 秒，窗口聚焦时刷新。网络异常保留同一账号的最近读数并标为「旧」；账号切换、退出或认证失效后清除旧读数。内部接口变化可能影响可用性。
 
+### Kimi 桌面版与 Kimi Code
+
+订阅区统一显示一张「Kimi」卡片，桌面版和 Code 仅作为底层独立读取来源。优先使用新鲜、带有效额度与套餐名的完整读数；Code 同时提供月度共享额度和滚动限额时可在同一卡片展示，其他情况下优先使用确认的共享额度。一端没有登录或读取失败时，可使用另一端的有效读数；不会拼接不同来源的套餐与额度，也不会把共享池相加。
+
+只登录 Code 时无需打开或登录桌面版。Code 仅请求 main 已验证的 `/usages`，获取 5 小时、周限额及可选月度共享额度；缺失字段不补零，`limit_month_code` 是月度用量构成，不与共享总量相加。两端缓存和账号切换仍独立；Code 首次读取失败、没有有效读数时隐藏卡片，窗口再次聚焦后自动重试。已成功读取的同账号数据可在网络异常时保留并标为「旧」，已确认的 Free 套餐信息、登录或配置异常仍可展示提示并重试。
+
+桌面版数据默认位于 macOS 的 `~/Library/Application Support/kimi-desktop`、Windows 的 `%APPDATA%/kimi-desktop`、Linux 的 `$XDG_CONFIG_HOME/kimi-desktop`（未设置时为 `~/.config/kimi-desktop`），可用 `KIMI_DESKTOP_HOME` 覆盖。支持 `daimon-storage.json` 中的绝对 `shareDir` 迁移路径。
+
+桌面来源的订阅读取需要 Kimi 桌面版正在运行且已登录，通过它的本地 Context IPC 获取当前账号和有效令牌（续期由 Kimi 自身处理），不读取可能在退出后残留的磁盘令牌、不访问系统钥匙串。令牌仅在主进程内存中使用，会员请求只发送到当前账号所属的官方区域（`www.kimi.com` / `www.kimi.ai`）。Code 凭证只访问相应官方区域的 `api.kimi.com/coding/v1` 或 `api.kimi.ai/coding/v1`，不发送到桌面会员接口。缓存按账号、来源和区域隔离，发布读数前再次验证当前账号；退出或认证失效后清除旧额度。
+
+macOS/Linux 自动发现当前用户的私有 Context socket，已退出进程遗留的失效 socket 不影响 Code 读取；Windows 暂需通过 `KIMI_WORK_CONTEXT_IPC` 指定 Kimi 的 Context 命名管道。无法取得当前账号时显示打开 Kimi 的提示，仍可扫描历史用量。该桌面接口为内部接口，已在 macOS Kimi 3.2.15 验证，后续客户端变化可能需要更新适配；Windows/Linux 尚未实机验证。
+
+本地 Token 与项目统计独立读取 `daimon-share/daimon/runtime/kimi-code/home` 中的 `session_index.jsonl` 和 `sessions/**/wire.jsonl`，复用 Kimi Code 的增量解析并去重。上下文占用快照不作为累计消耗；CLI 和 Desktop 可同时采集。内部模型别名没有公开价格时仍使用现有估算兜底，不等同于会员账单。
+
 ## 窗口外观
 
 - macOS：隐藏标题栏，保留红绿灯
@@ -158,3 +172,16 @@ pnpm 10 默认屏蔽 native build scripts（`onlyBuiltDependencies` 白名单）
 export ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/
 pnpm dev:desktop
 ```
+
+## Codex / Claude 订阅额度
+
+桌面端从本机登录状态读取订阅额度：
+
+- Codex 从 `CODEX_HOME/auth.json`（默认 `~/.codex/auth.json`）只读获取 ChatGPT 登录凭据，请求 `/backend-api/wham/usage`，无需安装或启动 Codex CLI。不会刷新令牌或改写登录文件；令牌失效时提示重新登录。
+- Claude 使用本机 Claude Code 的 `-p /usage --output-format json`；在临时目录运行，关闭工具、MCP、用户/项目 settings 和会话保存，应用不读取 Keychain 或调用 Anthropic OAuth usage 接口。官方账户校验仍排除自定义 provider。
+- 两个渠道共享主窗口与托盘的一分钟内存缓存、合并并发请求；账号改变或认证失效时不沿用旧额度。临时失败可显示同账号上次额度和旧数据标记。
+- 有登录记录但读取失败时保留卡片并展示原因；没有登录记录的渠道隐藏。
+
+### DeepSeek Harness 余额
+
+优先只读 `$DSH_HOME/.credentials.yaml`（默认 `~/.dsh/.credentials.yaml`）中的官方账号 grant，通过 `platform.deepseek.com/api/v0/users/get_user_summary` 读取 CNY 充值与赠送余额；不会刷新、覆盖或删除 Harness 凭证。未找到账号 grant 时兼容 Harness 的 `refs.DEEPSEEK_API_KEY`，再回退到原有 DeepSeek / OpenCode 凭证。显示接口返回的真实余额。

@@ -17,8 +17,8 @@ test('maps current Copilot Free credits and inline suggestions, preferring its S
   }), {
     planLabel: 'Free',
     limits: [
-      { id: 'chat', label: '额度', remainingPercent: 100, unlimited: false, resetsAt: 1_790_812_800 },
-      { id: 'completions', label: '内联建议', remainingPercent: 98.3, unlimited: false, resetsAt: 1_790_812_800 },
+      { id: 'chat', label: 'Credits', remainingPercent: 100, unlimited: false, amounts: { total: 200 }, resetsAt: 1_790_812_800 },
+      { id: 'completions', label: 'Inline Suggestions', remainingPercent: 98.3, unlimited: false, amounts: { total: 2000 }, resetsAt: 1_790_812_800 },
     ],
   });
 });
@@ -35,7 +35,7 @@ test('paid credit plans use premium interactions and their own reset timestamp',
     },
   }), {
     planLabel: 'Pro+',
-    limits: [{ id: 'premium_interactions', label: '额度', remainingPercent: 67.5, unlimited: false, resetsAt: 1_790_800_000 }],
+    limits: [{ id: 'premium_interactions', label: 'Credits', remainingPercent: 67.5, unlimited: false, resetsAt: 1_790_800_000 }],
   });
 });
 
@@ -50,7 +50,7 @@ test('legacy paid plans expose premium requests and omit unlimited base features
     },
   }), {
     planLabel: 'Business',
-    limits: [{ id: 'premium_interactions', label: '高级请求', remainingPercent: 80, unlimited: false, resetsAt: 1_790_812_800 }],
+    limits: [{ id: 'premium_interactions', label: 'Premium requests', remainingPercent: 80, unlimited: false, amounts: { total: 300, remaining: 240 }, resetsAt: 1_790_812_800 }],
   });
 });
 
@@ -61,13 +61,13 @@ test('unlimited quotas carry no fake percentage and report exhausted organizatio
       token_based_billing: true,
       quota_snapshots: { premium_interactions: { ...unlimitedFields, percent_remaining: 100, has_quota: false } },
     }).limits, [{
-      id: 'premium_interactions', label: '额度', remainingPercent: null, unlimited: true, exhausted: true, resetsAt: null,
+      id: 'premium_interactions', label: 'Credits', remainingPercent: null, unlimited: true, exhausted: true, resetsAt: null,
     }]);
   }
   assert.deepEqual(mapCopilotSubscription({
     quota_snapshots: { premium_interactions: { unlimited: true, has_quota: true } },
   }).limits, [{
-    id: 'premium_interactions', label: '高级请求', remainingPercent: null, unlimited: true, resetsAt: null,
+    id: 'premium_interactions', label: 'Premium requests', remainingPercent: null, unlimited: true, resetsAt: null,
   }]);
 });
 
@@ -79,7 +79,7 @@ test('supports legacy Free monthly quotas without inventing absent readings', ()
     limited_user_quotas: { chat: 0, completions: null },
   }), {
     planLabel: 'Free',
-    limits: [{ id: 'chat', label: '聊天消息', remainingPercent: 0, unlimited: false, resetsAt: 1_790_812_800 }],
+    limits: [{ id: 'chat', label: 'Chat messages', remainingPercent: 0, unlimited: false, amounts: { total: 50, remaining: 0 }, resetsAt: 1_790_812_800 }],
   });
 });
 

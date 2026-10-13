@@ -1,3 +1,4 @@
+import { nonNegativeNumber } from './subscription-amounts';
 import { canonicalSubscriptionPlanLabel } from './subscription-plan';
 
 export type ZcodeSubscriptionStatus =
@@ -20,6 +21,10 @@ export interface ZcodeRateLimitWindow {
 export type ZcodeAccountProvider = 'zai' | 'bigmodel';
 
 export interface ZcodeSubscriptionSnapshot {
+  resetCredits?: {
+    fiveHour: { expiresAt: number }[];
+    weekly: { expiresAt: number }[];
+  };
   status: ZcodeSubscriptionStatus;
   planLabel: string | null;
   /** 'zai' (global) | 'bigmodel' (mainland) | null before credentials resolve. */
@@ -38,8 +43,8 @@ function asRecord(value: unknown): Record<string, unknown> | null {
 }
 
 function boundedPercent(value: unknown): number | null {
-  const number = Number(value);
-  return Number.isFinite(number) ? Math.min(100, Math.max(0, number)) : null;
+  const number = nonNegativeNumber(value);
+  return number !== null ? Math.min(100, Math.max(0, number)) : null;
 }
 
 /** BigModel reports auth failures as HTTP 200 with a body-level `code`. */
@@ -82,7 +87,9 @@ export function mapZcodeQuota(value: unknown): Pick<ZcodeSubscriptionSnapshot, '
       limits.push({ id: 'five-hour', label: '5h', usedPercent, resetsAt: resetAt(record.nextResetTime) });
     } else if ((type === 'TOKENS_LIMIT' || type === 'CREDIT_LIMIT') && unit === 6) {
       limits.push({ id: 'weekly', label: '7d', usedPercent, resetsAt: resetAt(record.nextResetTime) });
-    } else if (type === 'TIME_LIMIT') {
+    } else if (type === 'TIME_LIMIT'
+      && (record.unit === undefined || unit === 5)
+      && (record.number === undefined || Number(record.number) === 1)) {
       limits.push({ id: 'mcp', label: 'MCP', usedPercent, resetsAt: resetAt(record.nextResetTime) });
     }
   }
@@ -99,4 +106,23 @@ export function mapZcodeQuota(value: unknown): Pick<ZcodeSubscriptionSnapshot, '
 export function zcodeRemainingPercent(usedPercent: number): number {
   if (!Number.isFinite(usedPercent)) return 0;
   return Math.min(100, Math.max(0, 100 - usedPercent));
+}
+
+/** ZCode desktop getCodingPlanResetStatus response; only available cards are retained. */
+export function mapZcodeResetCredits(value: unknown): ZcodeSubscriptionSnapshot['resetCredits'] {
+  const root = asRecord(value);
+  const data = asRecord(root?.data);
+  if (root?.code !== 0 || !data || !Array.isArray(data.available_five_hour_resets) || !Array.isArray(data.available_week_resets)) return undefined;
+  const parse = (items: unknown[]) => {
+    const cards: { expiresAt: number }[] = [];
+    for (const item of items) {
+      const expiresAt = resetAt(asRecord(item)?.expire_at);
+      if (expiresAt === null) return null;
+      cards.push({ expiresAt });
+    }
+    return cards;
+  };
+  const fiveHour = parse(data.available_five_hour_resets);
+  const weekly = parse(data.available_week_resets);
+  return fiveHour && weekly ? { fiveHour, weekly } : undefined;
 }

@@ -1,3 +1,6 @@
+import { subscriptionAmounts, type SubscriptionAmounts } from './subscription-amounts';
+import { canonicalSubscriptionPlanLabel } from './subscription-plan';
+
 export type KimiSubscriptionStatus =
   | 'ready'
   | 'custom-provider'
@@ -7,6 +10,7 @@ export type KimiSubscriptionStatus =
   | 'temporarily-unavailable';
 
 export interface KimiRateLimitWindow {
+  amounts?: SubscriptionAmounts;
   id: string;
   label: string;
   usedPercent: number;
@@ -16,6 +20,7 @@ export interface KimiRateLimitWindow {
 
 export interface KimiSubscriptionSnapshot {
   status: KimiSubscriptionStatus;
+  source?: 'desktop' | 'code';
   planLabel: string | null;
   limits: KimiRateLimitWindow[];
   /** Unix timestamp in seconds. */
@@ -31,6 +36,7 @@ function asRecord(value: unknown): Record<string, unknown> | null {
 }
 
 function finiteNumber(value: unknown): number | null {
+  if (typeof value !== 'number' && (typeof value !== 'string' || !value.trim())) return null;
   const number = Number(value);
   return Number.isFinite(number) ? number : null;
 }
@@ -66,9 +72,12 @@ function toWindow(
 ): KimiRateLimitWindow | null {
   const record = asRecord(value);
   if (!record) return null;
-  const used = finiteNumber(record.used);
+  const remaining = finiteNumber(record.remaining);
+  const explicitUsed = finiteNumber(record.used);
   const limit = finiteNumber(record.limit);
-  if (used === null || limit === null || limit <= 0) return null;
+  if (limit === null || limit <= 0) return null;
+  const used = explicitUsed ?? (remaining !== null && remaining >= 0 && remaining <= limit ? limit - remaining : null);
+  if (used === null || used < 0) return null;
   const label = typeof record.name === 'string' && record.name.trim()
     ? record.name.trim()
     : windowLabel(window, fallback);
@@ -76,6 +85,7 @@ function toWindow(
     id: label.toLowerCase().replace(/\s+/g, '-'),
     label,
     usedPercent: boundedPercent(used / limit * 100),
+    amounts: subscriptionAmounts(limit, explicitUsed, remaining),
     resetsAt: resetAt(record.resetTime ?? record.reset_at ?? record.resetAt),
   };
 }
@@ -86,6 +96,19 @@ export function mapKimiUsage(value: unknown): KimiRateLimitWindow[] {
   if (!root) return [];
   const payload = asRecord(root.data) ?? root;
   const limits: KimiRateLimitWindow[] = [];
+  const usages = asRecord(payload.usages);
+  for (const [key, label] of [
+    ['limit_5h', '5h'], ['limit_7d', '7d'], ['limit_month_total', '月度共享额度'],
+  ] as const) {
+    const entry = asRecord(usages?.[key]);
+    const ratio = finiteNumber(entry?.used_ratio);
+    if (ratio !== null) limits.push({
+      id: key,
+      label,
+      usedPercent: boundedPercent(ratio * 100),
+      resetsAt: resetAt(entry?.reset_time),
+    });
+  }
   const summary = toWindow(payload.usage, '7d', { duration: 1, unit: 'week' });
   if (summary) limits.push({ ...summary, id: 'weekly', label: '7d' });
 
@@ -107,11 +130,37 @@ export function mapKimiUsage(value: unknown): KimiRateLimitWindow[] {
     .sort((left, right) => {
       const rank = (label: string) => label === '5h' ? 0 : label === '7d' ? 1 : 2;
       return rank(left.label) - rank(right.label);
-    })
-    .slice(0, 2);
+    });
 }
 
 export function kimiRemainingPercent(usedPercent: number): number {
   if (!Number.isFinite(usedPercent)) return 0;
   return Math.min(100, Math.max(0, 100 - usedPercent));
+}
+
+/** Desktop membership uses shared credits, not the Code-only 5h/7d windows. */
+export function mapKimiDesktopSubscription(value: unknown): Pick<KimiSubscriptionSnapshot, 'planLabel' | 'limits'> {
+  const root = asRecord(value);
+  const goods = asRecord(asRecord(root?.subscription)?.goods);
+  const level = goods?.membershipLevel ?? goods?.membership_level;
+  const isFree = level === 10 || level === 12 || level === 'LEVEL_FREE' || level === 'LEVEL_FREE_FRESHMAN';
+  const planLabel = isFree ? 'Free' : canonicalSubscriptionPlanLabel(goods?.title);
+  const balance = Array.isArray(root?.balances)
+    ? root.balances.map(asRecord).find((entry) => entry
+      && (entry.feature === 'FEATURE_OMNI' || entry.feature === 100)
+      && (entry.type === 'SUBSCRIPTION' || entry.type === 1))
+    : null;
+  // Protobuf JSON omits a scalar ratio when it equals zero. Only a matching
+  // balance establishes that default; null/invalid values are still unknown.
+  const ratio = !balance ? null : Object.hasOwn(balance, 'amountUsedRatio')
+    ? finiteNumber(balance.amountUsedRatio)
+    : Object.hasOwn(balance, 'amount_used_ratio') ? finiteNumber(balance.amount_used_ratio) : 0;
+  return {
+    planLabel,
+    limits: ratio === null ? [] : [{
+      id: 'subscription', label: '订阅额度',
+      usedPercent: boundedPercent(ratio * 100),
+      resetsAt: resetAt(balance?.expireTime ?? balance?.expire_time),
+    }],
+  };
 }
