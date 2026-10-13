@@ -5,7 +5,7 @@ import {
   fetchCalibratePreview,
   type CalibratePreviewResponse,
 } from '@/lib/api';
-import { formatReconcileSkipReason } from '@juejin-opensource/jusage-core';
+import { formatReconcileSkipReason } from '@juejin-opensource/jusage-core/reconcile-skip';
 
 function formatTokens(n: number): string {
   const abs = Math.abs(n);

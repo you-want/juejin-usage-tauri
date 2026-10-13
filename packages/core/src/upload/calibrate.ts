@@ -125,41 +125,16 @@ export interface ReconcileBatch {
   events: IngestEventPayload[];
 }
 
-export interface ReconcileSkippedEvent {
-  event_id: string;
-  reason: string;
-  existing_device_id?: string | null;
-  existing_occurred_at?: string;
-}
+import type { ReconcileSkippedEvent } from '../reconcile-skip.js';
 
-/** Human-readable skip line for calibrate UI / logs (includes event_id). */
-export function formatReconcileSkipReason(row: ReconcileSkippedEvent): string {
-  let detail: string;
-  switch (row.reason) {
-    case 'occurred_at_outside_window':
-      detail = '不在本次日期窗口内';
-      break;
-    case 'owned_by_other_device':
-      detail = row.existing_device_id
-        ? `已归属其他设备 ${row.existing_device_id}`
-        : '已归属其他设备（device_id 为空）';
-      break;
-    case 'owned_by_other_window':
-      detail = row.existing_occurred_at
-        ? `线上时间 ${row.existing_occurred_at} 不在本次窗口`
-        : '线上时间不在本次窗口';
-      break;
-    default:
-      detail = row.reason;
-  }
-  return `${row.event_id}：${detail}`;
-}
+export type { ReconcileSkippedEvent } from '../reconcile-skip.js';
+export { formatReconcileSkipReason } from '../reconcile-skip.js';
 
 export interface ReconcileBatchResult {
   deleted_count: number;
   upserted_count: number;
   floored_count: number;
-  /** Soft-skipped events (e.g. occurred_at outside [from, to)). */
+  /** Legacy soft-skips; current server returns []. */
   skipped?: ReconcileSkippedEvent[];
   received_at: string;
 }
@@ -293,7 +268,8 @@ export function diffCalibrateRows(
     if (
       local &&
       remote &&
-      (!usageEqual(local.usage, remote.usage) ||
+      (local.occurred_at !== remote.occurred_at ||
+        !usageEqual(local.usage, remote.usage) ||
         !reportedCostEqual(local.reported_cost_usd, remote.reported_cost_usd))
     ) {
       const localCost = local.reported_cost_usd;
@@ -581,16 +557,38 @@ export async function buildCalibratePreview(
   };
 }
 
+function toReconcilePayload(row: CalibrateEventRow): IngestEventPayload {
+  return {
+    event_id: row.event_id,
+    occurred_at: row.occurred_at,
+    integration: row.integration,
+    collector: row.collector,
+    model: row.model,
+    usage: { ...row.usage },
+    conversations_count: row.conversations_count,
+    ...(row.reported_cost_usd != null
+      ? { reported_cost_usd: row.reported_cost_usd }
+      : {}),
+  };
+}
+
 /**
  * Build replace_window batches for selected Shanghai calendar days.
  * Local full snapshot for each day (empty = clear online-only day).
+ *
+ * When `remoteRows` is provided, also attach local rows whose event_id currently
+ * sits in that day's online window but whose local occurred_at falls on another
+ * Shanghai day — otherwise orphan-delete would wipe them and the next preview
+ * shows a new "线上缺失" on the neighboring day.
  */
 export function buildReconcileBatches(args: {
   deviceId: string;
   selectedDates: ReadonlyArray<string>;
   localRows: ReadonlyArray<CalibrateEventRow>;
+  remoteRows?: ReadonlyArray<CalibrateEventRow>;
 }): ReconcileBatch[] {
   const selected = [...new Set(args.selectedDates)].sort();
+  const localById = new Map(args.localRows.map((row) => [row.event_id, row]));
   const byDate = new Map<string, CalibrateEventRow[]>();
   for (const row of args.localRows) {
     const date = localDateAndHour(row.occurred_at, DEFAULT_STATS_TIMEZONE).date;
@@ -603,19 +601,20 @@ export function buildReconcileBatches(args: {
   const batches: ReconcileBatch[] = [];
   for (const date of selected) {
     const { from, to } = shanghaiDayBounds(date);
-    const dayEvents = byDate.get(date) ?? [];
-    const payloads: IngestEventPayload[] = dayEvents.map((row) => ({
-      event_id: row.event_id,
-      occurred_at: row.occurred_at,
-      integration: row.integration,
-      collector: row.collector,
-      model: row.model,
-      usage: { ...row.usage },
-      conversations_count: row.conversations_count,
-      ...(row.reported_cost_usd != null
-        ? { reported_cost_usd: row.reported_cost_usd }
-        : {}),
-    }));
+    const fromMs = Date.parse(from);
+    const toMs = Date.parse(to);
+    const merged = new Map<string, CalibrateEventRow>();
+    for (const row of byDate.get(date) ?? []) {
+      merged.set(row.event_id, row);
+    }
+    for (const remote of args.remoteRows ?? []) {
+      const remoteMs = Date.parse(remote.occurred_at);
+      if (!(remoteMs >= fromMs && remoteMs < toMs)) continue;
+      const local = localById.get(remote.event_id);
+      if (!local) continue;
+      if (!merged.has(local.event_id)) merged.set(local.event_id, local);
+    }
+    const payloads = [...merged.values()].map(toReconcilePayload);
 
     if (payloads.length === 0) {
       batches.push({
@@ -715,16 +714,22 @@ export async function applyCalibrateSelectedDates(
     throw new Error('云端同步未关联或缺少 apiUrl / token / deviceId');
   }
   const sinceIso = calibrateWindowSinceIso();
-  const localRows = await loadLocalCalibrateEvents(
-    dataDir,
-    config,
-    target.deviceId,
-    sinceIso,
-  );
+  const nowIso = new Date().toISOString();
+  const [localRows, remote] = await Promise.all([
+    loadLocalCalibrateEvents(dataDir, config, target.deviceId, sinceIso),
+    fetchAllDeviceEvents(
+      target.apiUrl,
+      target.token,
+      target.deviceId,
+      sinceIso,
+      nowIso,
+    ),
+  ]);
   const batches = buildReconcileBatches({
     deviceId: target.deviceId,
     selectedDates,
     localRows,
+    remoteRows: remote.events,
   });
 
   let deleted = 0;
