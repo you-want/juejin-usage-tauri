@@ -57,6 +57,16 @@ test('getModelProvider covers leaderboard aliases without provider namespaces', 
   assert.equal(getModelProvider('zai_auto').key, 'zhipu');
 });
 
+test('getModelProvider identifies the observed Kimi Desktop alias without guessing other models', () => {
+  assert.deepEqual(getModelProvider('k2d8-preview'), {
+    key: 'kimi',
+    label: 'Kimi',
+    icon: 'kimi',
+  });
+  assert.equal(getModelProvider('k2d8-preview-custom').key, 'unknown');
+  assert.equal(getModelProvider('k2d9-preview').key, 'unknown');
+});
+
 test('getModelProvider falls back to a namespace alias or an Other badge', () => {
   assert.deepEqual(getModelProvider('google-vertex/custom-model'), {
     key: 'google',

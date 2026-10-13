@@ -557,7 +557,9 @@ test('parseZcodeIncremental adds reasoning to the provider total (issue #181)', 
 test('parseKimiIncremental prefers kimi-code step.end', async () => {
   const home = await mkdtemp(join(tmpdir(), 'tud-kimi-'));
   const prev = process.env.KIMI_CODE_HOME;
+  const prevDesktop = process.env.KIMI_DESKTOP_HOME;
   process.env.KIMI_CODE_HOME = home;
+  process.env.KIMI_DESKTOP_HOME = join(home, 'desktop');
   try {
     const wireDir = join(home, 'sessions', 'wd_demo_abc', 'session_1', 'agents', 'a1');
     await mkdir(wireDir, { recursive: true });
@@ -585,6 +587,8 @@ test('parseKimiIncremental prefers kimi-code step.end', async () => {
   } finally {
     if (prev === undefined) delete process.env.KIMI_CODE_HOME;
     else process.env.KIMI_CODE_HOME = prev;
+    if (prevDesktop === undefined) delete process.env.KIMI_DESKTOP_HOME;
+    else process.env.KIMI_DESKTOP_HOME = prevDesktop;
   }
 });
 

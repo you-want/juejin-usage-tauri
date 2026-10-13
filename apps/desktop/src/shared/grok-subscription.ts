@@ -9,6 +9,7 @@ export type GrokSubscriptionStatus =
   | 'temporarily-unavailable';
 
 export interface GrokRateLimitWindow {
+  startsAt?: number;
   id: string;
   label: string;
   usedPercent: number;
@@ -187,10 +188,10 @@ export function mapGrokBilling(value: unknown): Pick<
         id: period.kind,
         label: periodLabel(period.kind, period.durationSeconds),
         usedPercent,
+        ...(period.start ? { startsAt: Math.floor(period.start.getTime() / 1_000) } : {}),
         resetsAt: period.end ? Math.floor(period.end.getTime() / 1_000) : null,
       }];
-    })
-    .slice(0, 2);
+    });
 
   return {
     planLabel: planLabel(root.subscriptionTier ?? config.subscriptionTier ?? root.tier ?? root.plan),

@@ -1,8 +1,6 @@
+import { miniMaxProgressMetrics } from '../lib/subscription-progress';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import {
-  miniMaxRemainingPercent,
-  type MiniMaxSubscriptionSnapshot,
-} from '../../shared/minimax-subscription';
+import type { MiniMaxSubscriptionSnapshot } from '../../shared/minimax-subscription';
 import { SubscriptionUsageCard } from './SubscriptionUsageCard';
 import { SubscriptionBrandIcon } from './SubscriptionBrandIcon';
 
@@ -22,11 +20,12 @@ export function MiniMaxSubscriptionCard() {
   const [loading, setLoading] = useState(true);
   const requestInFlight = useRef(false);
 
-  const reload = useCallback(async () => {
+  const reload = useCallback(async (forceRefresh = false) => {
     if (requestInFlight.current) return;
     requestInFlight.current = true;
+    setLoading(true);
     try {
-      setSnapshot(await window.tud.getMiniMaxSubscription());
+      setSnapshot(await window.tud.getMiniMaxSubscription({ forceRefresh }));
     } catch {
       setSnapshot({ ...INITIAL_SNAPSHOT, message: '暂时无法读取 MiniMax Code 订阅信息' });
     } finally {
@@ -52,17 +51,15 @@ export function MiniMaxSubscriptionCard() {
     <SubscriptionUsageCard
       data={{
         icon: <SubscriptionBrandIcon brand="minimax" />,
-        metrics: snapshot.limits.map((limit, index) => ({
-          color: index === 0 && snapshot.limits.length > 1 ? '#ff6a00' : '#2b7eff',
-          label: limit.label,
-          remainingPercent: miniMaxRemainingPercent(limit.usedPercent),
-          resetsAt: limit.resetsAt,
-        })),
+        metrics: miniMaxProgressMetrics(snapshot),
+        metricLimit: null,
+        expandMetrics: true,
         planLabel: snapshot.planLabel,
         stale: snapshot.stale,
         title,
       }}
       loading={loading}
+      onRefresh={() => void reload(true)}
     />
   );
 }

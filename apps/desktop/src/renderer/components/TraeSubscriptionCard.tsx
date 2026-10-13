@@ -1,3 +1,4 @@
+import { subscriptionDetails, subscriptionPoolKey } from '../lib/subscription-details';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   traeRemainingPercent,
@@ -20,7 +21,7 @@ const INITIAL_SNAPSHOT: TraeSubscriptionSnapshot = {
 interface TraeSubscriptionCardProps {
   region: TraeRegion;
   title: string;
-  fetcher: () => Promise<TraeSubscriptionSnapshot>;
+  fetcher: (options?: { forceRefresh?: boolean }) => Promise<TraeSubscriptionSnapshot>;
 }
 
 /** Compact TRAE IDE entitlement summary for macOS desktop surfaces. */
@@ -32,11 +33,12 @@ export function TraeSubscriptionCard({ region, title, fetcher }: TraeSubscriptio
   const [loading, setLoading] = useState(true);
   const requestInFlight = useRef(false);
 
-  const reload = useCallback(async () => {
+  const reload = useCallback(async (forceRefresh = false) => {
     if (requestInFlight.current) return;
     requestInFlight.current = true;
+    setLoading(true);
     try {
-      setSnapshot(await fetcher());
+      setSnapshot(await fetcher({ forceRefresh }));
     } catch {
       setSnapshot({ ...INITIAL_SNAPSHOT, region, message: '暂时无法读取 TRAE 订阅信息' });
     } finally {
@@ -55,9 +57,11 @@ export function TraeSubscriptionCard({ region, title, fetcher }: TraeSubscriptio
   return (
     <SubscriptionUsageCard
       data={{
+        details: subscriptionDetails(snapshot, 'TRAE 账号权益', '到期时间'),
         icon: <SubscriptionBrandIcon brand="trae" />,
         metrics: snapshot.limits.map((limit, index) => ({
           color: ['#7dcf00', '#2b7eff', '#f59e0b'][index] ?? '#2b7eff',
+          poolKey: subscriptionPoolKey('TRAE 账号权益', limit),
           label: limit.label,
           remainingPercent: traeRemainingPercent(limit.usedPercent),
           resetsAt: limit.resetsAt,
@@ -67,6 +71,7 @@ export function TraeSubscriptionCard({ region, title, fetcher }: TraeSubscriptio
         title,
       }}
       loading={loading}
+      onRefresh={() => void reload(true)}
     />
   );
 }

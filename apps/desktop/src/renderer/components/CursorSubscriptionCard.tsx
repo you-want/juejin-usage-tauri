@@ -1,3 +1,4 @@
+import { subscriptionDetails, subscriptionPoolKey } from '../lib/subscription-details';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   cursorRemainingPercent,
@@ -23,11 +24,12 @@ export function CursorSubscriptionCard() {
   const [loading, setLoading] = useState(true);
   const requestInFlight = useRef(false);
 
-  const reload = useCallback(async () => {
+  const reload = useCallback(async (forceRefresh = false) => {
     if (requestInFlight.current) return;
     requestInFlight.current = true;
+    setLoading(true);
     try {
-      setSnapshot(await window.tud.getCursorSubscription());
+      setSnapshot(await window.tud.getCursorSubscription({ forceRefresh }));
     } catch {
       setSnapshot({
         ...INITIAL_SNAPSHOT,
@@ -49,6 +51,7 @@ export function CursorSubscriptionCard() {
   const metrics: SubscriptionUsageMetric[] = snapshot.plan
     ? [{
         color: '#2b7eff',
+        poolKey: subscriptionPoolKey('Cursor Dashboard', { label: 'Plan' }),
         label: 'Plan',
         remainingPercent: cursorRemainingPercent(snapshot.plan.usedPercent),
         resetsAt: snapshot.plan.resetsAt,
@@ -56,7 +59,8 @@ export function CursorSubscriptionCard() {
     : [
         {
           color: '#7dcf00',
-          label: 'Cursor',
+          poolKey: subscriptionPoolKey('Cursor Dashboard', { label: 'Auto' }),
+          label: 'Auto',
           remainingPercent: snapshot.cursorModels
             ? cursorRemainingPercent(snapshot.cursorModels.usedPercent)
             : null,
@@ -64,7 +68,8 @@ export function CursorSubscriptionCard() {
         },
         {
           color: '#2b7eff',
-          label: 'Other',
+          poolKey: subscriptionPoolKey('Cursor Dashboard', { label: 'API' }),
+          label: 'API',
           remainingPercent: snapshot.otherModels
             ? cursorRemainingPercent(snapshot.otherModels.usedPercent)
             : null,
@@ -72,9 +77,18 @@ export function CursorSubscriptionCard() {
         },
       ];
 
+  if (snapshot.grokBot) metrics.push({
+    poolKey: subscriptionPoolKey('Cursor Dashboard', { label: 'Grok Bot' }),
+    color: '#2b7eff', label: 'Grok Bot',
+    remainingPercent: cursorRemainingPercent(snapshot.grokBot.usedPercent),
+    resetsAt: snapshot.grokBot.expiresAt ?? snapshot.grokBot.resetsAt,
+    resetDisplay: snapshot.grokBot.expiresAt ? 'days-only' : 'date-time',
+  });
+
   return (
     <SubscriptionUsageCard
       data={{
+        details: subscriptionDetails(snapshot, 'Cursor Dashboard', '账期结束'),
         icon: <SubscriptionBrandIcon brand="cursor" />,
         metrics,
         planLabel: snapshot.planLabel,
@@ -82,6 +96,7 @@ export function CursorSubscriptionCard() {
         title: 'Cursor',
       }}
       loading={loading}
+      onRefresh={() => void reload(true)}
     />
   );
 }

@@ -24,7 +24,7 @@ declare global {
         callback: (state: import('../shared/auto-update').AutoUpdateState) => void,
       ) => () => void;
       copyImageToClipboard: (dataUrl: string) => Promise<boolean>;
-      getCodexSubscription: () => Promise<
+      getCodexSubscription: (options?: { forceRefresh?: boolean }) => Promise<
         import('../shared/codex-subscription').CodexSubscriptionSnapshot
       >;
       getClaudeSubscription: (options?: {
@@ -33,25 +33,25 @@ declare global {
       }) => Promise<
         import('../shared/claude-subscription').ClaudeSubscriptionSnapshot
       >;
-      getCursorSubscription: () => Promise<
+      getCursorSubscription: (options?: { forceRefresh?: boolean }) => Promise<
         import('../shared/cursor-subscription').CursorSubscriptionSnapshot
       >;
-      getCopilotSubscription: () => Promise<
+      getCopilotSubscription: (options?: { forceRefresh?: boolean }) => Promise<
         import('../shared/copilot-subscription').CopilotSubscriptionSnapshot
       >;
-      getGrokSubscription: () => Promise<
+      getGrokSubscription: (options?: { forceRefresh?: boolean }) => Promise<
         import('../shared/grok-subscription').GrokSubscriptionSnapshot
       >;
-      getKimiSubscription: () => Promise<
-        import('../shared/kimi-subscription').KimiSubscriptionSnapshot
+      getKimiSubscription: (options?: { forceRefresh?: boolean }) => Promise<
+        import('../shared/kimi-subscription').KimiSubscriptionSnapshot[]
       >;
-      getZcodeSubscription: () => Promise<
+      getZcodeSubscription: (options?: { forceRefresh?: boolean }) => Promise<
         import('../shared/zcode-subscription').ZcodeSubscriptionSnapshot
       >;
-      getAntigravitySubscription: () => Promise<
+      getAntigravitySubscription: (options?: { forceRefresh?: boolean }) => Promise<
         import('../shared/antigravity-subscription').AntigravitySubscriptionSnapshot
       >;
-      getQoderSubscription: () => Promise<
+      getQoderSubscription: (options?: { forceRefresh?: boolean }) => Promise<
         import('../shared/qoder-subscription').QoderSubscriptionSnapshot
       >;
       getMiniMaxSubscription: (options?: { forceRefresh?: boolean }) => Promise<

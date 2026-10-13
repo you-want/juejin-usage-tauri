@@ -1,7 +1,7 @@
+import { qoderExpiryDetails, qoderProgressMetrics } from '../lib/subscription-progress';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  qoderRemainingPercent,
-  qoderSubscriptionFeedback,
+  qoderSubscriptionHasAccount,
   type QoderSubscriptionSnapshot,
 } from '../../shared/qoder-subscription';
 import { SubscriptionUsageCard } from './SubscriptionUsageCard';
@@ -16,14 +16,12 @@ export function QoderSubscriptionCard() {
   const [snapshot, setSnapshot] = useState<QoderSubscriptionSnapshot>(INITIAL_SNAPSHOT);
   const [loading, setLoading] = useState(true);
   const requestInFlight = useRef(false);
-  const reload = useCallback(async () => {
+  const reload = useCallback(async (forceRefresh = false) => {
     if (requestInFlight.current) return;
     requestInFlight.current = true;
+    setLoading(true);
     try {
-      const qoderBridge = window.tud as typeof window.tud & {
-        getQoderSubscription: () => Promise<QoderSubscriptionSnapshot>;
-      };
-      setSnapshot(await qoderBridge.getQoderSubscription());
+      setSnapshot(await window.tud.getQoderSubscription({ forceRefresh }));
     }
     catch { setSnapshot({ ...INITIAL_SNAPSHOT, message: '暂时无法读取 Qoder 订阅信息' }); }
     finally { requestInFlight.current = false; setLoading(false); }
@@ -35,18 +33,16 @@ export function QoderSubscriptionCard() {
     return () => window.removeEventListener('focus', onFocus);
   }, [reload]);
   return <SubscriptionUsageCard data={{
+    detailRows: qoderExpiryDetails(snapshot),
+    hasAccount: qoderSubscriptionHasAccount(snapshot),
     icon: <SubscriptionBrandIcon brand="qoder" />,
-    metrics: snapshot.limits.map((limit, index) => ({
-      color: index === 0 && snapshot.limits.length > 1 ? '#7dcf00' : '#2b7eff',
-      label: limit.id === 'plan' ? 'Credits' : 'Add-on',
-      remainingPercent: qoderRemainingPercent(limit.usedPercent),
-      resetDisplay: 'days-only',
-      resetsAt: limit.resetsAt,
-    })),
+    message: snapshot.message,
+    metrics: qoderProgressMetrics(snapshot),
+    metricLimit: null,
     planLabel: snapshot.planLabel,
     // Qoder may serve the official CLI's most recently synchronized credits;
     // keep the provider title stable instead of appending the generic stale tag.
     stale: false,
     title: 'Qoder',
-  }} feedback={qoderSubscriptionFeedback(snapshot)} loading={loading} />;
+  }} onRefresh={() => void reload(true)} loading={loading} />;
 }

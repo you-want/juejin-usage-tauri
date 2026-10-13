@@ -5,6 +5,6 @@ export const ANTIGRAVITY_SUBSCRIPTION_GET_CHANNEL = 'antigravity-subscription:ge
 
 export function registerAntigravitySubscriptionIpc(): () => void {
   ipcMain.removeHandler(ANTIGRAVITY_SUBSCRIPTION_GET_CHANNEL);
-  ipcMain.handle(ANTIGRAVITY_SUBSCRIPTION_GET_CHANNEL, () => readAntigravitySubscription());
+  ipcMain.handle(ANTIGRAVITY_SUBSCRIPTION_GET_CHANNEL, (_event, options?: { forceRefresh?: boolean }) => readAntigravitySubscription({ forceRefresh: options?.forceRefresh === true }));
   return () => ipcMain.removeHandler(ANTIGRAVITY_SUBSCRIPTION_GET_CHANNEL);
 }

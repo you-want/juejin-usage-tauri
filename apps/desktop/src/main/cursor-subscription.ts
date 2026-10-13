@@ -5,12 +5,14 @@ import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import {
   mapCursorUsageSummary,
+  mapCursorGrokBotUsage,
   type CursorSubscriptionSnapshot,
 } from '../shared/cursor-subscription';
 
 const REQUEST_TIMEOUT_MS = 10_000;
 const CACHE_TTL_MS = 60_000;
 const CURSOR_USAGE_URL = 'https://cursor.com/api/usage-summary';
+const CURSOR_GROK_BOT_URL = 'https://cursor.com/api/dashboard/get-sand-usage-status';
 const ACCESS_TOKEN_KEY = 'cursorAuth/accessToken';
 
 interface CursorCredentials {
@@ -138,29 +140,38 @@ export async function fetchCursorSubscription(
   credentials: CursorCredentials,
   fetchImpl: typeof fetch = fetch,
 ): Promise<CursorSubscriptionSnapshot> {
-  const response = await fetchImpl(CURSOR_USAGE_URL, {
-    method: 'GET',
-    headers: {
-      Accept: '*/*',
-      Cookie: buildCursorSessionCookie(credentials.userId, credentials.token),
-      Origin: 'https://cursor.com',
-      Referer: 'https://cursor.com/dashboard?tab=usage',
-      'User-Agent':
-        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-    },
-    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-  });
+  const headers = {
+    Accept: 'application/json',
+    Cookie: buildCursorSessionCookie(credentials.userId, credentials.token),
+    Origin: 'https://cursor.com',
+    Referer: 'https://cursor.com/dashboard?tab=usage',
+    'User-Agent':
+      'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+  };
+  const [response, grokBot] = await Promise.all([
+    fetchImpl(CURSOR_USAGE_URL, {
+      method: 'GET', headers, redirect: 'error',
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    }),
+    // Optional same-account pool. Failure never invalidates the main usage reading.
+    fetchImpl(CURSOR_GROK_BOT_URL, {
+      method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' },
+      body: '{}', redirect: 'error', signal: AbortSignal.timeout(5000),
+    }).then(async (result) => result.ok ? mapCursorGrokBotUsage(await result.json()) : null)
+      .catch(() => null),
+  ]);
   if (response.status === 401 || response.status === 403) {
     return unavailable('not-signed-in', '请先登录 Cursor');
   }
   if (!response.ok) throw new Error(`Cursor usage API returned ${response.status}`);
   const mapped = mapCursorUsageSummary(await response.json());
-  if (!mapped.cursorModels && !mapped.otherModels && !mapped.plan) {
+  if (!mapped.cursorModels && !mapped.otherModels && !mapped.plan && !grokBot) {
     throw new Error('Cursor usage response contained no supported quota');
   }
   return {
     status: 'ready',
     ...mapped,
+    ...(grokBot ? { grokBot } : {}),
     fetchedAt: Math.floor(Date.now() / 1_000),
     stale: false,
     message: null,

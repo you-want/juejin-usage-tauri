@@ -7,6 +7,9 @@ export type CursorSubscriptionStatus =
   | 'temporarily-unavailable';
 
 export interface CursorRateLimitWindow {
+  /** Trial expiry is distinct from a recurring quota reset. */
+  expiresAt?: number;
+  startsAt?: number;
   usedPercent: number;
   /** Unix timestamp in seconds. */
   resetsAt: number | null;
@@ -15,8 +18,11 @@ export interface CursorRateLimitWindow {
 export interface CursorSubscriptionSnapshot {
   status: CursorSubscriptionStatus;
   planLabel: string | null;
+  /** autoPercentUsed pool; UI label Auto. */
   cursorModels: CursorRateLimitWindow | null;
+  /** apiPercentUsed pool; UI label API. */
   otherModels: CursorRateLimitWindow | null;
+  grokBot?: CursorRateLimitWindow | null;
   /** Legacy Cursor responses expose one combined plan allowance. */
   plan: CursorRateLimitWindow | null;
   /** Unix timestamp in seconds. */
@@ -32,6 +38,7 @@ function asRecord(value: unknown): Record<string, unknown> | null {
 }
 
 function finiteNumber(value: unknown): number | null {
+  if (typeof value !== 'number' && (typeof value !== 'string' || !value.trim())) return null;
   const number = Number(value);
   return Number.isFinite(number) ? number : null;
 }
@@ -46,6 +53,7 @@ function parseTimestamp(value: unknown): number | null {
     return Math.floor(value > 10_000_000_000 ? value / 1_000 : value);
   }
   if (typeof value !== 'string' || !value.trim()) return null;
+  if (/^\d{10,13}$/.test(value.trim())) return parseTimestamp(Number(value));
   const millis = Date.parse(value);
   return Number.isFinite(millis) ? Math.floor(millis / 1_000) : null;
 }
@@ -77,6 +85,8 @@ export function mapCursorUsageSummary(value: unknown): Pick<
   const usage = selectUsage(root);
   const plan = asRecord(usage?.plan);
   const resetsAt = parseTimestamp(root.billingCycleEnd);
+  const start = parseTimestamp(root.billingCycleStart);
+  const startsAt = start === null ? {} : { startsAt: start };
   const cursorPercent = boundedPercent(plan?.autoPercentUsed);
   const otherPercent = boundedPercent(plan?.apiPercentUsed);
 
@@ -95,13 +105,13 @@ export function mapCursorUsageSummary(value: unknown): Pick<
         ? Math.min(100, Math.max(0, used / limit * 100))
         : null
     );
-    if (usedPercent !== null) combinedPlan = { usedPercent, resetsAt };
+    if (usedPercent !== null) combinedPlan = { usedPercent, resetsAt, ...startsAt };
   }
 
   return {
     planLabel: normalizePlanLabel(root.membershipType),
-    cursorModels: cursorPercent === null ? null : { usedPercent: cursorPercent, resetsAt },
-    otherModels: otherPercent === null ? null : { usedPercent: otherPercent, resetsAt },
+    cursorModels: cursorPercent === null ? null : { usedPercent: cursorPercent, resetsAt, ...startsAt },
+    otherModels: otherPercent === null ? null : { usedPercent: otherPercent, resetsAt, ...startsAt },
     plan: combinedPlan,
   };
 }
@@ -109,4 +119,24 @@ export function mapCursorUsageSummary(value: unknown): Pick<
 export function cursorRemainingPercent(usedPercent: number): number {
   if (!Number.isFinite(usedPercent)) return 0;
   return Math.min(100, Math.max(0, 100 - usedPercent));
+}
+
+/** Cursor's separate Grok Bot included/trial pool; a missing entitlement is not 0%. */
+export function mapCursorGrokBotUsage(value: unknown, now = Date.now()): CursorRateLimitWindow | null {
+  const root = asRecord(value);
+  if (!root) return null;
+  const usedPercent = boundedPercent(root.usagePercent);
+  if (usedPercent === null) return null;
+  const included = typeof root.includedLimitZero === 'boolean'
+    ? !root.includedLimitZero : root.hasNonZeroIncludedLimit === true;
+  const expiresAt = parseTimestamp(root.sandTrialExpiresAt);
+  const trial = !included && expiresAt !== null && expiresAt * 1000 > now;
+  if (!included && !trial) return null;
+  const startsAt = parseTimestamp(root.currentPeriodStart);
+  return {
+    usedPercent,
+    resetsAt: included ? parseTimestamp(root.nextResetTimestampUtc) : null,
+    ...(startsAt === null ? {} : { startsAt }),
+    ...(trial && expiresAt !== null ? { expiresAt } : {}),
+  };
 }

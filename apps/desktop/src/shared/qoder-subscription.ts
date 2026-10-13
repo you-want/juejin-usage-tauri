@@ -1,3 +1,4 @@
+import { nonNegativeNumber, subscriptionAmounts, type SubscriptionAmounts } from './subscription-amounts';
 import { canonicalSubscriptionPlanLabel } from './subscription-plan';
 
 export type QoderSubscriptionStatus =
@@ -9,7 +10,8 @@ export type QoderSubscriptionStatus =
   | 'temporarily-unavailable';
 
 export interface QoderRateLimitWindow {
-  id: 'plan' | 'add-on';
+  id: 'plan' | 'add-on' | 'shared' | `dedicated-${number}`;
+  amounts?: SubscriptionAmounts;
   label: string;
   usedPercent: number;
   resetsAt: number | null;
@@ -32,19 +34,25 @@ function asRecord(value: unknown): Record<string, unknown> | null {
 
 function usedPercent(value: unknown): number | null {
   const row = asRecord(value);
-  const percentage = Number(row?.percentage ?? row?.used_percentage ?? row?.usedPercentage);
-  if (Number.isFinite(percentage)) {
+  const percentage = nonNegativeNumber(row?.percentage ?? row?.used_percentage ?? row?.usedPercentage);
+  if (percentage !== null) {
     const normalized = percentage >= 0 && percentage <= 1 ? percentage * 100 : percentage;
     return Math.min(100, Math.max(0, normalized));
   }
-  const total = Number(row?.total);
-  const used = Number(row?.used);
-  return Number.isFinite(total) && total > 0 && Number.isFinite(used)
+  const total = nonNegativeNumber(row?.total ?? row?.cap);
+  const remaining = nonNegativeNumber(row?.remaining);
+  const used = nonNegativeNumber(row?.used) ?? (total !== null && remaining !== null && remaining <= total ? total - remaining : null);
+  return total !== null && total > 0 && used !== null
     ? Math.min(100, Math.max(0, used / total * 100))
     : null;
 }
 
 function timestamp(value: unknown): number | null {
+  if (typeof value !== 'number' && (typeof value !== 'string' || !value.trim())) return null;
+  if (typeof value === 'string' && !/^\d+(?:\.\d+)?$/.test(value.trim())) {
+    const parsed = Date.parse(value);
+    return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed / 1000) : null;
+  }
   const number = Number(value);
   return Number.isFinite(number) && number > 0
     ? Math.floor(number > 10_000_000_000 ? number / 1_000 : number)
@@ -53,7 +61,8 @@ function timestamp(value: unknown): number | null {
 
 function planLabel(value: unknown): string | null {
   const root = asRecord(value);
-  const data = asRecord(root?.data) ?? root;
+  const payload = asRecord(root?.data) ?? root;
+  const data = asRecord(payload?.qoderUsage) ?? payload;
   const label = data?.plan_tier_name ?? data?.planTierName ?? data?.plan_name ?? data?.planName;
   if (typeof label === 'string' && label.trim()) return canonicalSubscriptionPlanLabel(label);
 
@@ -64,19 +73,25 @@ function planLabel(value: unknown): string | null {
   return canonicalSubscriptionPlanLabel(membershipType);
 }
 
-/** Normalizes Qoder's official account quota endpoint; organization credits stay out of the tray. */
+/** Normalizes Qoder's official account quota endpoint; all reported pools are retained; the card selects personal pools for its summary. */
 export function mapQoderQuota(value: unknown, plan: unknown): Pick<QoderSubscriptionSnapshot, 'planLabel' | 'limits'> {
   const root = asRecord(value);
-  const data = asRecord(root?.data) ?? root;
+  const payload = asRecord(root?.data) ?? root;
+  const data = asRecord(payload?.qoderUsage) ?? payload;
   if (!data) return { planLabel: planLabel(plan), limits: [] };
   const resetsAt = timestamp(data.expires_at ?? data.expiresAt);
   const rows: Array<[QoderRateLimitWindow['id'], string, unknown]> = [
-    ['plan', '套餐', data.user_quota ?? data.userQuota],
-    ['add-on', '加购', data.add_on_quota ?? data.addOnQuota],
+    ['plan', 'Credits', data.user_quota ?? data.userQuota],
+    ['add-on', 'Add-on Credits', data.add_on_quota ?? data.addOnQuota],
+    ['shared', 'Shared Credits', data.org_resource_package ?? data.orgResourcePackage],
   ];
+  const dedicated = data.dedicated_resource_packages ?? data.dedicatedResourcePackages;
+  if (Array.isArray(dedicated)) dedicated.forEach((item, index) => rows.push([`dedicated-${index}`, 'Dedicated Credits', item]));
   const limits = rows.flatMap(([id, label, quota]) => {
     const usage = usedPercent(quota);
-    return usage === null ? [] : [{ id, label, usedPercent: usage, resetsAt }];
+    const row = asRecord(quota);
+    const amounts = subscriptionAmounts(row?.total ?? row?.cap, row?.used, row?.remaining, typeof row?.unit === 'string' ? row.unit : 'Credits');
+    return usage === null ? [] : [{ id, label: typeof row?.name === 'string' && row.name.trim() ? row.name.trim() : label, usedPercent: usage, resetsAt, ...(amounts ? { amounts } : {}) }];
   });
   // Prefer the dedicated plan endpoint, then fall back to the quota response
   // persisted by the official CLI.
@@ -87,12 +102,7 @@ export function qoderRemainingPercent(usedPercent: number): number {
   return Number.isFinite(usedPercent) ? Math.min(100, Math.max(0, 100 - usedPercent)) : 0;
 }
 
-/**
- * Preserve a failed subscription lookup in the tray instead of making Qoder
- * disappear. A successful quota still speaks for itself through its metrics.
- */
-export function qoderSubscriptionFeedback(snapshot: QoderSubscriptionSnapshot): string | null {
-  if (snapshot.limits.length > 0) return null;
-  if (snapshot.status === 'not-installed' || snapshot.status === 'not-signed-in') return null;
-  return snapshot.message;
+/** Keeps confirmed Qoder accounts visible when their current quota lookup fails. */
+export function qoderSubscriptionHasAccount(snapshot: QoderSubscriptionSnapshot): boolean {
+  return snapshot.status !== 'not-installed' && snapshot.status !== 'not-signed-in';
 }

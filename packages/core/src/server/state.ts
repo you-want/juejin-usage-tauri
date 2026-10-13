@@ -31,6 +31,7 @@ import {
   countHermesRows,
   countZcodeRows,
   countDshRows,
+  countKinetaiosRows,
   countPiRows,
   countKimiRows,
   countRoocodeRows,
@@ -195,6 +196,7 @@ export function buildSyncStatus(
       hermes: poll('hermes', 'Hermes 读取 ~/.hermes/**/state.db，定时轮询同步', countHermesRows(rows)),
       zcode: poll('zcode', 'ZCode 读取 ~/.zcode/cli/db/db.sqlite，定时轮询同步', countZcodeRows(rows)),
       dsh: poll('dsh', 'DeepSeek Harness 读取 ~/.dsh/sessions/**/session.jsonl.zstd，定时轮询同步', countDshRows(rows)),
+      kinetaios: poll('kinetaios', 'KinetAios 读取其数据目录 history.db 的 cost_log（真实 USD），定时轮询同步', countKinetaiosRows(rows)),
       pi: poll('pi', 'pi 读取 ~/.pi/agent/sessions，定时轮询同步', countPiRows(rows)),
       kimi: poll('kimi', 'Kimi / Kimi Code 读取 wire.jsonl，定时轮询同步', countKimiRows(rows)),
       roocode: poll(
@@ -435,13 +437,16 @@ export function createApplyAfterSync(deps: {
 ) => Promise<void> {
   return async (results, opts) => {
     const written = collectWrittenBuckets(results);
+    const store = deps.getBucketStore();
+    const cache = deps.getAggregateCache();
     if (written.length > 0) {
-      const store = deps.getBucketStore();
       store.apply(written);
-      const cache = deps.getAggregateCache();
-      if (cache) {
-        await cache.onBucketsChanged(store.getRows(), written);
-      }
+    }
+    // History (`date < today`) is read only from the sealed cache. Yesterday is
+    // still "today" until midnight, so an empty poll after the day rolls never
+    // reaches onBucketsChanged and the panel shows that day as 0 until restart.
+    if (cache && (written.length > 0 || cache.needsCalendarSeal())) {
+      await cache.onBucketsChanged(store.getRows(), written);
     }
     // Skip Renderer poke when sync wrote nothing (unless forceNotify for round end).
     if (opts?.quiet) return;

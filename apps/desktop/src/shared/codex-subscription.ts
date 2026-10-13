@@ -6,7 +6,9 @@ export type CodexSubscriptionStatus =
   | 'unavailable'
   | 'not-installed'
   | 'not-signed-in'
-  | 'unsupported-account';
+  | 'unsupported-account'
+  | 'expired'
+  | 'access-denied';
 
 export interface CodexRateLimitWindow {
   usedPercent: number;
@@ -15,7 +17,12 @@ export interface CodexRateLimitWindow {
 }
 
 export interface CodexSubscriptionSnapshot {
+  resetCredits?: { availableCount: number };
+  credits?: { balance?: number; unlimited?: boolean; hasCredits?: boolean };
   status: CodexSubscriptionStatus;
+  hasAccount: boolean;
+  fetchedAt: number | null;
+  stale: boolean;
   planLabel: string | null;
   fiveHour: CodexRateLimitWindow | null;
   weekly: CodexRateLimitWindow | null;
@@ -33,14 +40,15 @@ export function codexPlanLabel(planType: unknown): string | null {
   return canonicalSubscriptionPlanLabel(planType);
 }
 
-/** Convert the app-server's used percentage into the remaining allowance. */
+/** Convert provider-reported usage into remaining allowance. */
 export function codexRemainingPercent(usedPercent: number): number {
   if (!Number.isFinite(usedPercent)) return 0;
   return Math.min(100, Math.max(0, 100 - usedPercent));
 }
 
 function normalizeWindow(raw: RawRateLimitWindow): CodexRateLimitWindow | null {
-  const usedPercent = Number(raw.usedPercent);
+  if (typeof raw.usedPercent !== 'number') return null;
+  const usedPercent = raw.usedPercent;
   if (!Number.isFinite(usedPercent)) return null;
   const resetsAt = Number(raw.resetsAt);
   return {
