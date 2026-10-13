@@ -42,6 +42,7 @@ const SOURCE_TO_INTEGRATION: Record<string, string> = {
   'command-code': 'command-code',
   'minimax-code': 'minimax-code',
   'wps-comate': 'wps-comate',
+  teleagent: 'teleagent',
 };
 
 /** Fallback when QueueBucket/IngestBucket has no collector set (legacy rows). */
@@ -85,6 +86,7 @@ const INTEGRATION_TO_COLLECTOR: Record<string, string> = {
   'command-code': 'command-code',
   'minimax-code': 'minimax-code',
   'wps-comate': 'wps-comate',
+  teleagent: 'teleagent',
 };
 
 const NAMESPACE_DNS = '6ba7b810-9dad-11d1-80b4-00c04fd430c8';

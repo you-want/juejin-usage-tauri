@@ -39,6 +39,7 @@ import { parseKilocodeIncremental } from '../parsers/kilocode.js';
 import { parseGooseIncremental } from '../parsers/goose.js';
 import { parseZedIncremental } from '../parsers/zed.js';
 import { parseWarpIncremental } from '../parsers/warp.js';
+import { parseTeleagentIncremental } from '../parsers/teleagent.js';
 import { parseQwenworkIncremental } from '../parsers/qwenwork.js';
 import { parseMiniMaxCodeIncremental } from '../parsers/minimax-code.js';
 import { parseWpsComateIncremental } from '../parsers/wps-comate.js';
@@ -700,6 +701,9 @@ export async function syncQwenwork(dataDir: string, config: TudConfig, opts?: Sy
 export async function syncWpsComate(dataDir: string, config: TudConfig, opts?: SyncSourceOptions): Promise<SyncResult> {
   return syncSourceBuckets(dataDir, config, 'wps-comate', parseWpsComateIncremental, { sharedCursors: opts?.sharedCursors });
 }
+export async function syncTeleagent(dataDir: string, config: TudConfig, opts?: SyncSourceOptions): Promise<SyncResult> {
+  return syncSourceBuckets(dataDir, config, 'teleagent', parseTeleagentIncremental, { sharedCursors: opts?.sharedCursors });
+}
 
 export async function syncCommandCode(dataDir: string, config: TudConfig, opts?: SyncSourceOptions): Promise<SyncResult> {
   return syncSourceBuckets(dataDir, config, 'command-code', parseCommandCodeIncremental, { sharedCursors: opts?.sharedCursors });
@@ -858,6 +862,7 @@ export const SYNC_SOURCE_IDS = [
   'command-code',
   'minimax-code',
   'wps-comate',
+  'teleagent',
 ] as const;
 
 export type SyncSourceId = (typeof SYNC_SOURCE_IDS)[number];
@@ -987,6 +992,8 @@ async function syncOneSource(
     case 'wps-comate':
     case 'wpscomate':
       return syncWpsComate(dataDir, config, opts);
+    case 'teleagent':
+      return syncTeleagent(dataDir, config, opts);
     default:
       return {
         source,
@@ -1272,4 +1279,7 @@ export function countWarpRows(rows: QueueBucket[]): number {
 
 export function countWpsComateRows(rows: QueueBucket[]): number {
   return rows.filter((r) => r.source === 'wps-comate').length;
+}
+export function countTeleagentRows(rows: QueueBucket[]): number {
+  return rows.filter((r) => r.source === 'teleagent').length;
 }
