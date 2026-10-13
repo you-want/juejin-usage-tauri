@@ -101,3 +101,8 @@ export function mapQoderQuota(value: unknown, plan: unknown): Pick<QoderSubscrip
 export function qoderRemainingPercent(usedPercent: number): number {
   return Number.isFinite(usedPercent) ? Math.min(100, Math.max(0, 100 - usedPercent)) : 0;
 }
+
+/** Keeps confirmed Qoder accounts visible when their current quota lookup fails. */
+export function qoderSubscriptionHasAccount(snapshot: QoderSubscriptionSnapshot): boolean {
+  return snapshot.status !== 'not-installed' && snapshot.status !== 'not-signed-in';
+}

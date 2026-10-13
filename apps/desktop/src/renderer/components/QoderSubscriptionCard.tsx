@@ -1,6 +1,9 @@
 import { qoderExpiryDetails, qoderProgressMetrics } from '../lib/subscription-progress';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { QoderSubscriptionSnapshot } from '../../shared/qoder-subscription';
+import {
+  qoderSubscriptionHasAccount,
+  type QoderSubscriptionSnapshot,
+} from '../../shared/qoder-subscription';
 import { SubscriptionUsageCard } from './SubscriptionUsageCard';
 import { SubscriptionBrandIcon } from './SubscriptionBrandIcon';
 
@@ -31,7 +34,9 @@ export function QoderSubscriptionCard() {
   }, [reload]);
   return <SubscriptionUsageCard data={{
     detailRows: qoderExpiryDetails(snapshot),
+    hasAccount: qoderSubscriptionHasAccount(snapshot),
     icon: <SubscriptionBrandIcon brand="qoder" />,
+    message: snapshot.message,
     metrics: qoderProgressMetrics(snapshot),
     metricLimit: null,
     planLabel: snapshot.planLabel,
