@@ -5,6 +5,7 @@ import {
   fetchCalibratePreview,
   type CalibratePreviewResponse,
 } from '@/lib/api';
+import { formatReconcileSkipReason } from '@juejin-opensource/jusage-core/reconcile-skip';
 
 function formatTokens(n: number): string {
   const abs = Math.abs(n);
@@ -84,11 +85,33 @@ export function DataCalibrateSection({
       const result = await applyCalibrate(dates);
       setPreview(result.preview);
       setConfirmOpen(false);
+      const skipped = result.skipped ?? 0;
+      const parts = [
+        `删除 ${result.deleted}`,
+        `写入 ${result.upserted}`,
+      ];
+      if (skipped > 0) {
+        parts.push(`跳过 ${skipped} 条异常事件`);
+      }
       onNotify({
-        title: '校对完成',
-        description: `删除 ${result.deleted} · 写入 ${result.upserted}`,
+        title: skipped > 0 ? '校对完成（有跳过）' : '校对完成',
+        description: parts.join(' · '),
         variant: 'success',
       });
+      if (skipped > 0) {
+        const rows = result.skippedEvents ?? [];
+        // Full list for support / repro; toast stays short above.
+        console.warn('[calibrate] skipped events', rows);
+        const lines = rows.map((row) => formatReconcileSkipReason(row));
+        const shown = lines.slice(0, 8);
+        const more =
+          lines.length > shown.length
+            ? `\n…另有 ${lines.length - shown.length} 条，详见控制台 [calibrate] skipped events`
+            : '';
+        setError(
+          `有 ${skipped} 条异常事件已跳过，其余已按本地覆盖：\n${shown.join('\n')}${more}`,
+        );
+      }
     } catch (e) {
       const message = e instanceof Error ? e.message : '校对失败';
       setError(message);
@@ -134,7 +157,11 @@ export function DataCalibrateSection({
           </Button>
         </div>
 
-        {error ? <p className="mt-3 text-xs text-danger">{error}</p> : null}
+        {error ? (
+          <p className="mt-3 whitespace-pre-wrap break-all text-xs text-danger">
+            {error}
+          </p>
+        ) : null}
 
         {preview ? (
           <div className="mt-3 space-y-3">
