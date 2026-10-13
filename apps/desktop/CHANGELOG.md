@@ -1,5 +1,18 @@
 # @juejin-opensource/jusage-desktop
 
+## 0.1.14
+
+### Patch Changes
+
+- 订阅卡片支持手动刷新和展开详情：按额度池展示重置/到期时间、订阅等级和余额明细；DeepSeek 改为赠送与充值金额，Codex 补充积分与重置卡，Cursor 增加 Grok Bot，Qoder 支持共享与专属额度池。
+- 支持 Kimi 桌面版与 Kimi Code 共用一张订阅卡片；未登录时隐藏对应来源。
+- 已登录 Qoder 但读不到额度时显示原因；未安装或未登录仍隐藏卡片。
+- 修复 Codex、Claude 订阅额度无法显示：失败时展示原因并保留同账号最近额度。
+- 新增 TeleAgent、KinetAios 用量采集；Kimi 图标适配浅色主题，Codex 改用官方彩色图标。
+- 修复跨零点后空闲日期显示为 0；数据校对会展示被跳过的事件。
+- Updated dependencies
+  - @juejin-opensource/jusage-core@0.1.14
+
 ## 0.1.13
 
 ### Patch Changes

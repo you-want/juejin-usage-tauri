@@ -1,5 +1,14 @@
 # @juejin-opensource/jusage-dashboard
 
+## 0.1.14
+
+### Patch Changes
+
+- 新增 TeleAgent、KinetAios、Kimi 桌面版用量展示；Kimi 图标适配浅色主题，Codex 改用官方彩色图标。
+- 同步 core：跨零点空闲日期补记、数据校对跳过事件等修复。
+- Updated dependencies
+  - @juejin-opensource/jusage-core@0.1.14
+
 ## 0.1.13
 
 ### Patch Changes

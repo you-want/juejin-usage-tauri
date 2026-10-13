@@ -1,5 +1,15 @@
 # @juejin-opensource/jusage
 
+## 0.1.14
+
+### Patch Changes
+
+- 新增 TeleAgent、KinetAios 用量采集与面板展示；支持 Kimi 桌面版用量。
+- 修复跨零点后空闲日期在本地面板显示为 0；数据校对会展示被跳过的事件。
+- 内置面板：Kimi 图标适配浅色主题；Codex 改用官方彩色图标。
+- Updated dependencies
+  - @juejin-opensource/jusage-core@0.1.14
+
 ## 0.1.13
 
 ### Patch Changes

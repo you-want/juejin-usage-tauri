@@ -1,5 +1,16 @@
 # @juejin-opensource/jusage-core
 
+## 0.1.14
+
+### Patch Changes
+
+- 新增 TeleAgent（中国电信星辰超级智能体）用量采集：按模型与 token 统计，半小时分桶计入面板。
+- 新增 KinetAios 用量采集：读取本地 `history.db` 的 `cost_log`，token 与真实美元成本计入面板与排行榜。
+- 支持 Kimi 桌面版用量采集与项目归属，可与 Kimi Code 并存并增量去重。
+- 修复电脑不关机跨过零点后，昨天及连续多天没有新用量的日期在本地面板显示为 0：空同步也会补上这些日期，不必重启。
+- 数据校对会展示被跳过事件的 event_id 与归属原因；按上海时区校准时不再误删跨日本地行。
+- 内置定价表补充 GPT-6.1 Sol、Claude Haiku / Sonnet 5.5、Mistral Large 4 等，并更新一批现有模型价格。
+
 ## 0.1.13
 
 ### Patch Changes
