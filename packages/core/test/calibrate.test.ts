@@ -16,6 +16,7 @@ import {
   buildReconcileBatches,
   calibrateWindowSinceIso,
   diffCalibrateRows,
+  formatReconcileSkipReason,
   rollupDayDiffs,
   shanghaiDayBounds,
   summarizeCalibrateDays,
@@ -89,6 +90,25 @@ test('shanghaiDayBounds uses +08:00 half-open window', () => {
   const { from, to } = shanghaiDayBounds('2026-08-01');
   assert.equal(from, '2026-07-31T16:00:00.000Z');
   assert.equal(to, '2026-08-01T16:00:00.000Z');
+});
+
+test('formatReconcileSkipReason explains ownership context', () => {
+  assert.equal(
+    formatReconcileSkipReason({
+      event_id: '550e8400-e29b-41d4-a716-446655440001',
+      reason: 'owned_by_other_device',
+      existing_device_id: '660e8400-e29b-41d4-a716-446655440000',
+    }),
+    '550e8400-e29b-41d4-a716-446655440001：已归属其他设备 660e8400-e29b-41d4-a716-446655440000',
+  );
+  assert.equal(
+    formatReconcileSkipReason({
+      event_id: '550e8400-e29b-41d4-a716-446655440002',
+      reason: 'owned_by_other_window',
+      existing_occurred_at: '2026-09-20T09:00:00.000Z',
+    }),
+    '550e8400-e29b-41d4-a716-446655440002：线上时间 2026-09-20T09:00:00.000Z 不在本次窗口',
+  );
 });
 
 test('calibrate window is the rolling 90-day online floor', () => {
