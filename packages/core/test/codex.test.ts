@@ -74,6 +74,76 @@ test('parseCodexIncremental normalizes input and skips fork replay', async () =>
   });
 });
 
+test('parseCodexIncremental preserves cache_read_input_tokens in cumulative deltas', async () => {
+  const tempHome = await mkdtemp(join(tmpdir(), 'ai-usage-codex-cache-read-'));
+  const sessionsDir = join(tempHome, '.codex', 'sessions', '2026', '10', '14');
+  await mkdir(sessionsDir, { recursive: true });
+  const filePath = join(sessionsDir, 'rollout-cache-read.jsonl');
+  const sessionMeta = {
+    type: 'session_meta',
+    payload: { id: 'cache-read-session', cwd: '/Users/dev/my-app' },
+  };
+  const firstCumulativeUsage = {
+    type: 'event_msg',
+    timestamp: '2026-10-14T01:00:00.000Z',
+    payload: {
+      type: 'token_count',
+      info: {
+        model: 'gpt-5.4',
+        total_token_usage: {
+          input_tokens: 100,
+          cache_read_input_tokens: 60,
+          output_tokens: 10,
+          total_tokens: 110,
+        },
+      },
+    },
+  };
+  const secondCumulativeUsage = {
+    type: 'event_msg',
+    timestamp: '2026-10-14T01:01:00.000Z',
+    payload: {
+      type: 'token_count',
+      info: {
+        model: 'gpt-5.4',
+        total_token_usage: {
+          input_tokens: 160,
+          cache_read_input_tokens: 100,
+          output_tokens: 20,
+          total_tokens: 180,
+        },
+      },
+    },
+  };
+
+  await writeFile(
+    filePath,
+    `${JSON.stringify(sessionMeta)}\n${JSON.stringify(firstCumulativeUsage)}\n`,
+    'utf8',
+  );
+
+  await withIsolatedCodexHome(tempHome, async () => {
+    const cursors: CursorsFile = {};
+    await parseCodexIncremental(cursors, '2026-01-01T00:00:00.000Z');
+    await writeFile(
+      filePath,
+      `${JSON.stringify(sessionMeta)}\n${JSON.stringify(firstCumulativeUsage)}\n${JSON.stringify(secondCumulativeUsage)}\n`,
+      'utf8',
+    );
+
+    const { result } = await parseCodexIncremental(
+      cursors,
+      '2026-01-01T00:00:00.000Z',
+    );
+
+    assert.equal(result.eventsParsed, 1);
+    assert.equal(result.buckets[0]?.input_tokens, 20);
+    assert.equal(result.buckets[0]?.cached_input_tokens, 40);
+    assert.equal(result.buckets[0]?.output_tokens, 10);
+    assert.equal(result.buckets[0]?.total_tokens, 70);
+  });
+});
+
 test('codexHomeCandidates splits env path lists and deduplicates roots', async () => {
   const tempHome = await mkdtemp(join(tmpdir(), 'ai-usage-codex-env-list-'));
   const snapshot = snapshotCodexEnv();
