@@ -10,6 +10,11 @@ export const INITIAL_CODEX_SUBSCRIPTION_STATE: CodexSubscriptionState = {
   lastUpdatedAt: null,
 };
 
+/** Transient failures recover on focus; main-process caching limits requests. */
+export function shouldRefreshCodexOnFocus(snapshot: CodexSubscriptionSnapshot): boolean {
+  return !snapshot.hasAccount || snapshot.status === 'ready' || snapshot.status === 'unavailable';
+}
+
 /** The main process owns account-aware caching; the renderer never merges allowances. */
 export function updateCodexSubscriptionState(
   _previous: CodexSubscriptionState,

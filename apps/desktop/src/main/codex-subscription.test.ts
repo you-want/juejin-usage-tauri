@@ -121,3 +121,25 @@ test('explicit retry bypasses a cached transient failure', async () => {
   assert.equal((await read({ forceRefresh: true })).status, 'ready');
   assert.equal(calls, 2);
 });
+
+test('a normal focus read recovers after the transient failure cache expires', async () => {
+  let now = 1800000000000, failing = true, calls = 0;
+  const read = createCodexSubscriptionReader({ readAuth: async () => auth(), now: () => now,
+    fetch: async () => {
+      calls++;
+      if (failing) throw new TypeError('fetch failed');
+      return Response.json(payload);
+    },
+  });
+  assert.equal((await read()).status, 'unavailable');
+  failing = false;
+  now += 59999;
+  assert.equal((await read()).status, 'unavailable');
+  assert.equal(calls, 1);
+  now += 1;
+  const recovered = await read();
+  assert.equal(recovered.status, 'ready');
+  assert.equal(recovered.stale, false);
+  assert.equal(recovered.fiveHour?.usedPercent, 12);
+  assert.equal(calls, 2);
+});

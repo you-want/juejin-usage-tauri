@@ -5,6 +5,7 @@ import { homedir } from 'node:os';
 import path from 'node:path';
 import { codexPlanLabel, mapCodexRateLimitWindows, type CodexSubscriptionSnapshot } from '../shared/codex-subscription';
 import { createSubscriptionCache } from './subscription-cache';
+import { fetchSubscription } from './subscription-fetch';
 
 const USAGE_URL = 'https://chatgpt.com/backend-api/wham/usage';
 function record(value: unknown): Record<string, unknown> {
@@ -92,4 +93,4 @@ function authPath(): string {
   return path.join(home ? path.resolve(home) : path.join(homedir(), '.codex'), 'auth.json');
 }
 /** Read subscription usage with local credentials; never rotate or persist tokens. */
-export const readCodexSubscription = createCodexSubscriptionReader({ readAuth: () => readFile(authPath(), 'utf8'), fetch: (...args) => fetch(...args) });
+export const readCodexSubscription = createCodexSubscriptionReader({ readAuth: () => readFile(authPath(), 'utf8'), fetch: fetchSubscription });
