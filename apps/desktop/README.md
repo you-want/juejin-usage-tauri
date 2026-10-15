@@ -185,3 +185,11 @@ pnpm dev:desktop
 ### DeepSeek Harness 余额
 
 优先只读 `$DSH_HOME/.credentials.yaml`（默认 `~/.dsh/.credentials.yaml`）中的官方账号 grant，通过 `platform.deepseek.com/api/v0/users/get_user_summary` 读取 CNY 充值与赠送余额；不会刷新、覆盖或删除 Harness 凭证。未找到账号 grant 时兼容 Harness 的 `refs.DEEPSEEK_API_KEY`，再回退到原有 DeepSeek / OpenCode 凭证。显示接口返回的真实余额。
+
+### Qoder App 额度
+
+兼容旧版 CLI 的 `~/.qoder/.auth/user` 与 Qoder App 的 `auth.v1.dat`。App 使用 `/sash/api/v2/me/usage` 读取套餐、资源包等独立额度，零容量套餐保留为 `0/0`，不显示为剩余 100%。登录凭据仅在主进程内存中使用，请求限定到 `https://openapi.qoder.sh`，不跟随重定向，不使用或刷新 refresh token，不改写 Qoder 文件。
+
+macOS App 数据默认位于 `~/Library/Application Support/com.qoder.app.stable`。每次启动 Usage 后首次点击 Qoder 卡片的刷新按钮，会通过系统钥匙串请求读取 `Qoder App Safe Storage`（账号 `Qoder App Key`，区别于旧 IDE 的 `Qoder Safe Storage`）；是否允许由 macOS 控制，失败时显示重试提示。成功后密钥仅在当前进程内缓存，窗口聚焦不会重复请求授权。Windows 从 `%APPDATA%/com.qoder.app.stable` 读取，并使用 Electron 的系统解密接口；该路径尚需 Windows 实机验证。Linux 的 App 加密凭据暂不支持，旧 CLI 路径保持兼容。
+
+账号切换、退出、凭据失效后清除旧额度；临时网络失败仅保留当前账号的最近读数。Qoder App 应自行维护登录有效性；过期时打开 Qoder 更新登录状态。该适配依据 Qoder App 0.4.3 的内部接口，后续版本可能需要调整。

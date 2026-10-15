@@ -55,11 +55,36 @@ test('Gemini shows every model, including exhausted pools, with its own reset ti
   assert.deepEqual(metrics.map((metric) => metric.resetsAt), snapshots.antigravity.limits.map((limit) => limit.resetsAt));
   assert.equal(new Set(metrics.map((metric) => metric.poolKey)).size, metrics.length);
 });
-test('Qoder shows only Credits and Add-on with remaining percentages', () => {
+test('Qoder shows all reported pools with remaining percentages', () => {
   const metrics = qoderProgressMetrics(snapshots.qoder);
-  assert.deepEqual(metrics.map((metric) => metric.label), ['Credits', 'Add-on']);
-  assert.deepEqual(metrics.map((metric) => metric.remainingPercent), [76, 40]);
-  assert.ok(metrics.every((metric) => !('valueText' in metric) && !('valueTag' in metric)));
+  assert.deepEqual(metrics.map((metric) => metric.label), ['Credits', 'Add-on', 'Shared Credits', 'Dedicated Credits']);
+  assert.deepEqual(metrics.map((metric) => metric.remainingPercent), [76, 40, 62, 15]);
+  assert.deepEqual(metrics.map((metric) => metric.valueText), [
+    '剩余 1,520 / 2,000 Credits', '剩余 200 / 500 Credits',
+    '剩余 6,200 / 10,000 Credits', '剩余 150 / 1,000 Credits',
+  ]);
+  assert.ok(metrics.every((metric) => !('valueTag' in metric)));
+  assert.equal(new Set(metrics.map((metric) => metric.poolKey)).size, metrics.length);
+  assert.deepEqual(metrics.map((metric) => metric.poolKey), qoderProgressMetrics({ ...snapshots.qoder, stale: false }).map((metric) => metric.poolKey));
+});
+test('Qoder shows zero remaining for a zero-capacity plan without hiding its add-on balance', () => {
+  const metrics = qoderProgressMetrics({ ...snapshots.qoder, limits: [
+    { id: 'plan', label: 'Credits', usedPercent: 0, resetsAt: null, amounts: { total: 0, used: 0, remaining: 0, unit: 'Credits' } },
+    { id: 'add-on', label: 'Add-on Credits', usedPercent: 0, resetsAt: null, amounts: { total: 200, used: 100, remaining: 100, unit: 'Credits' } },
+  ] });
+
+  assert.deepEqual(metrics.map((metric) => metric.remainingPercent), [0, 50]);
+  assert.deepEqual(metrics.map((metric) => metric.valueText), ['剩余 0 / 0 Credits', '剩余 100 / 200 Credits']);
+});
+test('Qoder derives known remaining amounts without inventing counters from percentages', () => {
+  const metrics = qoderProgressMetrics({ ...snapshots.qoder, limits: [
+    { id: 'plan', label: 'Credits', usedPercent: 0, resetsAt: null, amounts: { total: 200, used: 99.75, unit: 'Credits' } },
+    { id: 'add-on', label: 'Add-on Credits', usedPercent: 50, resetsAt: null },
+  ] });
+
+  assert.equal(metrics[0].valueText, '剩余 100.25 / 200 Credits');
+  assert.equal(metrics[1].valueText, undefined);
+  assert.equal(metrics[1].remainingPercent, 50);
 });
 test('Qoder keeps one main-plan expiry and falls back to the earliest known expiry', () => {
   const snapshot = snapshots.qoder;
@@ -67,6 +92,7 @@ test('Qoder keeps one main-plan expiry and falls back to the earliest known expi
   limits[0].resetsAt = 1_900_010_000;
   assert.deepEqual(qoderExpiryDetails({ ...snapshot, limits }), [{ label: '套餐到期时间', value: subscriptionAbsoluteTime(limits[0].resetsAt)! }]);
   assert.deepEqual(qoderExpiryDetails({ ...snapshot, limits: limits.slice(1) }), [{ label: '最近到期时间', value: subscriptionAbsoluteTime(limits[1].resetsAt)! }]);
+  assert.deepEqual(qoderExpiryDetails({ ...snapshot, limits: limits.slice(2) }), [{ label: '最近到期时间', value: subscriptionAbsoluteTime(limits[2].resetsAt)! }]);
   assert.deepEqual(qoderExpiryDetails({ ...snapshot, limits: limits.map((limit) => ({ ...limit, resetsAt: null })) }), []);
 });
 test('MiniMax shows media percentages and omits the video five-hour pool', () => {

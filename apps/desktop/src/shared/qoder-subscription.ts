@@ -34,28 +34,32 @@ function asRecord(value: unknown): Record<string, unknown> | null {
 
 function usedPercent(value: unknown): number | null {
   const row = asRecord(value);
+  const total = nonNegativeNumber(row?.total ?? row?.cap);
+  const remaining = nonNegativeNumber(row?.remaining);
+  const used = nonNegativeNumber(row?.used) ?? (total !== null && remaining !== null && remaining <= total ? total - remaining : null);
+  if (total === 0) return 0;
+  if (total !== null && used !== null) return Math.min(100, Math.max(0, used / total * 100));
   const percentage = nonNegativeNumber(row?.percentage ?? row?.used_percentage ?? row?.usedPercentage);
   if (percentage !== null) {
     const normalized = percentage >= 0 && percentage <= 1 ? percentage * 100 : percentage;
     return Math.min(100, Math.max(0, normalized));
   }
-  const total = nonNegativeNumber(row?.total ?? row?.cap);
-  const remaining = nonNegativeNumber(row?.remaining);
-  const used = nonNegativeNumber(row?.used) ?? (total !== null && remaining !== null && remaining <= total ? total - remaining : null);
-  return total !== null && total > 0 && used !== null
-    ? Math.min(100, Math.max(0, used / total * 100))
-    : null;
+  return null;
 }
 
 function timestamp(value: unknown): number | null {
   if (typeof value !== 'number' && (typeof value !== 'string' || !value.trim())) return null;
+  let milliseconds: number;
   if (typeof value === 'string' && !/^\d+(?:\.\d+)?$/.test(value.trim())) {
-    const parsed = Date.parse(value);
-    return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed / 1000) : null;
+    milliseconds = Date.parse(value);
+  } else {
+    const number = Number(value);
+    // Qoder uses year 9999 for no expiry. Check seconds before inferring units.
+    if (number >= Date.UTC(9999, 0, 1) / 1000 && number < Date.UTC(10000, 0, 1) / 1000) return null;
+    milliseconds = number > 10_000_000_000 ? number : number * 1000;
   }
-  const number = Number(value);
-  return Number.isFinite(number) && number > 0
-    ? Math.floor(number > 10_000_000_000 ? number / 1_000 : number)
+  return Number.isFinite(milliseconds) && milliseconds > 0 && milliseconds < Date.UTC(9999, 0, 1)
+    ? Math.floor(milliseconds / 1000)
     : null;
 }
 
@@ -73,7 +77,7 @@ function planLabel(value: unknown): string | null {
   return canonicalSubscriptionPlanLabel(membershipType);
 }
 
-/** Normalizes Qoder's official account quota endpoint; all reported pools are retained; the card selects personal pools for its summary. */
+/** Normalizes Qoder's official account quota endpoint, retaining each reported pool. */
 export function mapQoderQuota(value: unknown, plan: unknown): Pick<QoderSubscriptionSnapshot, 'planLabel' | 'limits'> {
   const root = asRecord(value);
   const payload = asRecord(root?.data) ?? root;

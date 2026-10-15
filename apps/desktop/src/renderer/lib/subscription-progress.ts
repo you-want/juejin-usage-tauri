@@ -1,6 +1,7 @@
 import type { AntigravitySubscriptionSnapshot } from '../../shared/antigravity-subscription';
 import type { QoderSubscriptionSnapshot } from '../../shared/qoder-subscription';
 import type { MiniMaxSubscriptionSnapshot } from '../../shared/minimax-subscription';
+import { nonNegativeNumber } from '../../shared/subscription-amounts';
 import { flattenedSubscriptionDetails, subscriptionDetails, subscriptionAbsoluteTime, subscriptionPoolKey, type SubscriptionDetailRow } from './subscription-details';
 
 export function geminiProgressMetrics(snapshot: AntigravitySubscriptionSnapshot) {
@@ -13,12 +14,21 @@ export function geminiProgressMetrics(snapshot: AntigravitySubscriptionSnapshot)
 }
 
 export function qoderProgressMetrics(snapshot: QoderSubscriptionSnapshot) {
-  const source = snapshot.stale ? 'Qoder 官方 CLI 缓存' : 'Qoder 账号额度接口';
-  return snapshot.limits.filter((limit) => limit.id === 'plan' || limit.id === 'add-on').map((limit) => {
+  const numberFormat = new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 2 });
+  return snapshot.limits.map((limit) => {
+    const total = nonNegativeNumber(limit.amounts?.total);
+    const used = nonNegativeNumber(limit.amounts?.used);
+    const remaining = nonNegativeNumber(limit.amounts?.remaining)
+      ?? (total !== null && used !== null ? Math.max(0, total - used) : null);
     return {
-      poolKey: subscriptionPoolKey(source, limit),
-      color: '#2b7eff', label: limit.id === 'plan' ? 'Credits' : 'Add-on',
-      remainingPercent: Math.max(0, Math.min(100, 100 - limit.usedPercent)),
+      poolKey: subscriptionPoolKey('Qoder 账号额度', limit),
+      color: '#2b7eff', label: limit.id === 'plan' ? 'Credits' : limit.id === 'add-on' ? 'Add-on' : limit.label,
+      valueText: total !== null && remaining !== null
+        ? `剩余 ${numberFormat.format(remaining)} / ${numberFormat.format(total)} ${limit.amounts?.unit ?? 'Credits'}`
+        : undefined,
+      remainingPercent: total === 0 ? 0
+        : total !== null && remaining !== null ? Math.max(0, Math.min(100, remaining / total * 100))
+        : Math.max(0, Math.min(100, 100 - limit.usedPercent)),
       resetDisplay: 'days-only' as const,
       resetsAt: limit.resetsAt,
     };
@@ -26,7 +36,7 @@ export function qoderProgressMetrics(snapshot: QoderSubscriptionSnapshot) {
 }
 
 export function qoderExpiryDetails(snapshot: QoderSubscriptionSnapshot): SubscriptionDetailRow[] {
-  const valid = snapshot.limits.filter((limit) => (limit.id === 'plan' || limit.id === 'add-on') && subscriptionAbsoluteTime(limit.resetsAt) !== null);
+  const valid = snapshot.limits.filter((limit) => subscriptionAbsoluteTime(limit.resetsAt) !== null);
   const primary = valid.find((limit) => limit.id === 'plan');
   const expiry = primary?.resetsAt ?? (valid.length ? Math.min(...valid.map((limit) => limit.resetsAt!)) : null);
   const value = subscriptionAbsoluteTime(expiry);
