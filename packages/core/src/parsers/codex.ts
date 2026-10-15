@@ -111,6 +111,7 @@ function pickDelta(
     for (const k of [
       'input_tokens',
       'cached_input_tokens',
+      'cache_read_input_tokens',
       'cache_creation_input_tokens',
       'output_tokens',
       'reasoning_output_tokens',
