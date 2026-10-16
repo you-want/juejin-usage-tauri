@@ -178,9 +178,19 @@ pnpm dev:desktop
 桌面端从本机登录状态读取订阅额度：
 
 - Codex 从 `CODEX_HOME/auth.json`（默认 `~/.codex/auth.json`）只读获取 ChatGPT 登录凭据，请求 `/backend-api/wham/usage`，无需安装或启动 Codex CLI。不会刷新令牌或改写登录文件；令牌失效时提示重新登录。
+- Codex 额度请求使用 Electron 网络栈，支持系统代理与 PAC，不携带浏览器会话 Cookie。临时网络失败后，窗口再次聚焦会自动重试（一分钟缓存限制频率），也可手动刷新；认证过期或访问受限时仍等待手动处理。
 - Claude 使用本机 Claude Code 的 `-p /usage --output-format json`；在临时目录运行，关闭工具、MCP、用户/项目 settings 和会话保存，应用不读取 Keychain 或调用 Anthropic OAuth usage 接口。官方账户校验仍排除自定义 provider。
 - 两个渠道共享主窗口与托盘的一分钟内存缓存、合并并发请求；账号改变或认证失效时不沿用旧额度。临时失败可显示同账号上次额度和旧数据标记。
 - 有登录记录但读取失败时保留卡片并展示原因；没有登录记录的渠道隐藏。
+
+订阅网络回归测试不创建窗口、不读取真实登录文件、不访问真实账号接口。先按上文编译 Desktop 测试，再执行：
+
+```bash
+# 在 apps/desktop 目录中
+pnpm exec electron scripts/test-subscription-network.cjs
+```
+
+该测试使用临时 Electron 用户目录和本地模拟代理，覆盖代理路由、Codex 额度解析、Cookie 隔离、重定向拒绝和超时中止。
 
 ### DeepSeek Harness 余额
 

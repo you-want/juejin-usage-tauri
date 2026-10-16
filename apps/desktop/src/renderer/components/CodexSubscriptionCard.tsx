@@ -6,6 +6,7 @@ import { PlayingCardsFan } from 'lucide-react';
 import { codexRemainingPercent, type CodexSubscriptionSnapshot } from '../../shared/codex-subscription';
 import {
   INITIAL_CODEX_SUBSCRIPTION_STATE,
+  shouldRefreshCodexOnFocus,
   updateCodexSubscriptionState,
 } from '../lib/codex-subscription-state';
 import { SubscriptionUsageCard } from './SubscriptionUsageCard';
@@ -40,9 +41,8 @@ export function CodexSubscriptionCard() {
     } catch {
       next = { ...UNAVAILABLE_SNAPSHOT, hasAccount: hasAccount.current };
     }
-    // Failed signed-in channels wait for explicit retry; absent channels can recover on focus.
     hasAccount.current = next.hasAccount;
-    refreshOnFocus.current = !next.hasAccount || next.message === null;
+    refreshOnFocus.current = shouldRefreshCodexOnFocus(next);
     setState((previous) => updateCodexSubscriptionState(previous, next, Date.now()));
     requestInFlight.current = false;
     setLoading(false);
@@ -115,7 +115,7 @@ export function CodexSubscriptionCard() {
             <p className="text-muted">订阅额度与本地 Token 统计分开读取。</p>
           </div>
           <div className="flex items-center justify-between gap-3">
-            <span className="text-muted">自动重试已暂停</span>
+            <span className="text-muted">{shouldRefreshCodexOnFocus(snapshot) ? '窗口聚焦时自动重试' : '等待手动重试'}</span>
             <Button
               aria-label="重试读取 Codex 订阅额度"
               isDisabled={loading}
