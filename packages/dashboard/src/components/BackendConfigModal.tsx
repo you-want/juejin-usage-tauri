@@ -90,13 +90,13 @@ export function BackendConfigModal({
         variant="opaque"
       >
         <Modal.Container
-          className="w-full max-w-[720px] sm:w-[720px]"
+          className={activeTab === "embed" ? "w-full max-w-[960px] sm:w-[960px]" : "w-full max-w-[720px] sm:w-[720px]"}
           scroll="inside"
           size="lg"
         >
           <Modal.Dialog
             aria-label="设置"
-            className="flex max-h-[90vh] w-full flex-col overflow-hidden sm:w-[640px] sm:max-w-[640px]"
+            className={`flex max-h-[90vh] w-full flex-col overflow-hidden ${activeTab === "embed" ? "sm:w-[880px] sm:max-w-[880px]" : "sm:w-[640px] sm:max-w-[640px]"}`}
           >
             <Modal.CloseTrigger aria-label="关闭设置" />
             <Modal.Header>

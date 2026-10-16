@@ -197,7 +197,7 @@ export function SettingsPanel({
       <Toast.Provider placement="top end" queue={toastQueue} />
       <Tabs
         className="flex min-h-0 w-full flex-1 flex-col text-center"
-        selectedKey={tab}
+        selectedKey={tab === 'embed' ? 'sync' : tab}
         onSelectionChange={(key) => setTab(String(key) as DesktopSettingsTabId)}
       >
         <Tabs.ListContainer className="m-3 mr-14 w-fit">

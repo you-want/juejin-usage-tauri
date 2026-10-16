@@ -22,6 +22,7 @@ import {
   type TudConfigView,
 } from '@/lib/api';
 import { openJuejinLogin } from '@/lib/juejin-client-link';
+import { EmbedUsageSettings } from '@/components/EmbedUsageSettings';
 import { AboutContent } from '@/components/AboutContent';
 import { DataCalibrateSection } from '@/components/DataCalibrateSection';
 import { JuejinLoginConsentModal } from '@/components/JuejinLoginConsentModal';
@@ -60,7 +61,7 @@ export function SettingsPanel({
 
   // Web dashboard has no pet tab — fall back if a desktop-only tab is requested.
   const resolvedTab: SettingsTabId =
-    tab === 'pet' ? 'sync' : tab;
+    tab === 'pet' || (cliMode && tab === 'embed') ? 'sync' : tab;
 
   return (
     <div className="flex min-h-0 w-full flex-1 flex-col">
@@ -72,14 +73,14 @@ export function SettingsPanel({
       >
         <Tabs.ListContainer className="m-3 mr-14 w-fit">
           <Tabs.List aria-label="设置分类" className="w-fit">
-            {TAB_ITEMS.map((item) => (
+            {(cliMode ? TAB_ITEMS : [TAB_ITEMS[0]!, { id: 'embed' as const, label: '用量卡片' }, ...TAB_ITEMS.slice(1)]).map((item) => (
               <Tabs.Tab
-                className="h-6 w-fit px-3 text-xs font-normal aria-selected:text-accent-foreground"
+                className={`h-6 w-fit px-3 text-xs font-normal aria-selected:text-accent-foreground ${resolvedTab === 'embed' ? 'text-foreground/75' : ''}`}
                 id={item.id}
                 key={item.id}
               >
                 {item.label}
-                <Tabs.Indicator className="bg-accent" />
+                <Tabs.Indicator className={item.id === 'embed' ? 'bg-[color-mix(in_srgb,var(--accent)_80%,black)]' : 'bg-accent'} />
               </Tabs.Tab>
             ))}
           </Tabs.List>
@@ -116,6 +117,9 @@ export function SettingsPanel({
               />
             ))}
         </Tabs.Panel>
+        {!cliMode && <Tabs.Panel className={SETTINGS_SCROLL_PANEL} id="embed">
+          {resolvedTab === 'embed' && <EmbedUsageSettings />}
+        </Tabs.Panel>}
         <Tabs.Panel className={SETTINGS_SCROLL_PANEL} id="app">
           {resolvedTab === 'app' && <AppSettingsPanel />}
         </Tabs.Panel>
