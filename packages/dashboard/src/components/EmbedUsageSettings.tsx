@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Button, Modal, Surface, Toast, ToastQueue } from '@heroui/react';
+import { Button, Card, Chip, Modal, Surface, Tabs, Toast, ToastQueue } from '@heroui/react';
 import {
   enableEmbedKey, fetchEmbedKey, getApiBearer, getEmbedApiBase,
   rotateEmbedKey, setEmbedKeyEnabled, type EmbedKeyView,
 } from '@/lib/api';
 import { buildEmbedSnippets, EMBED_STYLE_OPTIONS, type EmbedStyle } from '@/lib/embed-usage';
+import { Check, Copy, RotateCw } from 'lucide-react';
 import { JUEJIN_HOME } from '@/lib/juejin-client-link';
 import { JUEJIN_LINK_CHANGED_EVENT } from '@/lib/shell-events';
 
@@ -17,6 +18,7 @@ export function EmbedUsageSettings() {
   const [record, setRecord] = useState<EmbedKeyView | null>(null);
   const [style, setStyle] = useState<EmbedStyle>('classic-light');
   const [loading, setLoading] = useState(true);
+  const [format, setFormat] = useState('markdown');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [rotateOpen, setRotateOpen] = useState(false);
@@ -90,48 +92,68 @@ export function EmbedUsageSettings() {
     }
   };
 
+  const selectedStyle = EMBED_STYLE_OPTIONS.find(option => option.id === style)!;
+  const formats = snippets ? [
+    { id: 'markdown', label: 'Markdown', value: snippets.markdown },
+    { id: 'html', label: 'HTML', value: snippets.html },
+    { id: 'url', label: '图片链接', value: snippets.url },
+  ] : [];
+
   return <section className="space-y-5 font-sans text-sm text-foreground">
     <Toast.Provider placement="top end" queue={queue} />
-    <div className="flex flex-wrap items-center justify-between gap-2">
-      <h3 className="text-base font-semibold">把你的 AI 用量带到任何地方</h3>
-      {record?.key && <span className={`rounded-full px-2.5 py-1 text-xs ${record.enabled ? 'bg-success/10 text-[color-mix(in_srgb,var(--success)_55%,black)] dark:text-success' : 'bg-default text-foreground/75'}`}>{record.enabled ? '已启用' : '已停用'}</span>}
+    <div className="flex items-center justify-between gap-3">
+      <h3 className="text-base font-semibold">用量卡片</h3>
+      {record?.key && <Chip size="sm" variant="soft" color={record.enabled ? 'success' : 'default'}><Chip.Label>{record.enabled ? '已启用' : '已停用'}</Chip.Label></Chip>}
     </div>
-    <p className="text-xs leading-relaxed text-muted">选择样式，复制到博客或 GitHub README。图片读取云端已同步用量，汇总全部设备，今日按北京时间统计。</p>
     {error && <div role="alert" className="rounded-xl bg-danger/10 p-3 text-xs text-danger">{error}{!record && <Button size="sm" variant="ghost" onPress={() => void refresh()}>重试</Button>}</div>}
-    {!identity ? <Surface className="space-y-3 rounded-xl p-4">
+    {!identity ? <Surface className="space-y-3 rounded-xl p-5">
       <p>登录掘金后即可生成用量卡片。</p>
-      <Button className={primaryTone} size="sm" onPress={() => window.location.assign(JUEJIN_HOME)}>登录掘金</Button>
-    </Surface> : loading ? <p role="status" className="py-10 text-center text-muted">正在读取展示设置…</p> : record && !record.key ? <Surface className="space-y-4 rounded-xl p-5">
-      <h4 className="font-medium">让用量成为你的名片</h4>
-      <p className="text-xs leading-relaxed text-muted">启用后，持有链接的人可以查看你的昵称、头像、累计和今日 Token、输入输出及费用。Tokens-only 仅改变排版，持有同一标识的人仍可选择其他样式查看费用。</p>
-      <Button className={primaryTone} size="sm" isDisabled={busy} isPending={busy} onPress={() => void mutate(enableEmbedKey, '已启用公开展示')}>启用并生成链接</Button>
-    </Surface> : snippets && record ? <div className="grid gap-5 md:grid-cols-2">
-      <div className="min-w-0 space-y-4">
-        <div className="grid grid-cols-2 gap-2" role="group" aria-label="卡片样式">
-          {EMBED_STYLE_OPTIONS.map(option => <Button key={option.id} size="sm" aria-pressed={style === option.id} variant={style === option.id ? 'primary' : 'secondary'} onPress={() => setStyle(option.id)} className={`h-auto min-h-10 flex-col items-start gap-0.5 px-3 py-2 text-left ${style === option.id ? primaryTone : ''}`}>
-            <span className="text-xs">{option.label}</span><span className="text-[10px] opacity-70">{option.description}</span>
-          </Button>)}
+      <Button variant="primary" size="sm" onPress={() => window.location.assign(JUEJIN_HOME)}>登录掘金</Button>
+    </Surface> : loading ? <p role="status" className="py-10 text-center text-muted">正在读取展示设置…</p> : record && !record.key ? <Card className="p-5">
+      <Card.Header><Card.Title>创建你的用量卡片</Card.Title></Card.Header>
+      <Card.Content><p className="text-sm leading-relaxed text-muted">启用后，持有链接的人可以查看你的昵称、头像和用量（含费用）。所有样式共用一个公开标识。</p></Card.Content>
+      <Card.Footer><Button variant="primary" isDisabled={busy} isPending={busy} onPress={() => void mutate(enableEmbedKey, '已启用公开展示')}>启用展示</Button></Card.Footer>
+    </Card> : snippets && record ? <>
+      <div className="grid items-start gap-5 md:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)]">
+        <div className="min-w-0 space-y-4">
+          <div className="grid grid-cols-2 gap-2" role="group" aria-label="卡片样式">
+            {EMBED_STYLE_OPTIONS.map(option => <Button key={option.id} aria-pressed={style === option.id} variant="secondary" onPress={() => setStyle(option.id)} className={`h-auto min-h-16 w-full justify-between rounded-xl border px-3 py-3 text-left ${style === option.id ? 'border-accent bg-accent/10 text-foreground' : 'border-transparent'}`}>
+              <span className="flex min-w-0 flex-col gap-1"><span className="text-xs font-medium">{option.label}</span><span className="text-[11px] font-normal text-muted">{option.description}</span></span>
+              {style === option.id && <Check aria-hidden="true" className="size-4 shrink-0 text-accent" />}
+            </Button>)}
+          </div>
+          <Card className="gap-0 overflow-hidden p-0" variant="secondary">
+            <Card.Header className="flex-row items-center justify-between px-4 py-3"><Card.Title className="text-xs font-medium">预览</Card.Title><span className="text-xs text-muted">{selectedStyle.label}</span></Card.Header>
+            <Card.Content className="flex min-h-52 items-center justify-center border-t border-border bg-default/30 p-4">
+              {previewError ? <div role="status" className="space-y-2 text-center text-xs text-muted"><p>暂时无法加载预览</p><Button size="sm" variant="tertiary" onPress={() => { setPreviewError(false); setRevision(value => value + 1); }}>重试预览</Button></div>
+                : <img key={`${snippets.url}:${revision}`} src={`${snippets.url}?v=${revision}`} onError={() => setPreviewError(true)} alt={record.enabled ? '用量卡片实时预览' : '停用后的掘金导流卡预览'} className="h-auto w-full max-w-full" referrerPolicy="no-referrer" />}
+            </Card.Content>
+          </Card>
         </div>
-        <Surface className="flex min-h-36 items-center justify-center rounded-xl p-3" variant="secondary">
-          {previewError ? <div role="status" className="space-y-2 text-center text-xs text-muted"><p>暂时无法加载预览</p><Button size="sm" variant="tertiary" onPress={() => { setPreviewError(false); setRevision(value => value + 1); }}>重试预览</Button></div>
-            : <img key={`${snippets.url}:${revision}`} src={`${snippets.url}?v=${revision}`} onError={() => setPreviewError(true)} alt={record.enabled ? '用量卡片实时预览' : '停用后的掘金导流卡预览'} className="h-auto max-w-full" referrerPolicy="no-referrer" />}
-        </Surface>
-        <p className="text-center text-[11px] text-muted">{record.enabled ? '云端用量自动更新；外部网站缓存可能延迟刷新。' : '当前链接展示掘金介绍卡，重新启用可恢复。'}</p>
-        <div className="space-y-2"><h4 className="text-xs font-medium">公开展示标识</h4><code className="block select-all break-all rounded-lg bg-default/50 p-3 font-mono text-xs">{record.key}</code></div>
-        <div className="flex flex-wrap gap-2 border-t border-border pt-4">
-          <Button size="sm" variant="secondary" isDisabled={busy} onPress={() => void mutate(() => setEmbedKeyEnabled(!record.enabled), record.enabled ? '已停用展示' : '已重新启用')}>{record.enabled ? '停用展示' : '重新启用'}</Button>
-          <Button size="sm" variant="danger-soft" isDisabled={busy} onPress={() => setRotateOpen(true)}>重新生成标识</Button>
-        </div>
-        <p className="text-[11px] leading-relaxed text-muted">所有样式共用此标识。停用或重新生成后，旧链接在源站展示掘金介绍卡；已被外部网站缓存的图片可能延迟更新。</p>
+        <Card className="min-w-0 gap-4 p-4" variant="secondary">
+          <Card.Header><Card.Title className="text-sm">复制并嵌入</Card.Title></Card.Header>
+          <Card.Content>
+            <Tabs selectedKey={format} onSelectionChange={key => setFormat(String(key))} className="min-w-0 gap-3">
+              <Tabs.ListContainer><Tabs.List aria-label="嵌入格式">
+                {formats.map(item => <Tabs.Tab id={item.id} key={item.id} className="px-3 text-xs">{item.label}<Tabs.Indicator /></Tabs.Tab>)}
+              </Tabs.List></Tabs.ListContainer>
+              {formats.map(item => <Tabs.Panel key={item.id} id={item.id} className="space-y-4">
+                <pre role="region" tabIndex={0} aria-label={item.label} className="min-h-52 select-all whitespace-pre-wrap break-all rounded-xl border border-border bg-surface p-4 font-mono text-xs leading-6">{item.value}</pre>
+                <Button variant="primary" className={`w-full ${primaryTone}`} onPress={() => void copy(item.value)}><Copy aria-hidden="true" className="size-4" />复制{item.id === 'url' ? '链接' : ` ${item.label}`}</Button>
+              </Tabs.Panel>)}
+            </Tabs>
+          </Card.Content>
+        </Card>
       </div>
-      <Surface className="min-w-0 space-y-5 rounded-xl p-4" variant="secondary">
-        <h4 className="font-medium">复制并嵌入</h4>
-        {([['图片链接', snippets.url, '复制链接'], ['Markdown · GitHub / 博客', snippets.markdown, '复制 Markdown'], ['HTML · 个人网站', snippets.html, '复制 HTML']] as const).map(([label, text, action]) => <div key={label} className="space-y-2">
-          <h5 className="text-xs font-medium">{label}</h5><pre role="region" tabIndex={0} aria-label={label} className="whitespace-pre-wrap break-all select-all rounded-lg border border-border bg-surface p-3 font-mono text-[11px] leading-relaxed">{text}</pre><Button className={action === '复制 Markdown' ? primaryTone : undefined} size="sm" variant={action === '复制 Markdown' ? 'primary' : 'tertiary'} onPress={() => void copy(text)}>{action}</Button>
-        </div>)}
-        <p className="text-[11px] leading-relaxed text-foreground/70">适用于支持外链 SVG 的平台，无需为不同网站单独创建卡片。</p>
-      </Surface>
-    </div> : null}
+      <Card className="gap-3 p-4" variant="secondary">
+        <Card.Header><Card.Title className="text-xs font-medium">公开展示标识</Card.Title></Card.Header>
+        <Card.Content><code className="block select-all break-all rounded-lg bg-surface px-3 py-2.5 font-mono text-xs text-muted">{record.key}</code></Card.Content>
+        <Card.Footer className="flex-wrap justify-end gap-2">
+          <Button size="sm" variant="tertiary" isDisabled={busy} onPress={() => void mutate(() => setEmbedKeyEnabled(!record.enabled), record.enabled ? '已停用展示' : '已重新启用')}>{record.enabled ? '停用展示' : '重新启用'}</Button>
+          <Button size="sm" variant="danger-soft" isDisabled={busy} onPress={() => setRotateOpen(true)}><RotateCw aria-hidden="true" className="size-3.5" />重新生成标识</Button>
+        </Card.Footer>
+      </Card>
+    </> : null}
     <Modal.Backdrop isOpen={rotateOpen} onOpenChange={open => { if (!busy) setRotateOpen(open); }}>
       <Modal.Container size="sm"><Modal.Dialog aria-label="重新生成展示标识">
         <Modal.Header><Modal.Heading>重新生成标识？</Modal.Heading></Modal.Header>
