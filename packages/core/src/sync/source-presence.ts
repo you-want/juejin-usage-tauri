@@ -38,6 +38,7 @@ import {
   cursorStateVscdbPath,
   geminiTmpDir,
   kimiDesktopCodeHome,
+  devecoDbPath,
   opencodeDbPath,
   opencodeMessagesDir,
   qoderCliProjectsDirs,
@@ -108,6 +109,8 @@ export function isSyncSourcePresent(source: string): boolean {
       return anyExists(traeAgentDbEntries().map((e) => e.dbPath));
     case 'gemini':
       return anyExists([geminiTmpDir()]);
+    case 'deveco':
+      return anyExists([devecoDbPath()]);
     case 'opencode':
       return anyExists([opencodeDbPath(), opencodeMessagesDir()]);
     case 'copilot':

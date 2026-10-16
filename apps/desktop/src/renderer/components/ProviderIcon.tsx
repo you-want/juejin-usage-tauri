@@ -12,6 +12,7 @@ import codexIcon from '@lobehub/icons-static-svg/icons/codex.svg';
 import copilotIcon from '@lobehub/icons-static-svg/icons/copilot-color.svg';
 import cursorIcon from '@lobehub/icons-static-svg/icons/cursor.svg';
 import devinIcon from '@lobehub/icons-static-svg/icons/devin-color.svg';
+import devecoIcon from '@/assets/brand-logos/deveco.svg';
 import geminiIcon from '@lobehub/icons-static-svg/icons/gemini-color.svg';
 import geminiCliIcon from '@lobehub/icons-static-svg/icons/geminicli-color.svg';
 import gooseIcon from '@lobehub/icons-static-svg/icons/goose.svg';
@@ -55,6 +56,7 @@ const PROVIDER_ICON_MAP: Record<string, ProviderIconAsset> = {
   copilot: { src: copilotIcon },
   cursor: { monochrome: true, src: cursorIcon },
   devin: { src: devinIcon },
+  deveco: { src: devecoIcon },
   gemini: { src: geminiIcon },
   'gemini-cli': { src: geminiCliIcon },
   grok: { monochrome: true, src: grokIcon },
@@ -119,6 +121,7 @@ function normalizeProviderKey(provider: string): string {
     return 'copilot';
   }
   if (key === 'opencode' || key.startsWith('opencode-')) return 'opencode';
+  if (key === 'deveco' || key.startsWith('deveco-')) return 'deveco';
   if (key.startsWith('antigravity')) return 'antigravity';
   if (key === 'auto-claw' || key.startsWith('autoclaw')) return 'autoclaw';
   if (key.startsWith('openclaw')) return 'openclaw';
