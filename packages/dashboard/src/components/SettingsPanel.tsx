@@ -75,12 +75,12 @@ export function SettingsPanel({
           <Tabs.List aria-label="设置分类" className="w-fit">
             {(cliMode ? TAB_ITEMS : [TAB_ITEMS[0]!, { id: 'embed' as const, label: '用量卡片' }, ...TAB_ITEMS.slice(1)]).map((item) => (
               <Tabs.Tab
-                className={`h-6 w-fit px-3 text-xs font-normal aria-selected:text-accent-foreground ${resolvedTab === 'embed' ? 'text-foreground/75' : ''}`}
+                className="h-6 w-fit px-3 text-xs font-normal aria-selected:text-accent-foreground"
                 id={item.id}
                 key={item.id}
               >
                 {item.label}
-                <Tabs.Indicator className={item.id === 'embed' ? 'bg-[color-mix(in_srgb,var(--accent)_80%,black)]' : 'bg-accent'} />
+                <Tabs.Indicator className="bg-accent" />
               </Tabs.Tab>
             ))}
           </Tabs.List>
