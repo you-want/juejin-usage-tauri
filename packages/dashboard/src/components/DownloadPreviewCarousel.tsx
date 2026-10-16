@@ -14,21 +14,35 @@ type PreviewSlide = {
   alt: string;
 };
 
-const PREVIEW_SRC = `${import.meta.env.BASE_URL}e1.png`;
-
+const PREVIEW_SRC_USAGE = `${import.meta.env.BASE_URL}e2.png`;
+const PREVIEW_SRC = `${import.meta.env.BASE_URL}e3.png`;
+const PREVIEW_SRC_MENU_BAR1 = `${import.meta.env.BASE_URL}e4.png`;
+const PREVIEW_SRC_MENU_BAR2 = `${import.meta.env.BASE_URL}e5.png`;
 const PREVIEW_SLIDES: readonly PreviewSlide[] = [
   {
     id: 'overview',
-    label: '用量看板',
+    label: '用量看板 & 订阅额度',
+    src: PREVIEW_SRC_USAGE,
+    alt: 'Juejin Usage 订阅额度界面预览：费用、Token、热力图与趋势图',
+  },
+  {
+    id: 'usage',
+    label: '用量趋势',
     src: PREVIEW_SRC,
     alt: 'Juejin Usage 用量看板界面预览：费用、Token、热力图与趋势图',
   },
   {
-    id: 'share',
-    label: '分享卡片',
-    src: PREVIEW_SRC,
-    alt: '分享卡片预览',
+    id: 'menu-bar1',
+    label: '菜单栏',
+    src: PREVIEW_SRC_MENU_BAR1,
+    alt: 'Juejin Usage 菜单栏预览：订阅额度',
   },
+  {
+    id: 'menu-bar2',
+    label: '菜单栏',
+    src: PREVIEW_SRC_MENU_BAR2,
+    alt: 'Juejin Usage 菜单栏预览：用量趋势',
+  }
 ];
 
 const DEMO_PETS = [
@@ -191,8 +205,7 @@ function DownloadPetStage() {
           wait(1400 + Math.random() * 1600);
           return;
         }
-        const pool = DEMO_PETS.filter((pet) => pet.id !== current?.id);
-        const pet = pool[Math.floor(Math.random() * pool.length)] ?? DEMO_PETS[0]!;
+        const pet = DEMO_PETS[Math.floor(Math.random() * DEMO_PETS.length)]!;
         setBubble({ kind: 'sync', id: pet.id, added: randomAddedTokens() });
         wait(PET_BUBBLE_MS);
       }, delay);
