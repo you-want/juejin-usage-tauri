@@ -1,6 +1,6 @@
 # CLI Web 首页订阅额度卡片
 
-状态：已完成 builder check，待用户确认。分支：`feat/cli/subscription-display`（从本地 `main` 创建）。审阅结果：无影响规划的重要遗漏。
+状态：已完成 builder check，用户已确认，实施完成。分支：`feat/cli/subscription-display`（从本地 `main` 创建）。审阅结果：无影响规划的重要遗漏。
 
 ## 意图与已确认需求
 
