@@ -1,8 +1,12 @@
-import { useEffect, useRef, useState } from 'react';
-import { Check, ChevronDown, Copy } from '@gravity-ui/icons';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { Check, ChevronDown, CircleQuestion, Copy } from '@gravity-ui/icons';
 import { Button, Popover } from '@heroui/react';
 import { ContributorsWall } from '@/components/ContributorsWall';
-import { DownloadPreviewCarousel } from '@/components/DownloadPreviewCarousel';
+import {
+  DownloadPreviewCarousel,
+  PREVIEW_SLIDES,
+} from '@/components/DownloadPreviewCarousel';
+import { ProviderIcon } from '@/components/ProviderIcon';
 import { SupportedToolsGrid } from '@/components/SupportedToolsGrid';
 import { WeChatSupportTrigger } from '@/components/WeChatSupportTrigger';
 import {
@@ -27,35 +31,11 @@ interface InstallGuidePageProps {
   reason: InstallGuideReason;
 }
 
-interface GuideCopy {
-  badge: string;
-  headline: [string, string, string];
-  description: string;
-}
-
 type CliVariantId = 'npx' | 'install-start';
 
-const copyByReason: Record<InstallGuideReason, GuideCopy> = {
-  new_user: {
-    badge: 'Juejin Usage',
-    headline: [
-      'Cursor、Claude、Codex',
-      '多工具 Token 与费用',
-      '本地面板一张表看完。',
-    ],
-    description:
-      '汇总你实际在用的 AI 编码工具用量与趋势，安装后即可查看。',
-  },
-  uninstalled: {
-    badge: '客户端暂未连接',
-    headline: [
-      '客户端暂未连接',
-      '启动后继续',
-      '同步本机用量。',
-    ],
-    description:
-      '下载并打开 Juejin Usage，即可把本机 AI 用量同步回这块面板。',
-  },
+const badgeByReason: Record<InstallGuideReason, string> = {
+  new_user: 'Juejin Usage',
+  uninstalled: '客户端暂未连接',
 };
 
 const CLI_VARIANTS: readonly {
@@ -103,7 +83,10 @@ function writeSessionTarget(id: DownloadTargetId): void {
  * Installers prefer Gitee Releases, then fall back to GitHub.
  */
 export function InstallGuidePage({ reason }: InstallGuidePageProps) {
-  const content = copyByReason[reason];
+  const badge = badgeByReason[reason];
+  const [previewIndex, setPreviewIndex] = useState(0);
+  const preview =
+    PREVIEW_SLIDES[previewIndex] ?? PREVIEW_SLIDES[0]!;
   const [targetId, setTargetId] = useState<DownloadTargetId>(() => {
     const saved = readSessionTarget();
     if (saved) return saved;
@@ -241,10 +224,10 @@ export function InstallGuidePage({ reason }: InstallGuidePageProps) {
   return (
     <section className="flex min-h-[calc(100svh-9rem)] min-w-0 items-start overflow-x-clip pt-4 pb-10 sm:pt-6 sm:pb-14 lg:pt-8">
       <div className="flex w-full min-w-0 flex-col gap-14 sm:gap-16 lg:gap-20">
-        <div className="grid w-full min-w-0 items-start gap-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)] lg:gap-16 xl:gap-20">
+        <div className="grid w-full min-w-0 items-start gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)] lg:gap-x-16 lg:gap-y-6 xl:gap-x-20 xl:gap-y-6">
         <div className="order-1 w-full min-w-0 max-w-2xl motion-safe:animate-[fade-up_420ms_ease-out] lg:col-start-1 lg:row-start-1 lg:max-w-none">
           <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-base text-muted">
-            <span>{content.badge}</span>
+            <span>{badge}</span>
             <span aria-hidden="true" className="text-foreground/25">
               ·
             </span>
@@ -256,16 +239,19 @@ export function InstallGuidePage({ reason }: InstallGuidePageProps) {
             <span>适用于 {target.badgePlatform}</span>
           </p>
 
-          <h1 className="mt-6 text-[1.5rem] leading-[1.28] font-semibold tracking-tight wrap-break-word text-foreground min-[420px]:text-[1.85rem] sm:text-5xl sm:leading-[1.12] lg:text-[3.15rem] lg:leading-[1.1]">
-            {content.headline[0]}
-            <br />
-            {content.headline[1]}
-            <br />
-            {content.headline[2]}
+          <h1 className="mt-6 text-[1.5rem] leading-[1.28] font-semibold tracking-tight text-foreground min-[420px]:text-[1.85rem] sm:text-5xl sm:leading-[1.12] lg:text-[2.35rem] lg:leading-[1.15] xl:text-[2.85rem] xl:leading-[1.12] min-[1440px]:text-[3.15rem] min-[1440px]:leading-[1.1]">
+            {preview.headline.map((line, index) => (
+              <span
+                className="block min-h-[1.28em] sm:min-h-[1.12em] lg:min-h-[1.15em] xl:min-h-[1.12em] min-[1440px]:min-h-[1.1em]"
+                key={index}
+              >
+                {line}
+              </span>
+            ))}
           </h1>
 
-          <p className="mt-5 max-w-xl text-base leading-7 wrap-break-word text-muted sm:text-lg sm:leading-8">
-            {content.description}
+          <p className="mt-5 min-h-14 max-w-xl text-base leading-7 text-muted sm:min-h-16 sm:text-lg sm:leading-8">
+            {preview.description}
           </p>
         </div>
 
@@ -505,16 +491,39 @@ export function InstallGuidePage({ reason }: InstallGuidePageProps) {
         </div>
 
         <div className="order-2 min-w-0 motion-safe:animate-[fade-up_520ms_ease-out] lg:col-start-2 lg:row-span-3 lg:row-start-1">
-          <DownloadPreviewCarousel />
+          <DownloadPreviewCarousel index={previewIndex} onIndexChange={setPreviewIndex} />
         </div>
         </div>
 
         <section aria-labelledby="supported-tools-heading" className="w-full">
           <h2
-            className="text-lg font-semibold tracking-tight text-foreground sm:text-xl"
+            className="flex items-center gap-1.5 text-lg font-semibold tracking-tight text-foreground sm:text-xl"
             id="supported-tools-heading"
           >
             支持的工具
+            <HelpPopover
+              className="size-5"
+              label="查看 Token 采集与订阅卡片说明"
+              title="支持采集 Token 用量"
+            >
+              <p>下面这些工具都可以采集 Token 用量。</p>
+              <p className="mt-3 text-xs font-medium text-foreground">这些还支持展示订阅卡片</p>
+              <ul className="mt-2 grid grid-cols-2 gap-1.5">
+                {SUBSCRIPTION_CARD_TOOLS.map((tool) => (
+                  <li
+                    className="flex min-w-0 items-center gap-2 rounded-lg bg-black/3 px-2 py-1.5 text-foreground dark:bg-white/5"
+                    key={tool.source}
+                  >
+                    <ProviderIcon
+                      color={tool.source === 'dsh' ? '#4D6BFE' : undefined}
+                      provider={tool.source}
+                      size={16}
+                    />
+                    <span className="min-w-0 truncate text-sm leading-snug">{tool.name}</span>
+                  </li>
+                ))}
+              </ul>
+            </HelpPopover>
           </h2>
           <div className="mt-4">
             <SupportedToolsGrid className="lg:grid-cols-3" collapsible />
@@ -522,6 +531,61 @@ export function InstallGuidePage({ reason }: InstallGuidePageProps) {
         </section>
       </div>
     </section>
+  );
+}
+
+const SUBSCRIPTION_CARD_TOOLS = [
+  { name: 'Codex', source: 'codex' },
+  { name: 'Claude', source: 'claude' },
+  { name: 'Cursor', source: 'cursor' },
+  { name: 'GitHub Copilot', source: 'copilot' },
+  { name: 'Grok', source: 'grok' },
+  { name: 'Kimi', source: 'kimi' },
+  { name: 'ZCode', source: 'zcode' },
+  { name: 'Antigravity', source: 'antigravity' },
+  { name: 'Qoder', source: 'qoder' },
+  { name: 'MiniMax', source: 'minimax-code' },
+  { name: 'OpenCode', source: 'opencode' },
+  { name: 'DeepSeek', source: 'dsh' },
+] as const;
+
+function HelpPopover({
+  children,
+  className,
+  label,
+  title,
+}: {
+  children: ReactNode;
+  className?: string;
+  label: string;
+  title: string;
+}) {
+  return (
+    <Popover>
+      <Button
+        aria-label={label}
+        className={cn(
+          'inline-flex min-h-0 min-w-0 shrink-0 align-middle p-0 text-muted',
+          'data-[hovered]:bg-transparent data-[hovered]:text-foreground',
+          className,
+        )}
+        isIconOnly
+        variant="ghost"
+      >
+        <CircleQuestion aria-hidden="true" className="size-[1em]" />
+      </Button>
+      <Popover.Content
+        className="w-80 rounded-[10px] border-0 bg-overlay p-0 text-overlay-foreground shadow-surface"
+        placement="bottom start"
+      >
+        <Popover.Dialog className="p-3 outline-none">
+          <Popover.Heading className="text-sm font-medium text-foreground">
+            {title}
+          </Popover.Heading>
+          <div className="mt-1.5 text-sm leading-6 text-muted">{children}</div>
+        </Popover.Dialog>
+      </Popover.Content>
+    </Popover>
   );
 }
 

@@ -7,42 +7,69 @@ import { cn, formatCompactTokenCount } from '@/lib/utils';
 const PREVIEW_INTERVAL_MS = 5200;
 const PET_BUBBLE_MS = 1600;
 
-type PreviewSlide = {
+export type PreviewSlide = {
   id: string;
   label: string;
   src: string;
   alt: string;
+  width: number;
+  height: number;
+  /** Narrow screenshots stay at their own size instead of filling the wide frame. */
+  compact: boolean;
+  headline: [string, string, string];
+  description: string;
 };
 
 const PREVIEW_SRC_USAGE = `${import.meta.env.BASE_URL}e2.png`;
 const PREVIEW_SRC = `${import.meta.env.BASE_URL}e3.png`;
 const PREVIEW_SRC_MENU_BAR1 = `${import.meta.env.BASE_URL}e4.png`;
 const PREVIEW_SRC_MENU_BAR2 = `${import.meta.env.BASE_URL}e5.png`;
-const PREVIEW_SLIDES: readonly PreviewSlide[] = [
+export const PREVIEW_SLIDES: readonly PreviewSlide[] = [
   {
     id: 'overview',
-    label: '用量看板 & 订阅额度',
+    label: '用量看板与订阅额度',
     src: PREVIEW_SRC_USAGE,
-    alt: 'Juejin Usage 订阅额度界面预览：费用、Token、热力图与趋势图',
+    alt: 'Juejin Usage 用量看板：费用、Token、请求数、订阅额度与热力图',
+    width: 2048,
+    height: 1560,
+    compact: false,
+    headline: ['订阅还剩多少额度', '费用、Token 和请求数', '打开看板就能看到。'],
+    description:
+      'Codex、Claude、Cursor 的剩余额度，Token 消耗与费用，都可以分开看。',
   },
   {
     id: 'usage',
-    label: '用量趋势',
+    label: '趋势、工具与项目',
     src: PREVIEW_SRC,
-    alt: 'Juejin Usage 用量看板界面预览：费用、Token、热力图与趋势图',
+    alt: 'Juejin Usage 用量趋势：按天的 Token 与费用，以及工具、模型和项目分布',
+    width: 2048,
+    height: 1560,
+    compact: false,
+    headline: ['Token 和费用的变化', '工具、模型和项目的占比', '都可以分开看。'],
+    description: '按天看用量怎么走，再看到具体是哪个工具、模型和项目。',
   },
   {
-    id: 'menu-bar1',
-    label: '菜单栏',
+    id: 'menu-bar-quota',
+    label: '菜单栏里的订阅额度',
     src: PREVIEW_SRC_MENU_BAR1,
-    alt: 'Juejin Usage 菜单栏预览：订阅额度',
+    alt: 'Juejin Usage 菜单栏：Codex、Claude、Cursor 的剩余额度',
+    width: 850,
+    height: 1460,
+    compact: true,
+    headline: ['不用打开主窗口', '订阅还剩多少额度', '菜单栏里就能看到。'],
+    description: '点一下菜单栏，就能看到 Codex、Claude、Cursor 还剩多少额度。',
   },
   {
-    id: 'menu-bar2',
-    label: '菜单栏',
+    id: 'menu-bar-trend',
+    label: '菜单栏里的今日趋势',
     src: PREVIEW_SRC_MENU_BAR2,
-    alt: 'Juejin Usage 菜单栏预览：用量趋势',
-  }
+    alt: 'Juejin Usage 菜单栏：今天的费用、Token，以及工具和模型分布',
+    width: 860,
+    height: 1460,
+    compact: true,
+    headline: ['今天每小时用了多少', '哪些工具和模型在消耗', '菜单栏里就能看到。'],
+    description: '点开菜单栏，就能看到今天的费用、Token，以及工具和模型分布。',
+  },
 ];
 
 const DEMO_PETS = [
@@ -162,6 +189,7 @@ function DownloadPetStage() {
   const [bubble, setBubble] = useState<PetBubbleState | null>(null);
   const [hopId, setHopId] = useState<DemoPetId | null>(null);
   const hideTimer = useRef<number | null>(null);
+  const lastPetId = useRef<DemoPetId | null>(null);
   const bubbleRef = useRef(bubble);
   bubbleRef.current = bubble;
 
@@ -205,7 +233,9 @@ function DownloadPetStage() {
           wait(1400 + Math.random() * 1600);
           return;
         }
-        const pet = DEMO_PETS[Math.floor(Math.random() * DEMO_PETS.length)]!;
+        const candidates = DEMO_PETS.filter((pet) => pet.id !== 'yoyo' && pet.id !== lastPetId.current);
+        const pet = candidates[Math.floor(Math.random() * candidates.length)] ?? DEMO_PETS[0]!;
+        lastPetId.current = pet.id;
         setBubble({ kind: 'sync', id: pet.id, added: randomAddedTokens() });
         wait(PET_BUBBLE_MS);
       }, delay);
@@ -224,7 +254,13 @@ function DownloadPetStage() {
         const usageOpen = bubble?.kind === 'usage' && bubble.id === pet.id;
         const syncAdded = bubble?.kind === 'sync' && bubble.id === pet.id ? bubble.added : null;
         return (
-          <div className="relative flex w-24 flex-col items-center sm:w-28" key={pet.id}>
+          <div
+            className={cn(
+              'relative flex w-24 flex-col items-center sm:w-28',
+              (usageOpen || syncAdded) && 'z-20',
+            )}
+            key={pet.id}
+          >
             {usageOpen ? <PetBubble cost={pet.cost} tokens={pet.tokens} /> : null}
             {syncAdded ? <PetSyncBubble added={syncAdded} /> : null}
             <button
@@ -270,18 +306,23 @@ function DownloadPetStage() {
 }
 
 /** Screenshot carousel with the three desktop pets underneath. */
-export function DownloadPreviewCarousel() {
-  const [index, setIndex] = useState(0);
+export function DownloadPreviewCarousel({
+  index,
+  onIndexChange,
+}: {
+  index: number;
+  onIndexChange: (index: number) => void;
+}) {
   const [paused, setPaused] = useState(false);
   const count = PREVIEW_SLIDES.length;
 
   useEffect(() => {
     if (paused || count < 2 || prefersReducedMotion()) return;
     const timer = window.setInterval(() => {
-      setIndex((current) => (current + 1) % count);
+      onIndexChange((index + 1) % count);
     }, PREVIEW_INTERVAL_MS);
     return () => window.clearInterval(timer);
-  }, [paused, count]);
+  }, [paused, count, index, onIndexChange]);
 
   const active = PREVIEW_SLIDES[index] ?? PREVIEW_SLIDES[0]!;
 
@@ -290,7 +331,10 @@ export function DownloadPreviewCarousel() {
       <figure
         aria-label="产品预览"
         aria-roledescription="carousel"
-        className="w-full overflow-hidden rounded-2xl border border-border/80 bg-surface shadow-[0_24px_48px_-28px_rgb(15_23_42/0.45)] dark:shadow-[0_24px_48px_-24px_rgb(0_0_0/0.65)]"
+        className={cn(
+          'mx-auto overflow-hidden rounded-2xl border border-border/80 bg-surface shadow-[0_24px_48px_-28px_rgb(15_23_42/0.45)] motion-safe:transition-[width] motion-safe:duration-500 dark:shadow-[0_24px_48px_-24px_rgb(0_0_0/0.65)]',
+          active.compact ? 'w-[min(100%,18rem)]' : 'w-full',
+        )}
         onBlur={(event) => {
           if (!event.currentTarget.contains(event.relatedTarget)) setPaused(false);
         }}
@@ -298,29 +342,26 @@ export function DownloadPreviewCarousel() {
         onMouseEnter={() => setPaused(true)}
         onMouseLeave={() => setPaused(false)}
       >
-        <div className="relative aspect-[2102/1560] overflow-hidden">
-          <div
-            className="flex h-full motion-safe:transition-transform motion-safe:duration-500 motion-safe:ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none"
-            style={{ transform: `translateX(-${index * 100}%)` }}
-          >
-            {PREVIEW_SLIDES.map((slide) => (
-              <div
-                aria-hidden={slide.id !== active.id}
-                className="h-full w-full shrink-0"
-                inert={slide.id !== active.id}
-                key={slide.id}
-              >
-                <img
-                  alt={slide.alt}
-                  className="h-full w-full object-cover object-top"
-                  decoding="async"
-                  height={1560}
-                  src={slide.src}
-                  width={2102}
-                />
-              </div>
-            ))}
-          </div>
+        <div
+          className="relative w-full motion-safe:transition-[aspect-ratio] motion-safe:duration-500"
+          style={{ aspectRatio: `${active.width} / ${active.height}` }}
+        >
+          {PREVIEW_SLIDES.map((slide) => (
+            <img
+              alt={slide.alt}
+              aria-hidden={slide.id !== active.id}
+              className={cn(
+                'absolute inset-0 h-full w-full object-contain motion-safe:transition-opacity motion-safe:duration-500',
+                slide.id === active.id ? 'opacity-100' : 'pointer-events-none opacity-0',
+              )}
+              decoding="async"
+              height={slide.height}
+              inert={slide.id !== active.id}
+              key={slide.id}
+              src={slide.src}
+              width={slide.width}
+            />
+          ))}
         </div>
       </figure>
       <p className="mt-3 text-center text-sm font-normal text-foreground">{active.label}</p>
@@ -343,7 +384,7 @@ export function DownloadPreviewCarousel() {
                 key={slide.id}
                 role="tab"
                 type="button"
-                onClick={() => setIndex(slideIndex)}
+                onClick={() => onIndexChange(slideIndex)}
               />
             );
           })}
