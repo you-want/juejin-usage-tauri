@@ -110,7 +110,6 @@ export function EmbedUsageSettings() {
         <EmbedUsageCarousel key={`${record.key}:${revision}:${record.enabled}`} apiBase={getEmbedApiBase()} publicKey={record.key!} style={style} enabled={record.enabled} onStyleChange={setStyle} />
         <div className="min-w-0 space-y-4">
           <Card variant="secondary">
-            <Card.Header><Card.Title>复制并嵌入</Card.Title></Card.Header>
             <Card.Content>
               <Tabs selectedKey={format} onSelectionChange={key => setFormat(String(key))} className="min-w-0 gap-3">
                 <Tabs.ListContainer><Tabs.List aria-label="嵌入格式">

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Button, Label, ListBox, Select } from '@heroui/react';
+import { Button, ListBox, Select } from '@heroui/react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { buildEmbedSnippets, EMBED_STYLE_OPTIONS, type EmbedStyle } from '@/lib/embed-usage';
 
@@ -34,11 +34,10 @@ export function EmbedUsageCarousel({ apiBase, publicKey, style, enabled, onStyle
   const current = EMBED_STYLE_OPTIONS[index]!;
 
   return <section aria-label="用量卡片预览" aria-roledescription="轮播图" className="min-w-0 space-y-4">
-    <Select fullWidth value={style} onChange={value => {
+    <Select aria-label="卡片样式" fullWidth variant="secondary" value={style} onChange={value => {
       const option = EMBED_STYLE_OPTIONS.find(option => option.id === value);
       if (option) onStyleChange(option.id);
     }}>
-      <Label>卡片样式</Label>
       <Select.Trigger><Select.Value /><Select.Indicator /></Select.Trigger>
       <Select.Popover><ListBox>
         {EMBED_STYLE_OPTIONS.map(option => <ListBox.Item id={option.id} key={option.id} textValue={option.label}>
