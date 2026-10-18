@@ -1,5 +1,5 @@
 import { createReadStream, existsSync } from 'node:fs';
-import { readdir, readFile, writeFile, appendFile, mkdir, unlink } from 'node:fs/promises';
+import { readdir, readFile, writeFile, appendFile, mkdir, rename, unlink } from 'node:fs/promises';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline';
 
@@ -248,8 +248,26 @@ export async function saveCursors(dataDir: string, cursors: import('../types.js'
     hit.value = cursors;
     return;
   }
-  await writeFile(join(dataDir, 'cursors.json'), `${json}\n`, 'utf8');
+  await writeFileAtomic(join(dataDir, 'cursors.json'), `${json}\n`);
   cursorsCache.set(dataDir, { value: cursors, serialized: json });
+}
+
+/**
+ * Write via temp file + rename so a crash mid-write cannot leave a truncated
+ * cursors.json. A torn file fails to parse, `loadCursors` falls back to `{}`,
+ * and every parser rescans its whole history with its dedup state gone.
+ */
+async function writeFileAtomic(path: string, data: string): Promise<void> {
+  const tmp = `${path}.${process.pid}.tmp`;
+  try {
+    await writeFile(tmp, data, 'utf8');
+    await rename(tmp, path);
+  } catch {
+    // Windows can refuse the rename while another process holds the target
+    // open; fall back to the old in-place write rather than lose the round.
+    await unlink(tmp).catch(() => {});
+    await writeFile(path, data, 'utf8');
+  }
 }
 
 /** True when a sync round changed parser cursors and they must be persisted. */
