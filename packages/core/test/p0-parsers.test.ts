@@ -224,6 +224,52 @@ test('parseOpencodeIncremental reads sqlite and is rewrite-safe', async () => {
   }
 });
 
+test('parseOpencodeIncremental waits for a timestamp before advancing message totals', async () => {
+  const home = await mkdtemp(join(tmpdir(), 'tud-opencode-pending-time-'));
+  const previousOpenCodeHome = process.env.OPENCODE_HOME;
+  process.env.OPENCODE_HOME = home;
+  try {
+    const databasePath = join(home, 'opencode.db');
+    const database = new DatabaseSync(databasePath);
+    database.exec(`CREATE TABLE message (
+      id TEXT PRIMARY KEY,
+      session_id TEXT,
+      data TEXT
+    )`);
+    const pendingMessage = {
+      role: 'assistant',
+      modelID: 'claude-sonnet-4',
+      tokens: { input: 100, output: 20, reasoning: 0, cache: { read: 0, write: 0 } },
+    };
+    database.prepare('INSERT INTO message (id, session_id, data) VALUES (?, ?, ?)').run(
+      'msg_pending_time',
+      'ses_pending_time',
+      JSON.stringify(pendingMessage),
+    );
+    database.close();
+
+    const pendingResult = await parseOpencodeIncremental({}, SINCE);
+    assert.equal(pendingResult.result.eventsParsed, 0);
+
+    const completedDatabase = new DatabaseSync(databasePath);
+    completedDatabase.prepare('UPDATE message SET data = ? WHERE id = ?').run(
+      JSON.stringify({
+        ...pendingMessage,
+        time: { created: Date.parse('2026-10-18T12:05:00.000Z') },
+      }),
+      'msg_pending_time',
+    );
+    completedDatabase.close();
+
+    const completedResult = await parseOpencodeIncremental(pendingResult.cursors, SINCE);
+    assert.equal(completedResult.result.eventsParsed, 1);
+    assert.equal(completedResult.result.buckets[0]!.total_tokens, 120);
+  } finally {
+    if (previousOpenCodeHome === undefined) delete process.env.OPENCODE_HOME;
+    else process.env.OPENCODE_HOME = previousOpenCodeHome;
+  }
+});
+
 test('parseOpencodeIncremental counts v2 session_message calls once', async () => {
   const home = await mkdtemp(join(tmpdir(), 'tud-opencode-v2-'));
   const prev = process.env.OPENCODE_HOME;
