@@ -113,6 +113,15 @@ test('deepseek-flash resolves the current official V4.1 Flash price', () => {
   assert.equal(p.cache_read, 0.003);
 });
 
+test('deepseek-v4.1-flash-1017 resolves the official Flash price instead of the generic DeepSeek price', () => {
+  for (const model of ['deepseek-v4.1-flash-1017', 'deepseek/deepseek-v4.1-flash-1017']) {
+    const p = getModelPricing(model);
+    assert.equal(p.input, 0.15);
+    assert.equal(p.output, 0.6);
+    assert.equal(p.cache_read, 0.003);
+  }
+});
+
 test('qwen3.8-flash resolves current global and China-region prices', () => {
   const global = getModelPricing('alibaba/qwen3.8-flash');
   assert.equal(global.input, 0.15);
