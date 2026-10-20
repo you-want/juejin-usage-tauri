@@ -251,8 +251,6 @@ Dashboard 开发把 `@juejin-opensource/jusage-core/usage-cards` 指到 **src**�
 https://api.juejin.cn/aiusage_api/embed/v1/cards/{shareId}.svg
 ```
 
-旧路径 `/embed/v1/:key/:style.svg`、单用户 `usage_embed_keys` **已废弃**，不要再写进文档或代码。
-
 停用 / 无效 / 限流时仍返回 **HTTP 200** 导流 SVG（README 不裂图），不是 404。
 
 ### 缓存
