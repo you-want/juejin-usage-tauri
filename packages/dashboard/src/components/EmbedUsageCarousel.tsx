@@ -39,12 +39,19 @@ export function EmbedCardPreview({
 }
 
 /** Empty state when local template cannot be rendered. */
-export function EmbedCardPreviewEmpty({ onRetry }: { onRetry?: () => void }) {
+export function EmbedCardPreviewEmpty({
+  onRetry,
+  message,
+}: {
+  onRetry?: () => void;
+  /** Override the default “无法生成本地预览” copy. */
+  message?: string;
+}) {
   return (
     <section aria-label="用量卡片预览" className="min-w-0 space-y-3">
       <div className="flex min-h-40 w-full items-center justify-center overflow-hidden rounded-xl border border-border bg-surface p-3">
         <div role="status" className="space-y-2 text-center text-sm text-muted">
-          <p>无法生成本地预览</p>
+          <p>{message || '无法生成本地预览'}</p>
           {onRetry ? (
             <Button size="sm" variant="tertiary" onPress={onRetry}>重试预览</Button>
           ) : null}

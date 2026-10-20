@@ -4,8 +4,51 @@ import {
   type UsageCardStyle,
 } from '@juejin-opensource/jusage-core/usage-cards';
 
-export const EMBED_STYLE_OPTIONS = USAGE_CARD_CATALOG;
+/** Catalog entry used by the embed settings panel (local and/or server). */
+export type EmbedStyleOption = {
+  id: string;
+  label: string;
+  description: string;
+  order: number;
+  width: number;
+  height: number;
+  avatar: { x: number; y: number; size: number };
+  fields: ReadonlyArray<{ key: string; required: boolean; defaultOn?: boolean }>;
+  /** True when local SVG artwork exists for client-side preview. */
+  hasLocalTemplate?: boolean;
+};
+
+/** Local-built catalog (cards:build). Fallback before/without server merge. */
+export const EMBED_STYLE_OPTIONS: readonly EmbedStyleOption[] = USAGE_CARD_CATALOG.map((card) => ({
+  ...card,
+  hasLocalTemplate: true,
+}));
+
 export type EmbedStyle = UsageCardStyle;
+
+/**
+ * Merge server catalog API with local USAGE_CARD_CATALOG.
+ * Start from server (or empty), then overlay local by id — **local wins** on clash.
+ * Local-only and server-only ids both appear; preview needs local SVG.
+ */
+export function mergeEmbedCatalog(
+  server: ReadonlyArray<EmbedStyleOption> | null | undefined,
+): EmbedStyleOption[] {
+  const byId = new Map<string, EmbedStyleOption>();
+  for (const card of server ?? []) {
+    if (!card?.id) continue;
+    const hasLocalTemplate = Object.prototype.hasOwnProperty.call(USAGE_CARD_TEMPLATES, card.id);
+    byId.set(card.id, { ...card, hasLocalTemplate });
+  }
+  for (const card of USAGE_CARD_CATALOG) {
+    byId.set(card.id, { ...card, hasLocalTemplate: true });
+  }
+  return [...byId.values()].sort((a, b) => a.order - b.order || a.id.localeCompare(b.id));
+}
+
+export function hasLocalEmbedTemplate(templateId: string): boolean {
+  return Object.prototype.hasOwnProperty.call(USAGE_CARD_TEMPLATES, templateId);
+}
 
 export type EmbedCopyFormat =
   | 'markdown-page'
@@ -302,8 +345,11 @@ export function buildEmbedSnippets(
   };
 }
 
-export function defaultShowFieldsForTemplate(templateId: string): string[] {
-  const card = EMBED_STYLE_OPTIONS.find(c => c.id === templateId);
+export function defaultShowFieldsForTemplate(
+  templateId: string,
+  catalog: readonly EmbedStyleOption[] = EMBED_STYLE_OPTIONS,
+): string[] {
+  const card = catalog.find(c => c.id === templateId);
   if (!card) return [];
   return card.fields
     .filter(f => f.required || Boolean(f.defaultOn))

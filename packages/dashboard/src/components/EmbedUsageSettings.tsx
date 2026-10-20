@@ -6,6 +6,7 @@ import {
   createEmbedCard,
   deleteEmbedCard,
   fetchEmbedCards,
+  fetchEmbedCatalog,
   getApiBearer,
   getEmbedApiBase,
   updateEmbedCard,
@@ -16,9 +17,12 @@ import {
   defaultShowFieldsForTemplate,
   EMBED_STYLE_OPTIONS,
   fieldLabel,
+  hasLocalEmbedTemplate,
+  mergeEmbedCatalog,
   renderLocalEmbedPreviewSvg,
   sameFieldSet,
   type EmbedStyle,
+  type EmbedStyleOption,
 } from '@/lib/embed-usage';
 import { EmbedCardPreview, EmbedCardPreviewEmpty } from '@/components/EmbedUsageCarousel';
 import { Copy, Plus, RotateCw, Trash2 } from 'lucide-react';
@@ -36,8 +40,8 @@ type CardDraft = {
   label: string;
 };
 
-function draftFromCard(card: EmbedCardView): CardDraft {
-  const meta = EMBED_STYLE_OPTIONS.find(c => c.id === card.templateId);
+function draftFromCard(card: EmbedCardView, catalog: readonly EmbedStyleOption[]): CardDraft {
+  const meta = catalog.find(c => c.id === card.templateId);
   const allowed = new Set(meta?.fields.map(f => f.key) ?? []);
   // Drop retired keys (e.g. legacy subtitle) so drafts stay save-clean.
   const showFields = card.showFields.filter(key => allowed.has(key));
@@ -53,6 +57,8 @@ export function EmbedUsageSettings() {
   const { userName, avatarLarge } = useJuejinAuth();
   const [identity, setIdentity] = useState(getApiBearer);
   const [cards, setCards] = useState<EmbedCardView[]>([]);
+  /** Merged local ∪ server catalog; local id wins for field contracts / preview. */
+  const [catalog, setCatalog] = useState<readonly EmbedStyleOption[]>(EMBED_STYLE_OPTIONS);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [draft, setDraft] = useState<CardDraft | null>(null);
   const [loading, setLoading] = useState(true);
@@ -81,9 +87,9 @@ export function EmbedUsageSettings() {
     }
     setDraft(prev => {
       if (prev?.shareId === selected.shareId) return prev;
-      return draftFromCard(selected);
+      return draftFromCard(selected, catalog);
     });
-  }, [selected]);
+  }, [selected, catalog]);
 
   const refresh = useCallback(async () => {
     const version = ++requestVersion.current;
@@ -97,13 +103,18 @@ export function EmbedUsageSettings() {
     writing.current = false;
     if (!user) {
       setCards([]);
+      setCatalog(EMBED_STYLE_OPTIONS);
       setSelectedId(null);
       setDraft(null);
       return;
     }
     try {
-      const result = await fetchEmbedCards();
+      const [result, remoteCatalog] = await Promise.all([
+        fetchEmbedCards(),
+        fetchEmbedCatalog().catch(() => null),
+      ]);
       if (version !== requestVersion.current || user !== getApiBearer()) return;
+      setCatalog(mergeEmbedCatalog(remoteCatalog ?? undefined));
       setCards(result);
       setSelectedId(prev => {
         if (prev && result.some(c => c.shareId === prev)) return prev;
@@ -175,9 +186,9 @@ export function EmbedUsageSettings() {
   );
 
   const templateMeta = draft
-    ? EMBED_STYLE_OPTIONS.find(c => c.id === draft.templateId)
+    ? catalog.find(c => c.id === draft.templateId)
     : selected
-      ? EMBED_STYLE_OPTIONS.find(c => c.id === selected.templateId)
+      ? catalog.find(c => c.id === selected.templateId)
       : null;
 
   const snippets = selected
@@ -213,7 +224,7 @@ export function EmbedUsageSettings() {
 
   const toggleField = (key: string, checked: boolean) => {
     if (!draft) return;
-    const meta = EMBED_STYLE_OPTIONS.find(c => c.id === draft.templateId);
+    const meta = catalog.find(c => c.id === draft.templateId);
     const field = meta?.fields.find(f => f.key === key);
     if (!field || field.required) return;
     setDraft(prev => {
@@ -232,7 +243,7 @@ export function EmbedUsageSettings() {
       return {
         ...prev,
         templateId,
-        showFields: defaultShowFieldsForTemplate(templateId),
+        showFields: defaultShowFieldsForTemplate(templateId, catalog),
       };
     });
   };
@@ -313,7 +324,7 @@ export function EmbedUsageSettings() {
                   <Card.Header><Card.Title>我的卡片</Card.Title></Card.Header>
                   <Card.Content className="space-y-2">
                     {cards.map(card => {
-                      const meta = EMBED_STYLE_OPTIONS.find(c => c.id === card.templateId);
+                      const meta = catalog.find(c => c.id === card.templateId);
                       const active = card.shareId === selected?.shareId;
                       return (
                         <button
@@ -351,7 +362,7 @@ export function EmbedUsageSettings() {
                         <Select.Trigger><Select.Value /><Select.Indicator /></Select.Trigger>
                         <Select.Popover>
                           <ListBox>
-                            {EMBED_STYLE_OPTIONS.map(option => (
+                            {catalog.map(option => (
                               <ListBox.Item id={option.id} key={option.id} textValue={option.label}>
                                 {option.label}<ListBox.ItemIndicator />
                               </ListBox.Item>
@@ -446,7 +457,13 @@ export function EmbedUsageSettings() {
                       enabled={selected.enabled}
                     />
                   ) : (
-                    <EmbedCardPreviewEmpty />
+                    <EmbedCardPreviewEmpty
+                      message={
+                        hasLocalEmbedTemplate(draft.templateId)
+                          ? undefined
+                          : '该模板仅服务端有资源，本机无 SVG，无法本地预览'
+                      }
+                    />
                   )
                 )}
                 {snippets && (
@@ -507,7 +524,7 @@ export function EmbedUsageSettings() {
                 <Select.Trigger><Select.Value /><Select.Indicator /></Select.Trigger>
                 <Select.Popover>
                   <ListBox>
-                    {EMBED_STYLE_OPTIONS.map(option => (
+                    {catalog.map(option => (
                       <ListBox.Item id={option.id} key={option.id} textValue={option.label}>
                         {option.label}<ListBox.ItemIndicator />
                       </ListBox.Item>
@@ -530,7 +547,7 @@ export function EmbedUsageSettings() {
                   () => createEmbedCard({
                     templateId: createTemplate,
                     label: createLabel.trim() || null,
-                    showFields: defaultShowFieldsForTemplate(createTemplate),
+                    showFields: defaultShowFieldsForTemplate(createTemplate, catalog),
                   }),
                   '已创建卡片',
                   (card) => setSelectedId(card.shareId),
