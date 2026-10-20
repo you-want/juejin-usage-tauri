@@ -13,7 +13,8 @@
   "fields": [
     {
       "key": "name",
-      "required": true
+      "required": false,
+      "defaultOn": true
     },
     {
       "key": "avatar",

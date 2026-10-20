@@ -33,7 +33,6 @@ const PREVIEW_DEMO = {
   input: '8.1M',
   output: '4.3M',
   since: 'since 2025-03',
-  subtitle: 'Juejin AI Usage',
   inputPct: '65%',
   outputPct: '35%',
   totalPct: '100%',
@@ -101,6 +100,15 @@ export function computeEmbedLayoutPositions(
   const namePad = templateId === 'compact' || templateId === 'stats-row' ? 20 : 28;
   const nameX = showAvatar ? avatar.x + avatar.size + 8 : namePad;
 
+  const hasIdentity = enabled.has('name') || showAvatar;
+  // Compact keeps a since line in the header band; don't collide with metrics.
+  const hasTopBand = hasIdentity || (templateId === 'compact' && enabled.has('since'));
+  let yMetrics = '0';
+  if (!hasTopBand) {
+    if (templateId === 'compact' || templateId === 'stats-row') yMetrics = '-32';
+    else if (templateId !== 'badge') yMetrics = '-36';
+  }
+
   const out: Record<string, string> = {
     x_name: String(nameX),
     x_total: '0',
@@ -108,6 +116,7 @@ export function computeEmbedLayoutPositions(
     x_today: '0',
     x_input: '0',
     x_output: '0',
+    y_metrics: yMetrics,
   };
 
   const assignPacked = (keys: string[], slots: number[]) => {
@@ -197,7 +206,6 @@ export function renderLocalEmbedPreviewSvg(
     ...layout,
     name: escapeXml(displayName),
     since: escapeXml(PREVIEW_DEMO.since),
-    subtitle: escapeXml(PREVIEW_DEMO.subtitle),
     avatar: avatarMarkup(
       catalog.avatar.x,
       catalog.avatar.y,
@@ -312,7 +320,6 @@ export function fieldLabel(key: string): string {
     input: '输入 Token',
     output: '输出 Token',
     since: '首次使用',
-    subtitle: '副标题',
     inputPct: '输入占比',
     outputPct: '输出占比',
     totalPct: '总量占比',

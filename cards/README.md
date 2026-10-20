@@ -37,7 +37,7 @@ cards/
 | key | 面板文案 | 渲染含义（服务端已格式化 / 转义） | 典型用途 |
 |-----|----------|-----------------------------------|----------|
 | `avatar` | 头像 | SVG 片段：用户头像（data URI）或掘金 logo 占位；`avatar.size === 0` 时不渲染 | 多数卡左上 |
-| `name` | 昵称 | 缩短后的用户昵称 | 除 badge 外几乎都有；当前多为 `required` |
+| `name` | 昵称 | 缩短后的用户昵称 | 除 badge 外几乎都有；**可选**，默认勾选 |
 | `total` | 总 Token | 累计 Token（如 `12.4M`） | 主指标；**可选**，默认勾选 |
 | `cost` | 累计费用 | 累计费用 USD（如 `$12.34`） | 次指标；可选，默认勾选 |
 | `today` | 今日 Token | 今日 Token | 辅指标；可选，默认勾选 |
@@ -47,7 +47,6 @@ cards/
 | `outputPct` | 输出占比 | `output/total` 百分比文案 | `stats-row` |
 | `totalPct` | 总量占比 | 有总量时为 `100%`，否则 `0%` | `stats-row` |
 | `since` | 首次使用 | 有起点时为 `since YYYY-MM-DD`，否则 `暂无用量` | 底栏右侧 |
-| `subtitle` | 副标题 | 有用量起点时为 `Juejin AI Usage`，否则 `暂无用量` | 昵称下方 |
 
 ### `fields` 契约
 
@@ -63,7 +62,7 @@ cards/
 - **`required: false`**：必须同时写 `defaultOn`（新建卡时是否默认勾选）。
 - 用户最终勾选的 `showFields` ⊆ 本模板 `fields`；多出来的 key 会被拒。
 
-**当前内置模板里**：只有 `name` 在带昵称的样式上为必选；`total` / `cost` / `today` / `avatar` 等均为可选（默认开）。`badge` 三字段全可选。
+**当前内置模板里**：无必选字段。`name` / `avatar` / `total` / `cost` / `today` / `since` 等均为可选（默认开）。关掉昵称与头像后顶部身份区消失，指标会上移（`y_metrics`）。`badge` 三字段全可选且无昵称。
 
 文本占位：`{{name}}`、`{{total}}` …（值由渲染器填入，模板里不要自己做数字格式化）。
 
@@ -94,6 +93,7 @@ cards/
 | `x_name` | 昵称起点 x（藏头像时左移） |
 | `x_total` / `x_cost` / `x_today` | 横向指标列 |
 | `x_input` / `x_output` | `stats-row` 列 |
+| `y_metrics` | 指标区纵向偏移：关掉昵称+头像（compact 还要无 since）时上移，避免顶部空洞 |
 
 把可藏的指标列放进 `transform="translate({{x_*}} 0)"` 的 `<g>`，隐藏后可见列会左移，避免留白空洞。坐标算法在服务端 `templates.ts` 与前端 `embed-usage.ts` 保持一致。
 
@@ -111,9 +111,8 @@ cards/
   "height": 200,
   "avatar": { "x": 24, "y": 20, "size": 32 },
   "fields": [
-    { "key": "name", "required": true },
+    { "key": "name", "required": false, "defaultOn": true },
     { "key": "avatar", "required": false, "defaultOn": true },
-    { "key": "subtitle", "required": false, "defaultOn": true },
     { "key": "total", "required": false, "defaultOn": true },
     { "key": "cost", "required": false, "defaultOn": true },
     { "key": "today", "required": false, "defaultOn": true },

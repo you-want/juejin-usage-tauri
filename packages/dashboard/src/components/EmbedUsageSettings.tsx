@@ -37,10 +37,14 @@ type CardDraft = {
 };
 
 function draftFromCard(card: EmbedCardView): CardDraft {
+  const meta = EMBED_STYLE_OPTIONS.find(c => c.id === card.templateId);
+  const allowed = new Set(meta?.fields.map(f => f.key) ?? []);
+  // Drop retired keys (e.g. legacy subtitle) so drafts stay save-clean.
+  const showFields = card.showFields.filter(key => allowed.has(key));
   return {
     shareId: card.shareId,
     templateId: card.templateId,
-    showFields: [...card.showFields],
+    showFields: allowed.size ? showFields : [...card.showFields],
     label: card.label ?? '',
   };
 }

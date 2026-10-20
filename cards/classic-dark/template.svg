@@ -4,24 +4,23 @@
 {{#if avatar}}
 {{avatar}}
 {{/if}}
+{{#if name}}
 <text x="{{x_name}}" y="32" fill="#FFFFFF" font-size="14" font-weight="600" font-family="system-ui, -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif">{{name}}</text>
-{{#if subtitle}}
-<text x="{{x_name}}" y="48" fill="rgba(255,255,255,0.45)" font-size="11" font-family="system-ui, -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif">{{subtitle}}</text>
 {{/if}}
 {{#if total}}
-<g transform="translate({{x_total}} 0)">
+<g transform="translate({{x_total}} {{y_metrics}})">
 <text x="0" y="88" fill="rgba(255,255,255,0.45)" font-size="11" font-family="system-ui, -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif">总 Token</text>
 <text x="0" y="118" fill="#FFFFFF" font-size="24" font-weight="650" font-family="'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" letter-spacing="-0.5">{{total}}</text>
 </g>
 {{/if}}
 {{#if cost}}
-<g transform="translate({{x_cost}} 0)">
+<g transform="translate({{x_cost}} {{y_metrics}})">
 <text x="0" y="88" fill="rgba(255,255,255,0.45)" font-size="11" font-family="system-ui, -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif">累计费用</text>
 <text x="0" y="118" fill="#11EE8C" font-size="24" font-weight="650" font-family="'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" letter-spacing="-0.5">{{cost}}</text>
 </g>
 {{/if}}
 {{#if today}}
-<g transform="translate({{x_today}} 0)">
+<g transform="translate({{x_today}} {{y_metrics}})">
 <text x="0" y="88" fill="rgba(255,255,255,0.45)" font-size="11" font-family="system-ui, -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif">今日 Token</text>
 <text x="0" y="118" fill="#FFFFFF" font-size="22" font-weight="600" font-family="'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">{{today}}</text>
 </g>

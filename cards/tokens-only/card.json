@@ -13,15 +13,11 @@
   "fields": [
     {
       "key": "name",
-      "required": true
-    },
-    {
-      "key": "avatar",
       "required": false,
       "defaultOn": true
     },
     {
-      "key": "subtitle",
+      "key": "avatar",
       "required": false,
       "defaultOn": true
     },

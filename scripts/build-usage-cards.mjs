@@ -5,11 +5,11 @@ import path from 'node:path';
 const root = fileURLToPath(new URL('../', import.meta.url));
 const placeholders = new Set([
   'avatar', 'name', 'total', 'cost', 'today', 'input', 'output',
-  'since', 'subtitle', 'inputPct', 'outputPct', 'totalPct',
+  'since', 'inputPct', 'outputPct', 'totalPct',
 ]);
 /** Layout coords filled by the renderer (not user-toggle fields). */
 const layoutPlaceholders = new Set([
-  'x_name', 'x_total', 'x_cost', 'x_today', 'x_input', 'x_output',
+  'x_name', 'x_total', 'x_cost', 'x_today', 'x_input', 'x_output', 'y_metrics',
 ]);
 const cards = [];
 
