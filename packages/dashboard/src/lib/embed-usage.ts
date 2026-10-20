@@ -1,4 +1,8 @@
-import { USAGE_CARD_CATALOG, type UsageCardStyle } from '@juejin-opensource/jusage-core/usage-cards';
+import {
+  USAGE_CARD_CATALOG,
+  USAGE_CARD_TEMPLATES,
+  type UsageCardStyle,
+} from '@juejin-opensource/jusage-core/usage-cards';
 
 export const EMBED_STYLE_OPTIONS = USAGE_CARD_CATALOG;
 export type EmbedStyle = UsageCardStyle;
@@ -12,6 +16,94 @@ export type EmbedCopyFormat =
   | 'url';
 
 const USAGE_PAGE = 'https://juejin.cn/aiusage/?from=embed';
+
+const LOGO_PATH = 'm12 14.316 7.454-5.88-2.022-1.625L12 11.1l-.004.003-5.432-4.288-2.02 1.624 7.452 5.88Zm0-7.247 2.89-2.298L12 2.453l-.004-.005-2.884 2.318 2.884 2.3Zm0 11.266-.005.002-9.975-7.87L0 12.088l.194.156 11.803 9.308 7.463-5.885L24 12.085l-2.023-1.624Z';
+
+/** Demo numbers for local modal preview (not live usage). */
+const PREVIEW_DEMO = {
+  name: '掘金开发者',
+  total: '12.4M',
+  cost: '$42.80',
+  today: '186K',
+  input: '8.1M',
+  output: '4.3M',
+  since: 'since 2025-03',
+  subtitle: 'Juejin AI Usage',
+  inputPct: '65%',
+  outputPct: '35%',
+  totalPct: '100%',
+} as const;
+
+function escapeXml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+}
+
+function brandAvatar(x: number, y: number, size: number): string {
+  if (!size) return '';
+  return `<g transform="translate(${x} ${y}) scale(${size / 24})"><rect width="24" height="24" rx="6" fill="#087ffa"/><path d="${LOGO_PATH}" fill="#fff" transform="translate(2.4 2.4) scale(.8)"/></g>`;
+}
+
+/** Apply {{#if key}}...{{/if}}; iterate so nested blocks resolve. */
+export function applyEmbedConditionals(template: string, enabled: ReadonlySet<string>): string {
+  const pattern = /\{\{\s*#if\s+(\w+)\s*\}\}([\s\S]*?)\{\{\s*\/if\s*\}\}/;
+  let previous = '';
+  let current = template;
+  while (current !== previous) {
+    previous = current;
+    current = current.replace(pattern, (_match, key: string, inner: string) => (
+      enabled.has(key) ? inner : ''
+    ));
+  }
+  return current;
+}
+
+export function applyEmbedPlaceholders(template: string, values: Record<string, string>): string {
+  return template.replace(/\{\{(\w+)\}\}/g, (_match, key: string) => values[key] ?? '');
+}
+
+/**
+ * Client-side SVG preview from catalog templates + draft field selection.
+ * Uses demo values so the modal never needs the public /embed/...svg URL.
+ */
+export function renderLocalEmbedPreviewSvg(
+  templateId: string,
+  showFields: readonly string[],
+): string | null {
+  const catalog = USAGE_CARD_CATALOG.find(c => c.id === templateId);
+  const template = USAGE_CARD_TEMPLATES[templateId as UsageCardStyle];
+  if (!catalog || !template) return null;
+
+  const enabled = new Set(showFields);
+  for (const field of catalog.fields) {
+    if (field.required) enabled.add(field.key);
+  }
+
+  const values: Record<string, string> = {
+    ...PREVIEW_DEMO,
+    name: escapeXml(PREVIEW_DEMO.name),
+    since: escapeXml(PREVIEW_DEMO.since),
+    subtitle: escapeXml(PREVIEW_DEMO.subtitle),
+    avatar: brandAvatar(catalog.avatar.x, catalog.avatar.y, catalog.avatar.size),
+  };
+
+  let content = applyEmbedConditionals(template, enabled);
+  content = applyEmbedPlaceholders(content, values);
+  return content;
+}
+
+export function localEmbedPreviewDataUrl(
+  templateId: string,
+  showFields: readonly string[],
+): string | null {
+  const svg = renderLocalEmbedPreviewSvg(templateId, showFields);
+  if (!svg) return null;
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+}
 
 function escapeAttribute(value: string): string {
   return value.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -113,4 +205,11 @@ export function fieldLabel(key: string): string {
     totalPct: '总量占比',
   };
   return labels[key] ?? key;
+}
+
+export function sameFieldSet(a: readonly string[], b: readonly string[]): boolean {
+  if (a.length !== b.length) return false;
+  const left = [...a].sort();
+  const right = [...b].sort();
+  return left.every((value, index) => value === right[index]);
 }

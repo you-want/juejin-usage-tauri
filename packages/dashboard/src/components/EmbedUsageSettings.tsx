@@ -16,9 +16,11 @@ import {
   defaultShowFieldsForTemplate,
   EMBED_STYLE_OPTIONS,
   fieldLabel,
+  localEmbedPreviewDataUrl,
+  sameFieldSet,
   type EmbedStyle,
 } from '@/lib/embed-usage';
-import { EmbedCardPreview } from '@/components/EmbedUsageCarousel';
+import { EmbedCardPreview, EmbedCardPreviewEmpty } from '@/components/EmbedUsageCarousel';
 import { Copy, Plus, RotateCw, Trash2 } from 'lucide-react';
 import { JUEJIN_HOME } from '@/lib/juejin-client-link';
 import { JUEJIN_LINK_CHANGED_EVENT } from '@/lib/shell-events';
@@ -26,10 +28,27 @@ import { JUEJIN_LINK_CHANGED_EVENT } from '@/lib/shell-events';
 const message = (error: unknown) => (error instanceof Error ? error.message : '请求失败，请稍后重试');
 const MAX_CARDS = 10;
 
+type CardDraft = {
+  shareId: string;
+  templateId: string;
+  showFields: string[];
+  label: string;
+};
+
+function draftFromCard(card: EmbedCardView): CardDraft {
+  return {
+    shareId: card.shareId,
+    templateId: card.templateId,
+    showFields: [...card.showFields],
+    label: card.label ?? '',
+  };
+}
+
 export function EmbedUsageSettings() {
   const [identity, setIdentity] = useState(getApiBearer);
   const [cards, setCards] = useState<EmbedCardView[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [draft, setDraft] = useState<CardDraft | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -39,7 +58,6 @@ export function EmbedUsageSettings() {
   const [createOpen, setCreateOpen] = useState(false);
   const [createTemplate, setCreateTemplate] = useState<EmbedStyle>('classic-light');
   const [createLabel, setCreateLabel] = useState('');
-  const [revision, setRevision] = useState(0);
   const [queue] = useState(() => new ToastQueue({ maxVisibleToasts: 1 }));
   const requestVersion = useRef(0);
   const writing = useRef(false);
@@ -48,6 +66,18 @@ export function EmbedUsageSettings() {
     () => cards.find(c => c.shareId === selectedId) ?? cards[0] ?? null,
     [cards, selectedId],
   );
+
+  // Keep draft across list refresh; reset only when the selected shareId changes (or clears).
+  useEffect(() => {
+    if (!selected) {
+      setDraft(null);
+      return;
+    }
+    setDraft(prev => {
+      if (prev?.shareId === selected.shareId) return prev;
+      return draftFromCard(selected);
+    });
+  }, [selected]);
 
   const refresh = useCallback(async () => {
     const version = ++requestVersion.current;
@@ -62,6 +92,7 @@ export function EmbedUsageSettings() {
     if (!user) {
       setCards([]);
       setSelectedId(null);
+      setDraft(null);
       return;
     }
     try {
@@ -111,7 +142,6 @@ export function EmbedUsageSettings() {
       const result = await action();
       if (version !== requestVersion.current || user !== getApiBearer()) return;
       after?.(result);
-      setRevision(v => v + 1);
       setRotateOpen(false);
       setDeleteOpen(false);
       setCreateOpen(false);
@@ -127,21 +157,35 @@ export function EmbedUsageSettings() {
     }
   };
 
-  const templateMeta = selected
-    ? EMBED_STYLE_OPTIONS.find(c => c.id === selected.templateId)
-    : null;
+  const dirty = Boolean(
+    selected
+    && draft
+    && draft.shareId === selected.shareId
+    && (
+      draft.templateId !== selected.templateId
+      || !sameFieldSet(draft.showFields, selected.showFields)
+      || draft.label !== (selected.label ?? '')
+    ),
+  );
+
+  const templateMeta = draft
+    ? EMBED_STYLE_OPTIONS.find(c => c.id === draft.templateId)
+    : selected
+      ? EMBED_STYLE_OPTIONS.find(c => c.id === selected.templateId)
+      : null;
 
   const snippets = selected
     ? buildEmbedSnippets(
       getEmbedApiBase(),
       selected.shareId,
-      selected.templateId,
+      // Snippets use saved shareId URL; template dims follow draft for sizing attrs.
+      (draft?.templateId ?? selected.templateId),
       templateMeta ? { width: templateMeta.width, height: templateMeta.height } : undefined,
     )
     : null;
 
-  const previewUrl = snippets
-    ? `${snippets.url}?r=${revision}`
+  const previewUrl = draft
+    ? localEmbedPreviewDataUrl(draft.templateId, draft.showFields)
     : null;
 
   const copy = async (text: string) => {
@@ -154,25 +198,48 @@ export function EmbedUsageSettings() {
   };
 
   const toggleField = (key: string, checked: boolean) => {
-    if (!selected) return;
-    const meta = EMBED_STYLE_OPTIONS.find(c => c.id === selected.templateId);
+    if (!draft) return;
+    const meta = EMBED_STYLE_OPTIONS.find(c => c.id === draft.templateId);
     const field = meta?.fields.find(f => f.key === key);
     if (!field || field.required) return;
-    const next = checked
-      ? [...new Set([...selected.showFields, key])]
-      : selected.showFields.filter(f => f !== key);
-    void mutate(
-      () => updateEmbedCard(selected.shareId, { showFields: next }),
-      '已更新展示字段',
-    );
+    setDraft(prev => {
+      if (!prev) return prev;
+      const next = checked
+        ? [...new Set([...prev.showFields, key])]
+        : prev.showFields.filter(f => f !== key);
+      return { ...prev, showFields: next };
+    });
   };
 
   const changeTemplate = (templateId: string) => {
-    if (!selected || templateId === selected.templateId) return;
-    const showFields = defaultShowFieldsForTemplate(templateId);
+    if (!draft || templateId === draft.templateId) return;
+    setDraft(prev => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        templateId,
+        showFields: defaultShowFieldsForTemplate(templateId),
+      };
+    });
+  };
+
+  const selectCard = (shareId: string) => {
+    // Switching cards discards unsaved draft via the shareId effect.
+    setSelectedId(shareId);
+  };
+
+  const saveDraft = () => {
+    if (!selected || !draft || !dirty) return;
+    const label = draft.label.trim() || null;
+    // Align local draft with what we persist so dirty clears after refresh.
+    setDraft(prev => (prev ? { ...prev, label: label ?? '' } : prev));
     void mutate(
-      () => updateEmbedCard(selected.shareId, { templateId, showFields }),
-      '已切换模板',
+      () => updateEmbedCard(selected.shareId, {
+        templateId: draft.templateId,
+        showFields: draft.showFields,
+        label,
+      }),
+      '已保存',
     );
   };
 
@@ -196,7 +263,8 @@ export function EmbedUsageSettings() {
         <>
           <div className="flex flex-wrap items-center justify-between gap-3">
             <p className="text-xs text-muted">
-              最多 {MAX_CARDS} 张 · 已创建 {cards.length} 张 · 字段与模板保存在服务端，图片链接只含 shareId
+              最多 {MAX_CARDS} 张 · 已创建 {cards.length} 张
+              {dirty ? ' · 有未保存的更改' : ''}
             </p>
             <Button
               size="sm"
@@ -237,7 +305,7 @@ export function EmbedUsageSettings() {
                         <button
                           key={card.shareId}
                           type="button"
-                          onClick={() => setSelectedId(card.shareId)}
+                          onClick={() => selectCard(card.shareId)}
                           className={`w-full rounded-xl border px-3 py-2.5 text-left transition ${
                             active ? 'border-accent bg-accent/5' : 'border-border bg-surface hover:bg-muted/30'
                           }`}
@@ -255,7 +323,7 @@ export function EmbedUsageSettings() {
                   </Card.Content>
                 </Card>
 
-                {selected && templateMeta && (
+                {selected && draft && draft.shareId === selected.shareId && templateMeta && (
                   <Card variant="secondary">
                     <Card.Header><Card.Title>模板与字段</Card.Title></Card.Header>
                     <Card.Content className="space-y-4">
@@ -263,7 +331,7 @@ export function EmbedUsageSettings() {
                         aria-label="卡片模板"
                         fullWidth
                         variant="secondary"
-                        value={selected.templateId}
+                        value={draft.templateId}
                         onChange={value => changeTemplate(String(value))}
                       >
                         <Select.Trigger><Select.Value /><Select.Indicator /></Select.Trigger>
@@ -281,18 +349,10 @@ export function EmbedUsageSettings() {
                         <Label>备注名（仅自己可见）</Label>
                         <Input
                           fullWidth
-                          value={selected.label ?? ''}
+                          value={draft.label}
                           onChange={e => {
                             const value = e.target.value;
-                            setCards(prev => prev.map(c => (
-                              c.shareId === selected.shareId ? { ...c, label: value || null } : c
-                            )));
-                          }}
-                          onBlur={() => {
-                            void mutate(
-                              () => updateEmbedCard(selected.shareId, { label: selected.label }),
-                              '已更新备注',
-                            );
+                            setDraft(prev => (prev ? { ...prev, label: value } : prev));
                           }}
                         />
                       </TextField>
@@ -300,7 +360,7 @@ export function EmbedUsageSettings() {
                         <legend className="text-xs text-muted">展示字段</legend>
                         <div className="grid grid-cols-2 gap-2">
                           {templateMeta.fields.map(field => {
-                            const checked = selected.showFields.includes(field.key);
+                            const checked = draft.showFields.includes(field.key);
                             return (
                               <Checkbox
                                 key={field.key}
@@ -322,6 +382,15 @@ export function EmbedUsageSettings() {
                       </fieldset>
                     </Card.Content>
                     <Card.Footer className="flex-wrap justify-end gap-2">
+                      <Button
+                        size="sm"
+                        variant="primary"
+                        isDisabled={busy || !dirty}
+                        isPending={busy && dirty}
+                        onPress={saveDraft}
+                      >
+                        保存
+                      </Button>
                       <Button
                         size="sm"
                         variant="tertiary"
@@ -355,12 +424,16 @@ export function EmbedUsageSettings() {
               </div>
 
               <div className="min-w-0 space-y-4">
-                {selected && previewUrl && (
-                  <EmbedCardPreview
-                    key={`${selected.shareId}:${revision}:${selected.enabled}:${selected.showFields.join(',')}`}
-                    url={previewUrl}
-                    enabled={selected.enabled}
-                  />
+                {selected && draft && draft.shareId === selected.shareId && (
+                  previewUrl ? (
+                    <EmbedCardPreview
+                      key={`${draft.shareId}:${draft.templateId}:${draft.showFields.join(',')}`}
+                      url={previewUrl}
+                      enabled={selected.enabled}
+                    />
+                  ) : (
+                    <EmbedCardPreviewEmpty />
+                  )
                 )}
                 {snippets && (
                   <Card variant="secondary">
