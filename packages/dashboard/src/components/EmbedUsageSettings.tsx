@@ -91,21 +91,27 @@ export function EmbedUsageSettings() {
     });
   }, [selected, catalog]);
 
-  const refresh = useCallback(async () => {
-    const version = ++requestVersion.current;
+  const refresh = useCallback(async (opts?: { quiet?: boolean }) => {
+    const quiet = opts?.quiet === true;
+    // Quiet refresh (after mutations) must not bump the generation or flip
+    // `loading` — that remounts the whole settings panel.
+    const version = quiet ? requestVersion.current : ++requestVersion.current;
     const user = getApiBearer();
     setIdentity(user);
     setError(null);
-    setRotateOpen(false);
-    setDeleteOpen(false);
-    setLoading(Boolean(user));
-    setBusy(false);
-    writing.current = false;
+    if (!quiet) {
+      setRotateOpen(false);
+      setDeleteOpen(false);
+      setLoading(Boolean(user));
+      setBusy(false);
+      writing.current = false;
+    }
     if (!user) {
       setCards([]);
       setCatalog(EMBED_STYLE_OPTIONS);
       setSelectedId(null);
       setDraft(null);
+      if (!quiet) setLoading(false);
       return;
     }
     try {
@@ -127,7 +133,7 @@ export function EmbedUsageSettings() {
         setError(detail);
       }
     } finally {
-      if (version === requestVersion.current) setLoading(false);
+      if (!quiet && version === requestVersion.current) setLoading(false);
     }
   }, []);
 
@@ -148,13 +154,19 @@ export function EmbedUsageSettings() {
     };
   }, [refresh]);
 
-  const mutate = async <T,>(action: () => Promise<T>, title: string, after?: (result: T) => void) => {
+  const mutate = async <T,>(
+    action: () => Promise<T>,
+    title: string,
+    after?: (result: T) => void,
+    opts?: { refreshMode?: 'quiet' | 'full' | 'none' },
+  ) => {
     if (writing.current) return;
     writing.current = true;
     const version = ++requestVersion.current;
     const user = getApiBearer();
     setBusy(true);
     setError(null);
+    const refreshMode = opts?.refreshMode ?? 'quiet';
     try {
       const result = await action();
       if (version !== requestVersion.current || user !== getApiBearer()) return;
@@ -163,10 +175,12 @@ export function EmbedUsageSettings() {
       setDeleteOpen(false);
       setCreateOpen(false);
       queue.add({ title, variant: 'success' });
-      await refresh();
+      if (refreshMode === 'full') await refresh();
+      else if (refreshMode === 'quiet') await refresh({ quiet: true });
     } catch (cause) {
       if (version === requestVersion.current && user === getApiBearer()) setError(message(cause));
     } finally {
+      // Always clear write lock for this attempt; quiet refresh does not bump version.
       if (version === requestVersion.current) {
         setBusy(false);
         writing.current = false;
@@ -255,15 +269,20 @@ export function EmbedUsageSettings() {
   const saveDraft = () => {
     if (!selected || !draft || !dirty) return;
     const label = draft.label.trim() || null;
-    // Align local draft with what we persist so dirty clears after refresh.
-    setDraft(prev => (prev ? { ...prev, label: label ?? '' } : prev));
+    const shareId = selected.shareId;
     void mutate(
-      () => updateEmbedCard(selected.shareId, {
+      () => updateEmbedCard(shareId, {
         templateId: draft.templateId,
         showFields: draft.showFields,
         label,
       }),
       '已保存',
+      (card) => {
+        // Patch list + draft in place — no full-panel reload.
+        setCards(prev => prev.map(c => (c.shareId === card.shareId ? card : c)));
+        setDraft(draftFromCard(card, catalog));
+      },
+      { refreshMode: 'none' },
     );
   };
 
@@ -321,7 +340,8 @@ export function EmbedUsageSettings() {
               <div className="min-w-0 space-y-3">
                 <Card variant="secondary">
                   <Card.Header><Card.Title>我的卡片</Card.Title></Card.Header>
-                  <Card.Content className="space-y-2">
+                  {/* Cap list height ≈ 2 rows + peek of 3rd so the modal stays short. */}
+                  <Card.Content className="max-h-[11rem] space-y-2 overflow-y-auto overscroll-contain">
                     {cards.map(card => {
                       const meta = catalog.find(c => c.id === card.templateId);
                       const active = card.shareId === selected?.shareId;
