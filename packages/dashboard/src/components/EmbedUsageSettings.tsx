@@ -469,7 +469,7 @@ export function EmbedUsageSettings() {
                               role="region"
                               tabIndex={0}
                               aria-label={item.label}
-                              className="min-h-40 select-all whitespace-pre-wrap break-all rounded-xl border border-border bg-surface p-4 font-mono text-xs leading-6"
+                              className="min-h-40 whitespace-pre-wrap break-all rounded-xl border border-border bg-surface p-4 font-mono text-xs leading-6"
                             >
                               {item.value}
                             </pre>
