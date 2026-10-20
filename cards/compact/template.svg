@@ -7,11 +7,13 @@
 {{#if since}}
 <text x="{{x_name}}" y="44" fill="#8B93A7" font-size="10" font-family="system-ui, -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif">掘金 AI Usage · {{since}}</text>
 {{/if}}
+{{#if total}}
 <g transform="translate({{x_total}} 0)">
 <rect x="0" y="62" width="120" height="42" rx="8" fill="#F5F8FC"></rect>
 <text x="12" y="80" fill="#8B93A7" font-size="10" font-family="system-ui, -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif">总 Token</text>
 <text x="12" y="96" fill="#1A1D24" font-size="15" font-weight="650" font-family="'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">{{total}}</text>
 </g>
+{{/if}}
 {{#if cost}}
 <g transform="translate({{x_cost}} 0)">
 <rect x="0" y="62" width="120" height="42" rx="8" fill="#F5F8FC"></rect>

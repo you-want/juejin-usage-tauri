@@ -111,7 +111,7 @@ export function computeEmbedLayoutPositions(
   };
 
   const assignPacked = (keys: string[], slots: number[]) => {
-    const visible = keys.filter(key => key === 'total' || enabled.has(key));
+    const visible = keys.filter(key => enabled.has(key));
     visible.forEach((key, index) => {
       out[`x_${key}`] = String(slots[Math.min(index, slots.length - 1)]!);
     });
@@ -119,16 +119,17 @@ export function computeEmbedLayoutPositions(
 
   switch (templateId) {
     case 'badge': {
+      // Widths match cards/badge/template.svg shields segments; 4px gap.
       const badges: { key: string; width: number }[] = [
-        { key: 'total', width: 168 },
-        { key: 'cost', width: 148 },
-        { key: 'today', width: 156 },
+        { key: 'total', width: 98 },
+        { key: 'cost', width: 90 },
+        { key: 'today', width: 88 },
       ];
       let x = 0;
       for (const badge of badges) {
-        if (badge.key !== 'total' && !enabled.has(badge.key)) continue;
+        if (!enabled.has(badge.key)) continue;
         out[`x_${badge.key}`] = String(x);
-        x += badge.width + 8;
+        x += badge.width + 4;
       }
       break;
     }
@@ -143,8 +144,7 @@ export function computeEmbedLayoutPositions(
       assignPacked(['total', 'input', 'output'], [20, 150, 280]);
       break;
     case 'tokens-only':
-      out.x_total = '28';
-      out.x_today = '220';
+      assignPacked(['total', 'today'], [28, 220]);
       break;
     default:
       assignPacked(['total', 'cost', 'today'], [28, 168, 308]);
@@ -154,9 +154,9 @@ export function computeEmbedLayoutPositions(
   return out;
 }
 
-/** Apply {{#if key}}...{{/if}}; iterate so nested blocks resolve. */
+/** Apply {{#if key}}...{{/if}}; peel leaf blocks so nested ifs resolve inside-out. */
 export function applyEmbedConditionals(template: string, enabled: ReadonlySet<string>): string {
-  const pattern = /\{\{\s*#if\s+(\w+)\s*\}\}([\s\S]*?)\{\{\s*\/if\s*\}\}/;
+  const pattern = /\{\{\s*#if\s+(\w+)\s*\}\}((?:(?!\{\{\s*#if)[\s\S])*?)\{\{\s*\/if\s*\}\}/;
   let previous = '';
   let current = template;
   while (current !== previous) {

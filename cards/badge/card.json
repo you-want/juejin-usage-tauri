@@ -1,10 +1,10 @@
 {
   "id": "badge",
-  "label": "Minimal badge",
-  "description": "徽章组合",
+  "label": "Shields Badge",
+  "description": "GitHub shields 扁平徽章",
   "order": 5,
-  "width": 488,
-  "height": 28,
+  "width": 284,
+  "height": 20,
   "avatar": {
     "x": 0,
     "y": 0,
@@ -13,7 +13,8 @@
   "fields": [
     {
       "key": "total",
-      "required": true
+      "required": false,
+      "defaultOn": true
     },
     {
       "key": "cost",

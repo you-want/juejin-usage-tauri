@@ -22,7 +22,8 @@
     },
     {
       "key": "total",
-      "required": true
+      "required": false,
+      "defaultOn": true
     },
     {
       "key": "totalPct",
