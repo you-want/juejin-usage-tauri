@@ -5,8 +5,9 @@
 <stop offset="100%" stop-color="#3B9BFF"></stop>
 </linearGradient>
 </defs>
-<rect width="420" height="200" rx="14" fill="#FFFFFF" stroke="#E5EAF2" stroke-width="1"></rect>
-<rect x="0" y="0" width="5" height="200" rx="0" fill="#087FFA"></rect>
+<path d="M0 0H406Q420 0 420 14V186Q420 200 406 200H0Z" fill="#FFFFFF"></path>
+<path d="M5 0.5H406Q419.5 0.5 419.5 14V186Q419.5 199.5 406 199.5H5" fill="none" stroke="#E5EAF2" stroke-width="1"></path>
+<rect x="0" y="0" width="5" height="200" fill="#087FFA"></rect>
 {{#if avatar}}
 {{avatar}}
 {{/if}}
