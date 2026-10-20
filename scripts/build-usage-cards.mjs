@@ -9,7 +9,7 @@ const placeholders = new Set([
 ]);
 /** Layout coords filled by the renderer (not user-toggle fields). */
 const layoutPlaceholders = new Set([
-  'x_name', 'x_total', 'x_cost', 'x_today', 'x_input', 'x_output', 'y_metrics',
+  'x_name', 'y_name', 'x_total', 'x_cost', 'x_today', 'x_input', 'x_output', 'y_metrics',
 ]);
 const cards = [];
 

@@ -5,7 +5,7 @@
 {{avatar}}
 {{/if}}
 {{#if name}}
-<text x="{{x_name}}" y="32" fill="#1A1D24" font-size="14" font-weight="600" font-family="system-ui, -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif">{{name}}</text>
+<text x="{{x_name}}" y="{{y_name}}" dominant-baseline="central" fill="#1A1D24" font-size="14" font-weight="600" font-family="system-ui, -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif">{{name}}</text>
 {{/if}}
 {{#if total}}
 <g transform="translate({{x_total}} {{y_metrics}})">

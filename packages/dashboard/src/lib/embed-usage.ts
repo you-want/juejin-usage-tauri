@@ -152,8 +152,24 @@ export function computeEmbedLayoutPositions(
     else if (templateId !== 'badge') yMetrics = '-36';
   }
 
+  // Single-line identity (no subtitle): vertically center name with avatar.
+  // Compact keeps a top-aligned two-line header when since is on.
+  const twoLineHeader =
+    (templateId === 'compact' && enabled.has('since'))
+    || templateId === 'stats-row';
+  let nameY = templateId === 'compact' || templateId === 'stats-row' ? 28 : 32;
+  if (showAvatar && !twoLineHeader) {
+    nameY = avatar.y + avatar.size / 2;
+  } else if (!showAvatar && !twoLineHeader) {
+    nameY = templateId === 'compact' ? 32 : 36;
+  } else if (showAvatar && templateId === 'compact' && enabled.has('since')) {
+    // Keep first-line optical position near previous y=28 baseline.
+    nameY = avatar.y + Math.round(avatar.size * 0.35);
+  }
+
   const out: Record<string, string> = {
     x_name: String(nameX),
+    y_name: String(nameY),
     x_total: '0',
     x_cost: '0',
     x_today: '0',
