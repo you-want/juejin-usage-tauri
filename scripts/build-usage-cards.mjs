@@ -7,6 +7,10 @@ const placeholders = new Set([
   'avatar', 'name', 'total', 'cost', 'today', 'input', 'output',
   'since', 'subtitle', 'inputPct', 'outputPct', 'totalPct',
 ]);
+/** Layout coords filled by the renderer (not user-toggle fields). */
+const layoutPlaceholders = new Set([
+  'x_name', 'x_total', 'x_cost', 'x_today', 'x_input', 'x_output',
+]);
 const cards = [];
 
 function collectKeys(template) {
@@ -70,6 +74,7 @@ for (const entry of await readdir(path.join(root, 'cards'), { withFileTypes: tru
   assertBalancedIf(template, entry.name);
   const used = collectKeys(template);
   for (const key of used) {
+    if (layoutPlaceholders.has(key)) continue;
     if (!placeholders.has(key)) throw new Error(`Unknown placeholder ${key}: ${entry.name}`);
     if (!fieldKeys.has(key)) throw new Error(`Placeholder ${key} not declared in fields: ${entry.name}`);
   }

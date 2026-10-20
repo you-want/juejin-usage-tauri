@@ -13,6 +13,8 @@
 
 全局白名单：`avatar`、`name`、`total`、`cost`、`today`、`input`、`output`、`since`、`subtitle`、`inputPct`、`outputPct`、`totalPct`。
 
+布局坐标（由渲染器按勾选字段收拢计算，不必写入 `fields`）：`x_name`、`x_total`、`x_cost`、`x_today`、`x_input`、`x_output`。可选指标列请放进 `transform="translate({{x_*}} 0)"` 的 `<g>`，隐藏后会左移，避免留白空洞。
+
 在 `card.json` 里声明本模板用到的字段，例如：
 
 ```json

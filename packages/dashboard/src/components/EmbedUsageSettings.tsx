@@ -16,13 +16,14 @@ import {
   defaultShowFieldsForTemplate,
   EMBED_STYLE_OPTIONS,
   fieldLabel,
-  localEmbedPreviewDataUrl,
+  renderLocalEmbedPreviewSvg,
   sameFieldSet,
   type EmbedStyle,
 } from '@/lib/embed-usage';
 import { EmbedCardPreview, EmbedCardPreviewEmpty } from '@/components/EmbedUsageCarousel';
 import { Copy, Plus, RotateCw, Trash2 } from 'lucide-react';
 import { JUEJIN_HOME } from '@/lib/juejin-client-link';
+import { useJuejinAuth } from '@/hooks/JuejinAuthContext';
 import { JUEJIN_LINK_CHANGED_EVENT } from '@/lib/shell-events';
 
 const message = (error: unknown) => (error instanceof Error ? error.message : '请求失败，请稍后重试');
@@ -45,6 +46,7 @@ function draftFromCard(card: EmbedCardView): CardDraft {
 }
 
 export function EmbedUsageSettings() {
+  const { userName, avatarLarge } = useJuejinAuth();
   const [identity, setIdentity] = useState(getApiBearer);
   const [cards, setCards] = useState<EmbedCardView[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -184,8 +186,16 @@ export function EmbedUsageSettings() {
     )
     : null;
 
-  const previewUrl = draft
-    ? localEmbedPreviewDataUrl(draft.templateId, draft.showFields)
+  const previewProfile = useMemo(
+    () => ({
+      userName: userName || undefined,
+      avatarUrl: avatarLarge || undefined,
+    }),
+    [userName, avatarLarge],
+  );
+
+  const previewSvg = draft
+    ? renderLocalEmbedPreviewSvg(draft.templateId, draft.showFields, previewProfile)
     : null;
 
   const copy = async (text: string) => {
@@ -425,10 +435,10 @@ export function EmbedUsageSettings() {
 
               <div className="min-w-0 space-y-4">
                 {selected && draft && draft.shareId === selected.shareId && (
-                  previewUrl ? (
+                  previewSvg ? (
                     <EmbedCardPreview
-                      key={`${draft.shareId}:${draft.templateId}:${draft.showFields.join(',')}`}
-                      url={previewUrl}
+                      key={`${draft.shareId}:${draft.templateId}:${draft.showFields.join(',')}:${avatarLarge}`}
+                      svg={previewSvg}
                       enabled={selected.enabled}
                     />
                   ) : (

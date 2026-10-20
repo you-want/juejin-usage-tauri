@@ -10,19 +10,25 @@
 {{#if avatar}}
 {{avatar}}
 {{/if}}
-<text x="64" y="32" fill="#1A1D24" font-size="14" font-weight="600" font-family="system-ui, -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif">{{name}}</text>
+<text x="{{x_name}}" y="32" fill="#1A1D24" font-size="14" font-weight="600" font-family="system-ui, -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif">{{name}}</text>
 {{#if subtitle}}
-<text x="64" y="48" fill="#8B93A7" font-size="11" font-family="system-ui, -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif">{{subtitle}}</text>
+<text x="{{x_name}}" y="48" fill="#8B93A7" font-size="11" font-family="system-ui, -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif">{{subtitle}}</text>
 {{/if}}
-<text x="28" y="88" fill="#8B93A7" font-size="11" font-family="system-ui, -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif">总 Token</text>
-<text x="28" y="118" fill="#1A1D24" font-size="24" font-weight="650" font-family="'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" letter-spacing="-0.5">{{total}}</text>
+<g transform="translate({{x_total}} 0)">
+<text x="0" y="88" fill="#8B93A7" font-size="11" font-family="system-ui, -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif">总 Token</text>
+<text x="0" y="118" fill="#1A1D24" font-size="24" font-weight="650" font-family="'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" letter-spacing="-0.5">{{total}}</text>
+</g>
 {{#if cost}}
-<text x="168" y="88" fill="#8B93A7" font-size="11" font-family="system-ui, -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif">累计费用</text>
-<text x="168" y="118" fill="#087FFA" font-size="24" font-weight="650" font-family="'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" letter-spacing="-0.5">{{cost}}</text>
+<g transform="translate({{x_cost}} 0)">
+<text x="0" y="88" fill="#8B93A7" font-size="11" font-family="system-ui, -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif">累计费用</text>
+<text x="0" y="118" fill="#087FFA" font-size="24" font-weight="650" font-family="'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" letter-spacing="-0.5">{{cost}}</text>
+</g>
 {{/if}}
 {{#if today}}
-<text x="308" y="88" fill="#8B93A7" font-size="11" font-family="system-ui, -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif">今日 Token</text>
-<text x="308" y="118" fill="#1A1D24" font-size="22" font-weight="600" font-family="'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">{{today}}</text>
+<g transform="translate({{x_today}} 0)">
+<text x="0" y="88" fill="#8B93A7" font-size="11" font-family="system-ui, -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif">今日 Token</text>
+<text x="0" y="118" fill="#1A1D24" font-size="22" font-weight="600" font-family="'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">{{today}}</text>
+</g>
 {{/if}}
 <line x1="28" y1="148" x2="392" y2="148" stroke="#EEF1F6" stroke-width="1"></line>
 <text x="28" y="172" fill="#A0A8B8" font-size="11" font-family="system-ui, -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif">掘金 AI Usage</text>

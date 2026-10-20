@@ -15,13 +15,18 @@ export type EmbedCopyFormat =
   | 'html-page'
   | 'url';
 
+export type EmbedPreviewProfile = {
+  userName?: string;
+  /** https CDN URL from session; used in inline-SVG preview. */
+  avatarUrl?: string;
+};
+
 const USAGE_PAGE = 'https://juejin.cn/aiusage/?from=embed';
 
 const LOGO_PATH = 'm12 14.316 7.454-5.88-2.022-1.625L12 11.1l-.004.003-5.432-4.288-2.02 1.624 7.452 5.88Zm0-7.247 2.89-2.298L12 2.453l-.004-.005-2.884 2.318 2.884 2.3Zm0 11.266-.005.002-9.975-7.87L0 12.088l.194.156 11.803 9.308 7.463-5.885L24 12.085l-2.023-1.624Z';
 
 /** Demo numbers for local modal preview (not live usage). */
 const PREVIEW_DEMO = {
-  name: '掘金开发者',
   total: '12.4M',
   cost: '$42.80',
   today: '186K',
@@ -43,9 +48,110 @@ function escapeXml(text: string): string {
     .replace(/'/g, '&apos;');
 }
 
+function escapeAttribute(value: string): string {
+  return value.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
 function brandAvatar(x: number, y: number, size: number): string {
   if (!size) return '';
   return `<g transform="translate(${x} ${y}) scale(${size / 24})"><rect width="24" height="24" rx="6" fill="#087ffa"/><path d="${LOGO_PATH}" fill="#fff" transform="translate(2.4 2.4) scale(.8)"/></g>`;
+}
+
+function isSafeHttpsAvatarUrl(raw: string): boolean {
+  try {
+    const url = new URL(raw);
+    if (url.protocol !== 'https:' || url.username || url.password) return false;
+    if (url.port && url.port !== '443') return false;
+    // Same CDN families the server allowlists (display-only; not fetched here).
+    const host = url.hostname.toLowerCase();
+    return (
+      /^p\d+-passport\.byteacctimg\.com$/.test(host)
+      || /^p\d+-passport\.byteimg\.com$/.test(host)
+      || /^p\d+-(jj|juejin)\.byteimg\.com$/.test(host)
+    );
+  } catch {
+    return false;
+  }
+}
+
+function avatarMarkup(
+  x: number,
+  y: number,
+  size: number,
+  showAvatar: boolean,
+  avatarUrl?: string,
+): string {
+  if (!showAvatar || !size) return '';
+  if (avatarUrl && isSafeHttpsAvatarUrl(avatarUrl)) {
+    return `<defs><clipPath id="avatar-clip"><circle cx="${x + size / 2}" cy="${y + size / 2}" r="${size / 2}"/></clipPath></defs><image x="${x}" y="${y}" width="${size}" height="${size}" href="${escapeAttribute(avatarUrl)}" preserveAspectRatio="xMidYMid slice" clip-path="url(#avatar-clip)"/>`;
+  }
+  return brandAvatar(x, y, size);
+}
+
+/**
+ * Pack optional columns left so hidden fields do not leave blank holes.
+ * Keep in sync with ai-usage apps/server/src/embed/templates.ts.
+ */
+export function computeEmbedLayoutPositions(
+  templateId: string,
+  avatar: { x: number; y: number; size: number },
+  enabled: ReadonlySet<string>,
+): Record<string, string> {
+  const showAvatar = enabled.has('avatar') && avatar.size > 0;
+  const namePad = templateId === 'compact' || templateId === 'stats-row' ? 20 : 28;
+  const nameX = showAvatar ? avatar.x + avatar.size + 8 : namePad;
+
+  const out: Record<string, string> = {
+    x_name: String(nameX),
+    x_total: '0',
+    x_cost: '0',
+    x_today: '0',
+    x_input: '0',
+    x_output: '0',
+  };
+
+  const assignPacked = (keys: string[], slots: number[]) => {
+    const visible = keys.filter(key => key === 'total' || enabled.has(key));
+    visible.forEach((key, index) => {
+      out[`x_${key}`] = String(slots[Math.min(index, slots.length - 1)]!);
+    });
+  };
+
+  switch (templateId) {
+    case 'badge': {
+      const badges: { key: string; width: number }[] = [
+        { key: 'total', width: 168 },
+        { key: 'cost', width: 148 },
+        { key: 'today', width: 156 },
+      ];
+      let x = 0;
+      for (const badge of badges) {
+        if (badge.key !== 'total' && !enabled.has(badge.key)) continue;
+        out[`x_${badge.key}`] = String(x);
+        x += badge.width + 8;
+      }
+      break;
+    }
+    case 'classic-light':
+    case 'classic-dark':
+      assignPacked(['total', 'cost', 'today'], [28, 168, 308]);
+      break;
+    case 'compact':
+      assignPacked(['total', 'cost', 'today'], [20, 150, 280]);
+      break;
+    case 'stats-row':
+      assignPacked(['total', 'input', 'output'], [20, 150, 280]);
+      break;
+    case 'tokens-only':
+      out.x_total = '28';
+      out.x_today = '220';
+      break;
+    default:
+      assignPacked(['total', 'cost', 'today'], [28, 168, 308]);
+      break;
+  }
+
+  return out;
 }
 
 /** Apply {{#if key}}...{{/if}}; iterate so nested blocks resolve. */
@@ -68,11 +174,12 @@ export function applyEmbedPlaceholders(template: string, values: Record<string, 
 
 /**
  * Client-side SVG preview from catalog templates + draft field selection.
- * Uses demo values so the modal never needs the public /embed/...svg URL.
+ * Uses demo metrics + the signed-in user's name/avatar when available.
  */
 export function renderLocalEmbedPreviewSvg(
   templateId: string,
   showFields: readonly string[],
+  profile?: EmbedPreviewProfile,
 ): string | null {
   const catalog = USAGE_CARD_CATALOG.find(c => c.id === templateId);
   const template = USAGE_CARD_TEMPLATES[templateId as UsageCardStyle];
@@ -83,12 +190,21 @@ export function renderLocalEmbedPreviewSvg(
     if (field.required) enabled.add(field.key);
   }
 
+  const displayName = (profile?.userName?.trim() || '掘金开发者').slice(0, 16);
+  const layout = computeEmbedLayoutPositions(templateId, catalog.avatar, enabled);
   const values: Record<string, string> = {
     ...PREVIEW_DEMO,
-    name: escapeXml(PREVIEW_DEMO.name),
+    ...layout,
+    name: escapeXml(displayName),
     since: escapeXml(PREVIEW_DEMO.since),
     subtitle: escapeXml(PREVIEW_DEMO.subtitle),
-    avatar: brandAvatar(catalog.avatar.x, catalog.avatar.y, catalog.avatar.size),
+    avatar: avatarMarkup(
+      catalog.avatar.x,
+      catalog.avatar.y,
+      catalog.avatar.size,
+      enabled.has('avatar'),
+      profile?.avatarUrl,
+    ),
   };
 
   let content = applyEmbedConditionals(template, enabled);
@@ -99,14 +215,11 @@ export function renderLocalEmbedPreviewSvg(
 export function localEmbedPreviewDataUrl(
   templateId: string,
   showFields: readonly string[],
+  profile?: EmbedPreviewProfile,
 ): string | null {
-  const svg = renderLocalEmbedPreviewSvg(templateId, showFields);
+  const svg = renderLocalEmbedPreviewSvg(templateId, showFields, profile);
   if (!svg) return null;
   return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
-}
-
-function escapeAttribute(value: string): string {
-  return value.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
 export function buildEmbedCardUrl(publicApiBase: string, shareId: string): string {
