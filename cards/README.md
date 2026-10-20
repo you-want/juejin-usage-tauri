@@ -6,6 +6,8 @@
 
 **字段与模板约定以本文为准。** 产品 / API 方案见服务端仓的 `docs/embed-usage-card-design.md`。
 
+> 同步说明：`ai-usage` 的 `apps/server/cards/README.md` 是本文件经 `pnpm sync:juejin` 覆盖后的副本。字段约定改上游；服务端运行时行为见下文「端到端流程」。
+
 ---
 
 ## 目录约定
@@ -129,57 +131,108 @@ cards/
 
 ---
 
-## 运行时 Catalog（面板）
+## 端到端流程（作者 → 面板 → 公开图）
 
-Dashboard「用量卡片」弹窗的模板列表 = **本地构建 Catalog** ∪ **服务端 Catalog API**：
-
-| 来源 | 内容 |
-|------|------|
-| 本地 | `USAGE_CARD_CATALOG` / `USAGE_CARD_TEMPLATES`（本目录经 `pnpm cards:build` 生成） |
-| 服务端 | `GET …/tud-embed-cards/catalog`（服务端内存 Catalog 的元数据；不含 SVG 原文） |
-
-**合并规则**：以服务端列表为底，再用本地条目按 `id` **覆盖**（同 id **本地优先**，方便改 `cards/` 后立刻调试字段契约与预览）。仅本地有的 id 也会出现；仅服务端有的 id 会出现在选择器里，但若本机没有对应 SVG，右侧预览会降级为「无法生成本地预览」（不崩）。
-
-- 面板保存仍只传 `templateId` + `showFields`（及启用、备注等），**禁止**上传自定义 SVG 原文。
-- 服务端不认识的 `templateId` 保存时会 400；本地新增样式要联调公开图时，需先经服务端同步进内置 Catalog。
-- **客户端不配 Gitee URL**；远端模板只会通过上述 Catalog API 暴露给前端，合并时本地同 id 仍优先。
-
-公开 SVG 渲染始终走服务端自己的内置（及未来远端）模板，与面板本地预览相互独立。
-
----
-
-## 本地构建与服务端同步
-
-在本仓根目录（前端 Catalog）：
-
-```bash
-# 校验 cards/，生成 packages/core/src/usage-cards.ts，并刷新 dist 运行时模块
-pnpm cards:build
-
-# 监听 cards/，改完自动 cards:build
-pnpm cards:watch
+```text
+juejin-usage/cards/          # 事实源：改样式、PR
+        │  pnpm cards:build
+        ▼
+packages/core usage-cards    # 前端 / CLI 本地 Catalog + 预览 SVG
+        │
+        │  ai-usage: pnpm sync:juejin（或 sync:private 接力）
+        ▼
+apps/server/cards/           # 服务端磁盘副本
+        + template-artwork.ts  # 内置兜底 Catalog（编译进进程）
+        │
+        │  进程启动 configure + 异步 force ensure（不挡 listen）
+        │  运行时再按需拉 Gitee→GitHub 远端 overlay
+        ▼
+服务端内存 Catalog = 内置 ∪ 远端（同 id → 远端覆盖内置）
+        │
+        ├─ GET …/tud-embed-cards/catalog  → 面板列表
+        ├─ POST/PATCH 保存 templateId     → 校验 ∈ 内存 Catalog
+        └─ GET /embed/v1/cards/:id.svg    → 公开渲染
 ```
 
-Dashboard 开发时会把 `@juejin-opensource/jusage-core/usage-cards` 指到 **src**，因此 `cards:build` / `cards:watch` 后刷新弹窗即可看到新字段契约与本地预览，不必再手动跑整包 `jusage-core` build。发布 / 其它消费方仍以 `packages/core/dist` 为准（`cards:build` 也会顺带写一份 dist JS）。
+### 1. 作者侧（本仓）
 
-服务端内置 Catalog（服务端仓根目录）：
+1. 改 `cards/<id>/` → `pnpm cards:build`（或 `cards:watch`）。
+2. Dashboard 开发指到 core **src**，刷新弹窗即可看本地预览。
+3. PR 提交 `cards/` + 生成的 `packages/core/src/usage-cards.ts`。
+
+### 2. 服务端内置（ai-usage）
 
 ```bash
-# 从上游 juejin-usage 拉 product 树，并将：
-#   cards/ → apps/server/cards/（整目录覆盖）
-#   重生 apps/server/src/embed/template-artwork.ts
+# 服务端仓根目录
 pnpm sync:juejin
 # 或：pnpm sync:juejin -- --src /path/to/juejin-usage
 ```
 
-`sync:private` 会把已进入私有树的 `apps/server/cards/` 与 `template-artwork.ts` 当普通产品文件 apply；它们须先经由 `sync:juejin` 写入私有仓。
+- `cards/` → `apps/server/cards/`（整目录覆盖，含本 README）
+- 重生 `apps/server/src/embed/template-artwork.ts`
+- `sync:private` 把已进入私有树的 cards / artwork 当普通产品文件 apply（须先经 `sync:juejin`）
+
+### 3. 服务端运行时 Catalog（内存）
+
+| 层 | 来源 | 同 id |
+|----|------|-------|
+| 内置 | 启动时 `template-artwork.ts` | — |
+| 远端 overlay | Gitee 优先，目录为空或整路失败再试 GitHub | **远端覆盖内置** |
+
+- 默认 repo / path / ref：`juejin-cn/juejin-usage` / `cards` / **`main`**
+- **没有 `setInterval`**。刷新策略：
+  - **启动**：`configureEmbedCardsRemote` 后立刻 `ensure({ force: true })` 异步拉一次（**不阻塞** `listen`）
+  - **按需 TTL**：相关接口里用 `lastFetchedAt` + `EMBED_CARDS_REFRESH_MS`（默认 `3600000` = 1h）；过期则 await 刷新。设为 `0` → 不做 TTL 刷新，但首次拉取 / `force` 仍会拉
+  - **Catalog GET**（`GET …/tud-embed-cards/catalog`）：await TTL `ensure`
+  - **保存 POST/PATCH**：**不 await** 刷新；仅当 `templateId` 在内存中不存在时 `scheduleEmbedCardsRefreshIfUnknown`（异步 force）。校验仍看当前内存 → 新远端-only id 可能先 400，拉取落地后再保存即可
+  - **公开 SVG/JSON**：await TTL `ensure`；若仍 miss → 再异步 force；**本次**响应可能走 fallback / 缺尺寸元数据
+- 并发调用共用同一个 in-flight Promise，避免叠拉
+- `EMBED_CARDS_REMOTE=0` / `false` / `off` 关掉远端，只留内置
+
+环境变量（见 `apps/server/.env.example`）：
+
+| 变量 | 默认 | 含义 |
+|------|------|------|
+| `EMBED_CARDS_GITEE_REPO` | `juejin-cn/juejin-usage` | owner/name |
+| `EMBED_CARDS_GITEE_PATH` | `cards` | 目录 |
+| `EMBED_CARDS_GITEE_REF` | `main` | 分支 / tag；测 feature 才改 |
+| `EMBED_CARDS_REFRESH_MS` | `3600000` | 按需缓存 TTL（毫秒）；`0` = 无 TTL |
+| `EMBED_CARDS_REMOTE` | 开 | `0`/`false`/`off` 禁用远端 |
+
+一次完整远端刷新墙钟大约 **0.8–0.9s**（目录列举 + 并发拉各卡 `card.json` / `template.svg`）。
+
+### 4. 面板 Catalog（前端合并）
+
+Dashboard「用量卡片」弹窗 = **本地构建 Catalog** ∪ **服务端 Catalog API**：
+
+| 来源 | 内容 |
+|------|------|
+| 本地 | `USAGE_CARD_CATALOG` / `USAGE_CARD_TEMPLATES`（本目录经 `pnpm cards:build`） |
+| 服务端 | `GET …/tud-embed-cards/catalog`（内存 Catalog 元数据；无 SVG 原文） |
+
+**合并规则**（`mergeEmbedCatalog`）：以服务端列表为底，再用本地按 `id` **覆盖** → 同 id **本地优先**（方便改 `cards/` 后立刻调试）。仅本地 / 仅服务端的 id 都会出现；仅服务端有、本机无 SVG 时预览降级为「无法生成本地预览」（不崩）。
+
+- 保存只传 `templateId` + `showFields`（及启用、备注等），**禁止**上传自定义 SVG
+- **客户端不配 Gitee URL**；远端模板只经 Catalog API 暴露，合并时本地同 id 仍优先
+- 公开 SVG 始终走服务端内存模板，与面板本地预览相互独立
+
+---
+
+## 本地构建命令
+
+在本仓（juejin-usage）根目录：
+
+```bash
+pnpm cards:build   # 校验 cards/，生成 packages/core/src/usage-cards.ts，并刷新 dist
+pnpm cards:watch   # 改 cards/ 自动 build
+```
+
+Dashboard 开发把 `@juejin-opensource/jusage-core/usage-cards` 指到 **src**，故 `cards:build` / `watch` 后刷新弹窗即可；发布仍以 `packages/core/dist` 为准。
 
 提交约定：
 
-- **本仓（juejin-usage）**：提交 `cards/` + 生成的 `packages/core/src/usage-cards.ts`（及若有的 dist 刷新）。
-- **服务端仓**：跑完 `pnpm sync:juejin` 后，提交指针文件、`apps/server/cards/`、`template-artwork.ts` 以及一并打进来的 packages 改动。
-
-面板预览走前端本地模板（`USAGE_CARD_TEMPLATES` + 演示数据），不依赖公开 SVG；公开图仍由服务端按用户 `showFields` 渲染。
+- **本仓**：`cards/` + 生成的 `packages/core/src/usage-cards.ts`（及若有的 dist 刷新）
+- **服务端仓**：跑完 `pnpm sync:juejin` 后提交指针、`apps/server/cards/`、`template-artwork.ts` 及一并打进的 packages 改动
 
 ---
 
@@ -214,21 +267,15 @@ Cache-Control: public, max-age=300, must-revalidate
 
 ---
 
-## 使用方与远端源
+## 已知注意
 
-| 侧 | 来源 |
-|----|------|
-| 前端 / CLI | `@juejin-opensource/jusage-core` → `USAGE_CARD_CATALOG` / `USAGE_CARD_TEMPLATES`（由 `cards:build` 生成） |
-| 面板列表 | 本地 Catalog ∪ `GET …/tud-embed-cards/catalog`（同 id **本地优先**） |
-| 后端渲染 | `apps/server/src/embed/template-artwork.ts` 内置 Catalog；运行时内存 Map |
+- **`main` 上可能还没有 cards**：Gitee/GitHub 默认 `ref=main` 时，若远端 `cards/` 仍空，overlay 为 0 张（只剩内置）。特性联调把 `EMBED_CARDS_GITEE_REF` 指到已有 cards 的 feature 分支即可；空目录会继续试下一 host，两路皆空则保持当前内存 Catalog。
+- **保存全新远端-only `templateId`**：保存路径故意不阻塞等待刷新；内存尚无该 id 时会异步 force 拉一次，但**本次**仍按内存校验，可能先 **400 unknown templateId**，拉取完成后再存一次即可。Catalog GET / 公开图会 await TTL，行为更稳。
+- **远端拉取失败不推进 `lastFetchedAt`**：失败时保留旧 Catalog；若 TTL 已过期，后续每个会 `ensure` 的请求都可能再试，直到某次成功写入 `lastFetchedAt`（有 in-flight 合并，不会并行叠多路，但仍可能较勤）。
+- **完整远端刷新约 0.8–0.9s**：启动与 TTL/force 命中时才会跑；保存路径不 await，故不直接拖慢保存 RT。
+- **两套「同 id 谁赢」**：服务端内存是远端覆盖内置；面板合并是**本地覆盖服务端**。本地改样式立刻调预览；线上公开图仍以服务端内存（内置 ∪ 远端）为准。
 
-### 计划中的远端源（未上线）
-
-服务端启动时会像桌面宠物一样异步拉远端模板进内存 Catalog（**Gitee 优先，目录为空或失败再试 GitHub**；同 id **远端覆盖内置**）。默认 `juejin-cn/juejin-usage` / `cards` / `main`。测特性分支时改 `EMBED_CARDS_GITEE_REF` 即可。`EMBED_CARDS_REMOTE=0` 可关掉拉取。
-
-- 事实源仍是本仓 `cards/`（经 `sync:juejin` 进服务端内置）；远端是运行时叠加，不是替代本地开发流。
-- 面板侧合并规则不变：本地 ∪ 服务端 Catalog，同 id **本地优先**。
-- env：`EMBED_CARDS_GITEE_REPO` / `EMBED_CARDS_GITEE_PATH` / `EMBED_CARDS_GITEE_REF` / `EMBED_CARDS_REFRESH_MS` / `EMBED_CARDS_REMOTE`。
+其余流程（内置 sync、面板合并、公开 URL）目前看齐，无明显缺口。
 
 ---
 
@@ -239,3 +286,4 @@ Cache-Control: public, max-age=300, must-revalidate
 3. `pnpm cards:build` 通过；打开用量卡片弹窗，切模板、勾字段、看本地预览是否收拢、无留白。
 4. 联调公开 SVG：在服务端仓跑 `pnpm sync:juejin`，提交 `apps/server/cards/` + `template-artwork.ts`。
 5. 将 `cards/` 与 `packages/core/src/usage-cards.ts` 一并 PR。
+6. （可选）合并进公开仓 `main` 后，线上进程靠启动/TTL/未知 id 异步拉取即可吃到远端 overlay，不必只靠内置 sync。
