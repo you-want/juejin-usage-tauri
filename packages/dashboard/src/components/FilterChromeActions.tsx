@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import {
   ArrowDownToLine,
   ArrowsRotateRight,
+  CopyPicture,
   Gear,
   LogoGithub,
   NodesRight,
@@ -10,6 +11,7 @@ import { Button, Tooltip } from '@heroui/react';
 import { useNavigate } from '@tanstack/react-router';
 import { JuejinLoginConsentModal } from '@/components/JuejinLoginConsentModal';
 import { DeviceFilterChromeAction } from '@/components/DeviceFilterChromeAction';
+import { EmbedUsageModal } from '@/components/EmbedUsageModal';
 import { useAppToastQueue } from '@/components/AppToastContext';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { WeChatSupportTrigger } from '@/components/WeChatSupportTrigger';
@@ -77,6 +79,7 @@ export function FilterChromeActions() {
   const cliBackend = isCliBackend();
   const installGuideUi = useInstallGuideUi();
   const [busy, setBusy] = useState(false);
+  const [embedOpen, setEmbedOpen] = useState(false);
   const [linked, setLinked] = useState<boolean | null>(null);
   const [consentOpen, setConsentOpen] = useState(false);
   const refreshLabel = cliBackend ? '同步数据' : '刷新数据';
@@ -223,9 +226,9 @@ export function FilterChromeActions() {
       />
       {!cliBackend && (
         <ChromeAction
-          icon={<Gear className="size-4" />}
+          icon={<CopyPicture className="size-4" />}
           label="用量卡片"
-          onPress={() => dispatchOpenSettings({ tab: 'embed' })}
+          onPress={() => setEmbedOpen(true)}
         />
       )}
       {cliBackend ? (
@@ -250,6 +253,7 @@ export function FilterChromeActions() {
         </>
       ) : null}
       <ThemeToggle />
+      <EmbedUsageModal isOpen={embedOpen} onOpenChange={setEmbedOpen} />
     </div>
   );
 }
