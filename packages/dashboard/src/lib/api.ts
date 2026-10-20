@@ -43,11 +43,13 @@ export interface ModelUsageRow {
  *
  *   { success: true,  message: 'ok',        data: T }
  *   { success: false, message: 'CODE_NAME', data: null }
+ *   // AppError (cloud): data may be `{ detail: string }` with the human reason
  *
  * `request<T>` enforces this contract at the fetch boundary:
- *   - non-2xx HTTP      → throw `Error('NAME ${status}')`
- *   - 2xx but `success=false` → throw `Error(message)` (server-side code)
- *   - 2xx and `success=true`  → return `data` (the inner payload, not the envelope)
+ *   - non-2xx / non-JSON → throw with HTTP status fallback
+ *   - `success=false`    → throw `Error(detail)` when `data.detail` is a string,
+ *                          otherwise `Error(message)` (server-side code)
+ *   - `success=true`     → return `data` (the inner payload, not the envelope)
  *
  * Callers always work with the unwrapped `data` shape (e.g. `UsageSummary`
  * directly), so they never have to walk `.data.xxx` and never see `null`
@@ -57,6 +59,12 @@ interface Envelope<T> {
   success: boolean;
   message: string;
   data: T | null;
+}
+
+function envelopeDetail(data: unknown): string | null {
+  if (data === null || typeof data !== 'object' || Array.isArray(data)) return null;
+  const detail = (data as { detail?: unknown }).detail;
+  return typeof detail === 'string' && detail.trim() ? detail.trim() : null;
 }
 
 async function request<T>(input: string, init?: RequestInit): Promise<T> {
@@ -70,7 +78,9 @@ async function request<T>(input: string, init?: RequestInit): Promise<T> {
   }
   if (!res.ok || !body || body.success !== true || body.data === null) {
     const code = body?.message ?? `HTTP ${res.status}`;
-    throw new Error(code);
+    const detail = envelopeDetail(body?.data);
+    // Prefer server detail (e.g. unknown template reason) over bare CODE_NAME.
+    throw new Error(detail ?? code);
   }
   return body.data;
 }

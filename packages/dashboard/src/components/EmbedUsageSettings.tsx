@@ -195,8 +195,7 @@ export function EmbedUsageSettings() {
     ? buildEmbedSnippets(
       getEmbedApiBase(),
       selected.shareId,
-      // Snippets use saved shareId URL; template dims follow draft for sizing attrs.
-      (draft?.templateId ?? selected.templateId),
+      // Snippets use saved shareId URL; dims follow draft template for sizing attrs.
       templateMeta ? { width: templateMeta.width, height: templateMeta.height } : undefined,
     )
     : null;

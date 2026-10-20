@@ -53,8 +53,6 @@ export function hasLocalEmbedTemplate(templateId: string): boolean {
 export type EmbedCopyFormat =
   | 'markdown-page'
   | 'markdown-image'
-  | 'markdown-modal'
-  | 'markdown-from-share'
   | 'html-page'
   | 'url';
 
@@ -299,28 +297,14 @@ export function buildEmbedCardUrl(publicApiBase: string, shareId: string): strin
   return `${base.toString().replace(/\/$/, '')}/embed/v1/cards/${encodeURIComponent(shareId)}.svg`;
 }
 
-function panelLink(opts: {
-  openEmbed?: boolean;
-  templateId?: string;
-  fromShare?: string;
-}): string {
-  const url = new URL(USAGE_PAGE);
-  if (opts.openEmbed) url.searchParams.set('openEmbed', '1');
-  if (opts.templateId) url.searchParams.set('embedTemplate', opts.templateId);
-  if (opts.fromShare) url.searchParams.set('fromShare', opts.fromShare);
-  return url.toString();
-}
 
 export function buildEmbedSnippets(
   publicApiBase: string,
   shareId: string,
-  templateId: EmbedStyle | string,
   dims?: { width: number; height: number },
 ) {
   const url = buildEmbedCardUrl(publicApiBase, shareId);
   const page = USAGE_PAGE;
-  const modal = panelLink({ openEmbed: true, templateId });
-  const fromShare = panelLink({ openEmbed: true, templateId, fromShare: shareId });
   const w = dims?.width;
   const h = dims?.height;
   const sizeAttrs = w && h ? ` width="${w}" height="${h}"` : '';
@@ -336,16 +320,6 @@ export function buildEmbedSnippets(
         id: 'markdown-image' as const,
         label: '纯图片',
         value: `![Juejin AI Usage](${url})`,
-      },
-      {
-        id: 'markdown-modal' as const,
-        label: '打开弹窗预选模板',
-        value: `[![Juejin AI Usage](${url})](${modal})`,
-      },
-      {
-        id: 'markdown-from-share' as const,
-        label: '参照此卡创建',
-        value: `[![Juejin AI Usage](${url})](${fromShare})`,
       },
       {
         id: 'html-page' as const,
