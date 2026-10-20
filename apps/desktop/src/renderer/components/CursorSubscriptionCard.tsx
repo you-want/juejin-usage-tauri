@@ -1,3 +1,4 @@
+import { subscriptionApi } from '../lib/subscription-api';
 import { subscriptionDetails, subscriptionPoolKey } from '../lib/subscription-details';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
@@ -5,6 +6,7 @@ import {
   type CursorSubscriptionSnapshot,
 } from '../../shared/cursor-subscription';
 import { SubscriptionUsageCard, type SubscriptionUsageMetric } from './SubscriptionUsageCard';
+import { desktopMockCursorSubscription, isDesktopMockEnabled } from '../lib/desktop-subscription-mock';
 import { SubscriptionBrandIcon } from './SubscriptionBrandIcon';
 
 const INITIAL_SNAPSHOT: CursorSubscriptionSnapshot = {
@@ -25,11 +27,16 @@ export function CursorSubscriptionCard() {
   const requestInFlight = useRef(false);
 
   const reload = useCallback(async (forceRefresh = false) => {
+    if (isDesktopMockEnabled()) {
+      setSnapshot(desktopMockCursorSubscription());
+      setLoading(false);
+      return;
+    }
     if (requestInFlight.current) return;
     requestInFlight.current = true;
     setLoading(true);
     try {
-      setSnapshot(await window.tud.getCursorSubscription({ forceRefresh }));
+      setSnapshot(await subscriptionApi.getCursorSubscription({ forceRefresh }));
     } catch {
       setSnapshot({
         ...INITIAL_SNAPSHOT,

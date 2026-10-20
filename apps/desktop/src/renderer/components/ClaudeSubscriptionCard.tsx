@@ -1,3 +1,4 @@
+import { subscriptionApi } from '../lib/subscription-api';
 import { subscriptionDetails, subscriptionPoolKey } from '../lib/subscription-details';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
@@ -5,6 +6,7 @@ import {
   type ClaudeSubscriptionSnapshot,
 } from '../../shared/claude-subscription';
 import { SubscriptionUsageCard } from './SubscriptionUsageCard';
+import { desktopMockClaudeSubscription, isDesktopMockEnabled } from '../lib/desktop-subscription-mock';
 import { SubscriptionBrandIcon } from './SubscriptionBrandIcon';
 
 const INITIAL_SNAPSHOT: ClaudeSubscriptionSnapshot = {
@@ -25,11 +27,16 @@ export function ClaudeSubscriptionCard() {
   const requestInFlight = useRef(false);
 
   const reload = useCallback(async (forceRefresh = false) => {
+    if (isDesktopMockEnabled()) {
+      setSnapshot(desktopMockClaudeSubscription());
+      setLoading(false);
+      return;
+    }
     if (requestInFlight.current) return;
     requestInFlight.current = true;
     setLoading(true);
     try {
-      setSnapshot(await window.tud.getClaudeSubscription({
+      setSnapshot(await subscriptionApi.getClaudeSubscription({
         allowCredentialAccess: true,
         forceRefresh,
       }));

@@ -1,3 +1,5 @@
+import { setSubscriptionFetch } from '@juejin-opensource/jusage-core/subscription/transport';
+import { fetchSubscription } from './subscription-fetch';
 import { app, BrowserWindow, clipboard, ipcMain, nativeImage, nativeTheme, powerMonitor } from 'electron';
 import {
   initAutostartOnLaunch,
@@ -53,6 +55,7 @@ import {
   resumeLocalRuntimeWatchdog,
   setLocalRuntimeQuitting,
   startLocalRuntime,
+  isDesktopMockMode,
   stopLocalRuntime,
 } from './local-runtime';
 import {
@@ -529,6 +532,7 @@ void acquireDesktopInstanceLock().then((gotLock) => {
       triggerSync,
     });
     disposeLocalApiIpc = registerLocalApiIpc();
+    setSubscriptionFetch(fetchSubscription);
     disposeCodexSubscriptionIpc = registerCodexSubscriptionIpc();
     disposeClaudeSubscriptionIpc = registerClaudeSubscriptionIpc();
     disposeCursorSubscriptionIpc = registerCursorSubscriptionIpc();
@@ -564,7 +568,9 @@ void acquireDesktopInstanceLock().then((gotLock) => {
       theme: currentTheme,
     });
 
-    try {
+    if (isDesktopMockMode()) {
+      console.info('[tud-desktop] mock mode: skip local runtime, hooks and sync');
+    } else try {
       await touchRuntimeHeartbeat({ kind: 'desktop', pid: process.pid });
       const started = await startLocalRuntime();
       runtimeReady = true;

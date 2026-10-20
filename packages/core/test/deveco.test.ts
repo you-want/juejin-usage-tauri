@@ -123,6 +123,31 @@ test('DevEco filters historical usage and reports unreadable schemas', async () 
   } finally { await f.close(); }
 });
 
+test('DevEco waits for a timestamp before advancing message totals', async () => {
+  const f = await fixture();
+  try {
+    const pendingMessage = {
+      ...sample,
+      time: undefined,
+    };
+    message(f.db, 'msg_pending_time', pendingMessage);
+
+    const pendingResult = await parseDevecoIncremental({}, SINCE);
+    assert.equal(pendingResult.result.eventsParsed, 0);
+
+    f.db.prepare('UPDATE message SET data = ? WHERE id = ?').run(
+      JSON.stringify(sample),
+      'msg_pending_time',
+    );
+
+    const completedResult = await parseDevecoIncremental(pendingResult.cursors, SINCE);
+    assert.equal(completedResult.result.eventsParsed, 1);
+    assert.equal(completedResult.result.buckets[0]!.total_tokens, 26253);
+  } finally {
+    await f.close();
+  }
+});
+
 test('DevEco synchronizes into the local queue once', async () => {
   const f = await fixture();
   try {
