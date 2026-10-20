@@ -142,7 +142,7 @@ Dashboard「用量卡片」弹窗的模板列表 = **本地构建 Catalog** ∪ 
 
 - 面板保存仍只传 `templateId` + `showFields`（及启用、备注等），**禁止**上传自定义 SVG 原文。
 - 服务端不认识的 `templateId` 保存时会 400；本地新增样式要联调公开图时，需先经服务端同步进内置 Catalog。
-- **客户端不配 Gitee URL**；远端模板（若服务端日后接上拉取）只会通过上述 Catalog API 暴露给前端，合并时本地同 id 仍优先。
+- **客户端不配 Gitee URL**；远端模板只会通过上述 Catalog API 暴露给前端，合并时本地同 id 仍优先。
 
 公开 SVG 渲染始终走服务端自己的内置（及未来远端）模板，与面板本地预览相互独立。
 
@@ -224,11 +224,11 @@ Cache-Control: public, max-age=300, must-revalidate
 
 ### 计划中的远端源（未上线）
 
-服务端曾规划从 Gitee 异步拉模板并入内存 Catalog（同 id 远端覆盖内置），**目前没有配置任何 Gitee URL / env**，代码里仅留 TODO，**勿当现网行为**。
+服务端启动时会像桌面宠物一样异步拉远端模板进内存 Catalog（**Gitee 优先，目录为空或失败再试 GitHub**；同 id **远端覆盖内置**）。默认 `juejin-cn/juejin-usage` / `cards` / `main`。测特性分支时改 `EMBED_CARDS_GITEE_REF` 即可。`EMBED_CARDS_REMOTE=0` 可关掉拉取。
 
-- 早期技术方案草图目录：`templates/embed-cards/{manifest.json,*.svg}`（GitHub → Gitee 镜像后再由服务端拉取）——与当前事实源 `cards/` **不是同一路径**，属历史规划。
-- 桌面端安装包用的 Gitee 仓（`gitee.com/juejin-cn/juejin-usage`）与用量卡模板无关。
-- 预留 env 名（未接线）：`EMBED_CARDS_GITEE_REPO` / `EMBED_CARDS_GITEE_PATH` / `EMBED_CARDS_GITEE_REF`；接上之前不要设置。
+- 事实源仍是本仓 `cards/`（经 `sync:juejin` 进服务端内置）；远端是运行时叠加，不是替代本地开发流。
+- 面板侧合并规则不变：本地 ∪ 服务端 Catalog，同 id **本地优先**。
+- env：`EMBED_CARDS_GITEE_REPO` / `EMBED_CARDS_GITEE_PATH` / `EMBED_CARDS_GITEE_REF` / `EMBED_CARDS_REFRESH_MS` / `EMBED_CARDS_REMOTE`。
 
 ---
 
