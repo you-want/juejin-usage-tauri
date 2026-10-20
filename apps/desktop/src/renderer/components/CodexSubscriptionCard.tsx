@@ -11,6 +11,7 @@ import {
   updateCodexSubscriptionState,
 } from '../lib/codex-subscription-state';
 import { SubscriptionUsageCard } from './SubscriptionUsageCard';
+import { desktopMockCodexSubscription, isDesktopMockEnabled } from '../lib/desktop-subscription-mock';
 import { SubscriptionBrandIcon } from './SubscriptionBrandIcon';
 
 const UNAVAILABLE_SNAPSHOT: CodexSubscriptionSnapshot = {
@@ -33,6 +34,14 @@ export function CodexSubscriptionCard() {
   const hasAccount = useRef(false);
 
   const reload = useCallback(async (forceRefresh = false) => {
+    if (isDesktopMockEnabled()) {
+      const next = desktopMockCodexSubscription();
+      hasAccount.current = next.hasAccount;
+      refreshOnFocus.current = false;
+      setState((previous) => updateCodexSubscriptionState(previous, next, Date.now()));
+      setLoading(false);
+      return;
+    }
     if (requestInFlight.current) return;
     requestInFlight.current = true;
     setLoading(true);
