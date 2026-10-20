@@ -1,6 +1,6 @@
 # 用量卡片（`cards/`）
 
-每个子目录是一款可嵌入的用量卡模板。本目录是**事实源**：改这里 → 构建进前端 core → 再同步到 `ai-usage` 服务端内置 Catalog。
+每个子目录是一款可嵌入的用量卡模板。本目录是**事实源**：改这里 → `pnpm cards:build` 进前端 core；服务端由 **ai-usage** 的 `pnpm sync:juejin` pull 覆盖 `apps/server/cards/` 并重生内置 Catalog。
 
 欢迎通过 PR 增加样式。已发布的 `id` **不要改名**（外链与用户已保存的 `templateId` 都依赖它）；要大改就发新 id，删目录 = 下线该样式。
 
@@ -131,7 +131,9 @@ cards/
 
 ## 本地构建与同步
 
-在 **juejin-usage** 根目录：
+**方向：服务端 pull，不再从本仓 push。**
+
+在 **juejin-usage** 根目录（前端 Catalog）：
 
 ```bash
 # 校验 cards/，生成 packages/core/src/usage-cards.ts（前端 / CLI Catalog + 模板）
@@ -139,22 +141,28 @@ pnpm cards:build
 
 # 监听 cards/，改完自动 cards:build（不同步后端）
 pnpm cards:watch
-
-# 整目录覆盖同步到兄弟仓 ai-usage/apps/server/cards/
-# 并生成 apps/server/src/embed/template-artwork.ts（内置兜底）
-pnpm cards:sync-server
 ```
 
-环境变量（可选）：
+在兄弟仓 **ai-usage** 根目录（服务端内置 Catalog）：
 
-- `USAGE_CARDS_SERVER_ROOT`：ai-usage 的 `apps/server` 路径；默认 `../ai-usage/apps/server`。
+```bash
+# 将上游 juejin-usage 的 product 树 diff 打进本仓，并：
+#   cards/ → apps/server/cards/（整目录覆盖）
+#   重生 apps/server/src/embed/template-artwork.ts
+pnpm sync:juejin
+# 或：pnpm sync:juejin -- --src /path/to/juejin-usage
+```
+
+`sync:private`（GitHub 私有仓 → 内网 Codebase）会把已进入私有树的 `apps/server/cards/` 与 `template-artwork.ts` 当普通产品文件自动 apply；它们须先经由 `sync:juejin` 写入 GitHub 私有仓。
 
 提交约定：
 
 - **juejin-usage**：提交 `cards/` + 生成的 `packages/core/src/usage-cards.ts`。
-- **ai-usage**：在对应仓提交同步后的 `apps/server/cards/` + `src/embed/template-artwork.ts`。
+- **ai-usage**：在跑完 `pnpm sync:juejin` 后，提交指针文件、`apps/server/cards/`、`template-artwork.ts` 以及一并打进来的 packages 改动。
 
 面板预览走前端本地模板（`USAGE_CARD_TEMPLATES` + 演示数据），不依赖公开 SVG；公开图仍由服务端按用户 `showFields` 渲染。
+
+> 注意：`cards:build` / `cards:watch` 只刷新 `packages/core/src/usage-cards.ts`。Dashboard 若从包的 **dist** 引用，本地预览需再跑一次 `pnpm --filter @juejin-opensource/jusage-core build`，否则可能看到旧字段契约。
 
 ---
 
@@ -204,7 +212,7 @@ Cache-Control: public, max-age=300, must-revalidate
 
 1. 建目录 `cards/<id>/`，写好 `card.json` + `template.svg`。
 2. 可选指标全部包进 `{{#if}}`，需要收拢的列用 `{{x_*}}`。
-3. `pnpm cards:build` 通过。
+3. `pnpm cards:build` 通过（需要时再 `pnpm --filter @juejin-opensource/jusage-core build` 刷新 dist）。
 4. 本地打开用量卡片弹窗，切模板、勾字段、看预览是否收拢、无留白。
-5. 联调后端时再 `pnpm cards:sync-server`，在 ai-usage 仓提交同步产物。
-6. 将 `cards/` 与 `packages/core/src/usage-cards.ts` 一并 PR。
+5. 联调后端：在 **ai-usage** 跑 `pnpm sync:juejin`，提交 `apps/server/cards/` + `template-artwork.ts`。
+6. 将 `cards/` 与 `packages/core/src/usage-cards.ts` 一并 PR（juejin-usage）。

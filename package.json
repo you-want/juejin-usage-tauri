@@ -40,7 +40,6 @@
     "version-packages": "changeset version",
     "release": "pnpm build:cli && changeset publish",
     "cards:build": "node scripts/build-usage-cards.mjs",
-    "cards:sync-server": "node scripts/sync-usage-cards-to-server.mjs",
     "cards:watch": "node scripts/watch-usage-cards.mjs"
   },
   "engines": {
