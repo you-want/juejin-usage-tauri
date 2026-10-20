@@ -132,13 +132,16 @@ export async function parseDevecoIncremental(
     if (sameGeminiTotals(totals, previous)) continue;
     const delta = diffGeminiTotals(totals, previous);
     if (!delta) continue;
-    cursor.messages[key] = { lastTotals: totals };
     const timestamp = numberMs(row.completed) ?? numberMs(row.created);
     if (timestamp == null) continue;
     const date = new Date(timestamp);
     if (!Number.isFinite(date.getTime())) continue;
     const hour = toUtcHalfHourStart(date.toISOString());
-    if (!hour || new Date(hour).getTime() < sinceMs) continue;
+    if (!hour) continue;
+    // DevEco updates message rows in place. Do not consume token totals before
+    // their timestamp arrives, or the completed row would look unchanged.
+    cursor.messages[key] = { lastTotals: totals };
+    if (new Date(hour).getTime() < sinceMs) continue;
     accumulateBucket(
       state, 'deveco', opencodeModelName(row), projectFromRow(row), hour,
       {

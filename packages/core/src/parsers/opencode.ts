@@ -131,17 +131,17 @@ function ingestMessage(
 
   const prev = messageKey ? messageIndex[messageKey]?.lastTotals : undefined;
   const delta = diffGeminiTotals(currentTotals, prev);
-  if (messageKey) {
-    if (!sameGeminiTotals(currentTotals, prev)) {
-      messageIndex[messageKey] = { lastTotals: currentTotals };
-    }
-  }
   if (!delta) return 0;
   if (!timestampMs) return 0;
 
   const tsIso = new Date(timestampMs).toISOString();
   const hourStart = toUtcHalfHourStart(tsIso);
   if (!hourStart) return 0;
+  // Message rows are updated in place. Keep the totals pending until the row
+  // has a usable timestamp so a later completion update is still collectable.
+  if (messageKey && !sameGeminiTotals(currentTotals, prev)) {
+    messageIndex[messageKey] = { lastTotals: currentTotals };
+  }
   if (new Date(hourStart).getTime() < sinceMs) return 0;
 
   accumulateBucket(
