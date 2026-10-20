@@ -53,6 +53,7 @@ import {
   resumeLocalRuntimeWatchdog,
   setLocalRuntimeQuitting,
   startLocalRuntime,
+  isDesktopMockMode,
   stopLocalRuntime,
 } from './local-runtime';
 import {
@@ -564,7 +565,9 @@ void acquireDesktopInstanceLock().then((gotLock) => {
       theme: currentTheme,
     });
 
-    try {
+    if (isDesktopMockMode()) {
+      console.info('[tud-desktop] mock mode: skip local runtime, hooks and sync');
+    } else try {
       await touchRuntimeHeartbeat({ kind: 'desktop', pid: process.pid });
       const started = await startLocalRuntime();
       runtimeReady = true;

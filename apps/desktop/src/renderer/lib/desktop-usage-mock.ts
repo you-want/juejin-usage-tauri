@@ -17,6 +17,8 @@ const PROFILES = [
   { source: 'claude-code', model: 'claude-opus-4-6', project: 'dashboard', scale: 0.82 },
   { source: 'codex', model: 'gpt-5.4', project: 'ai-usage', scale: 1.15 },
   { source: 'cursor', model: 'composer-2', project: 'marketing-site', scale: 0.7 },
+  // Hermes has a dark-mode asset; covers ProviderIcon on fixed white badges.
+  { source: 'hermes', model: 'hermes-agent', project: 'dashboard', scale: 0.55 },
 ] as const;
 
 const LOOKBACK_DAYS = 365;

@@ -72,6 +72,15 @@ export const PREVIEW_SLIDES: readonly PreviewSlide[] = [
   },
 ];
 
+/** Fixed stage height = a wide slide filling the width, so autoplay never shifts
+ *  the content below. Compact (portrait) slides scale down to fit that height. */
+const WIDE_SLIDE = PREVIEW_SLIDES.find((slide) => !slide.compact) ?? PREVIEW_SLIDES[0]!;
+const PREVIEW_STAGE_HEIGHT = `calc(100cqw * ${WIDE_SLIDE.height} / ${WIDE_SLIDE.width})`;
+
+function compactSlideWidth(slide: PreviewSlide): string {
+  return `min(100%, 18rem, calc(${PREVIEW_STAGE_HEIGHT} * ${slide.width} / ${slide.height}))`;
+}
+
 const DEMO_PETS = [
   {
     id: 'hawking',
@@ -328,12 +337,21 @@ export function DownloadPreviewCarousel({
 
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col items-center">
+      {/* Fixed stage at the wide slide's height so autoplay never shifts the content
+          below (on narrow screens the download button sits under the carousel). */}
+      <div
+        className="flex w-full items-center justify-center [container-type:inline-size]"
+      >
+      <div
+        className="flex w-full items-center justify-center"
+        style={{ height: PREVIEW_STAGE_HEIGHT }}
+      >
       <figure
         aria-label="产品预览"
         aria-roledescription="carousel"
         className={cn(
           'mx-auto overflow-hidden rounded-2xl border border-border/80 bg-surface shadow-[0_24px_48px_-28px_rgb(15_23_42/0.45)] motion-safe:transition-[width] motion-safe:duration-500 dark:shadow-[0_24px_48px_-24px_rgb(0_0_0/0.65)]',
-          active.compact ? 'w-[min(100%,18rem)]' : 'w-full',
+          active.compact ? null : 'w-full',
         )}
         onBlur={(event) => {
           if (!event.currentTarget.contains(event.relatedTarget)) setPaused(false);
@@ -341,6 +359,7 @@ export function DownloadPreviewCarousel({
         onFocus={() => setPaused(true)}
         onMouseEnter={() => setPaused(true)}
         onMouseLeave={() => setPaused(false)}
+        style={active.compact ? { width: compactSlideWidth(active) } : undefined}
       >
         <div
           className="relative w-full motion-safe:transition-[aspect-ratio] motion-safe:duration-500"
@@ -364,6 +383,8 @@ export function DownloadPreviewCarousel({
           ))}
         </div>
       </figure>
+      </div>
+      </div>
       <p className="mt-3 text-center text-sm font-normal text-foreground">{active.label}</p>
       {count > 1 ? (
         <div

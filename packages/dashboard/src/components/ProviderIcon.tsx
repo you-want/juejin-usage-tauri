@@ -238,7 +238,8 @@ export function ProviderIcon({
           : ''
       : '';
 
-    if (asset.darkSrc) {
+    // Fixed light containers (bg-white) keep the light artwork even in dark mode.
+    if (asset.darkSrc && !onLightBackground) {
       return (
         <span
           aria-hidden
