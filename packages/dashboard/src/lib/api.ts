@@ -781,19 +781,66 @@ export function apiErrorHint(message: string): string | null {
   return null;
 }
 
-export interface EmbedKeyView { key: string | null; enabled: boolean }
+export interface EmbedCardView {
+  shareId: string;
+  enabled: boolean;
+  label: string | null;
+  templateId: string;
+  showFields: string[];
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface EmbedCatalogCard {
+  id: string;
+  label: string;
+  description: string;
+  order: number;
+  width: number;
+  height: number;
+  avatar: { x: number; y: number; size: number };
+  fields: Array<{ key: string; required: boolean; defaultOn?: boolean }>;
+}
+
 /** Absolute public image root; never an IPC or local collector address. */
 export function getEmbedApiBase(): string {
   return new URL(apiBase() || '/api', window.location.origin).toString().replace(/\/$/, '');
 }
-async function embedKeyRequest(method: string, body?: { enabled: boolean }, suffix = ''): Promise<EmbedKeyView> {
+
+function embedCardsUrl(suffix = ''): string {
+  return `${functionsPrefix()}embed-cards${suffix}`;
+}
+
+async function embedCardsRequest<T>(method: string, suffix = '', body?: unknown): Promise<T> {
   if (isCliBackend()) throw new Error('EMBED_SERVER_ONLY');
-  return request<EmbedKeyView>(`${functionsPrefix()}embed-key${suffix}`, {
-    method, headers: { ...authHeaders(), ...(body ? { 'Content-Type': 'application/json' } : {}) },
-    ...(body ? { body: JSON.stringify(body) } : {}),
+  return request<T>(embedCardsUrl(suffix), {
+    method,
+    headers: {
+      ...authHeaders(),
+      ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}),
+    },
+    ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
   });
 }
-export const fetchEmbedKey = () => embedKeyRequest('GET');
-export const enableEmbedKey = () => embedKeyRequest('POST');
-export const setEmbedKeyEnabled = (enabled: boolean) => embedKeyRequest('PUT', { enabled });
-export const rotateEmbedKey = () => embedKeyRequest('POST', undefined, '/rotate');
+
+export const fetchEmbedCards = () => embedCardsRequest<EmbedCardView[]>('GET');
+export const fetchEmbedCatalog = () => embedCardsRequest<EmbedCatalogCard[]>('GET', '/catalog');
+export const createEmbedCard = (body: {
+  templateId: string;
+  label?: string | null;
+  showFields?: string[];
+}) => embedCardsRequest<EmbedCardView>('POST', '', body);
+export const fetchEmbedCard = (shareId: string) =>
+  embedCardsRequest<EmbedCardView>('GET', `/${encodeURIComponent(shareId)}`);
+export const updateEmbedCard = (
+  shareId: string,
+  body: {
+    enabled?: boolean;
+    label?: string | null;
+    templateId?: string;
+    showFields?: string[];
+    regenerate?: boolean;
+  },
+) => embedCardsRequest<EmbedCardView>('PATCH', `/${encodeURIComponent(shareId)}`, body);
+export const deleteEmbedCard = (shareId: string) =>
+  embedCardsRequest<{ ok: boolean }>('DELETE', `/${encodeURIComponent(shareId)}`);

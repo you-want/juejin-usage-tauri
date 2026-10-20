@@ -9,5 +9,21 @@
     "x": 0,
     "y": 0,
     "size": 0
-  }
+  },
+  "fields": [
+    {
+      "key": "total",
+      "required": true
+    },
+    {
+      "key": "cost",
+      "required": false,
+      "defaultOn": true
+    },
+    {
+      "key": "today",
+      "required": false,
+      "defaultOn": true
+    }
+  ]
 }

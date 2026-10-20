@@ -9,5 +9,55 @@
     "x": 22,
     "y": 18,
     "size": 28
-  }
+  },
+  "fields": [
+    {
+      "key": "name",
+      "required": true
+    },
+    {
+      "key": "avatar",
+      "required": false,
+      "defaultOn": true
+    },
+    {
+      "key": "total",
+      "required": true
+    },
+    {
+      "key": "totalPct",
+      "required": false,
+      "defaultOn": true
+    },
+    {
+      "key": "cost",
+      "required": false,
+      "defaultOn": true
+    },
+    {
+      "key": "input",
+      "required": false,
+      "defaultOn": true
+    },
+    {
+      "key": "inputPct",
+      "required": false,
+      "defaultOn": true
+    },
+    {
+      "key": "output",
+      "required": false,
+      "defaultOn": true
+    },
+    {
+      "key": "outputPct",
+      "required": false,
+      "defaultOn": true
+    },
+    {
+      "key": "since",
+      "required": false,
+      "defaultOn": true
+    }
+  ]
 }

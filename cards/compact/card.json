@@ -9,5 +9,35 @@
     "x": 18,
     "y": 18,
     "size": 28
-  }
+  },
+  "fields": [
+    {
+      "key": "name",
+      "required": true
+    },
+    {
+      "key": "avatar",
+      "required": false,
+      "defaultOn": true
+    },
+    {
+      "key": "since",
+      "required": false,
+      "defaultOn": true
+    },
+    {
+      "key": "total",
+      "required": true
+    },
+    {
+      "key": "cost",
+      "required": false,
+      "defaultOn": true
+    },
+    {
+      "key": "today",
+      "required": false,
+      "defaultOn": true
+    }
+  ]
 }

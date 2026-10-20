@@ -3,28 +3,92 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
+const placeholders = new Set([
+  'avatar', 'name', 'total', 'cost', 'today', 'input', 'output',
+  'since', 'subtitle', 'inputPct', 'outputPct', 'totalPct',
+]);
 const cards = [];
-const placeholders = new Set(['avatar', 'name', 'total', 'cost', 'today', 'input', 'output', 'since', 'subtitle', 'inputPct', 'outputPct', 'totalPct']);
+
+function collectKeys(template) {
+  const keys = new Set();
+  for (const [, key] of template.matchAll(/\{\{\s*#if\s+(\w+)\s*\}\}/g)) keys.add(key);
+  for (const [, key] of template.matchAll(/\{\{(\w+)\}\}/g)) keys.add(key);
+  return keys;
+}
+
+function assertBalancedIf(template, id) {
+  const open = [...template.matchAll(/\{\{\s*#if\s+(\w+)\s*\}\}/g)];
+  const close = [...template.matchAll(/\{\{\s*\/if\s*\}\}/g)];
+  if (open.length !== close.length) {
+    throw new Error(`Unbalanced {{#if}} / {{/if}} in ${id}: ${open.length} open, ${close.length} close`);
+  }
+}
+
 for (const entry of await readdir(path.join(root, 'cards'), { withFileTypes: true })) {
   if (!entry.isDirectory()) continue;
   const directory = path.join(root, 'cards', entry.name);
   const metadata = JSON.parse(await readFile(path.join(directory, 'card.json'), 'utf8'));
   const template = (await readFile(path.join(directory, 'template.svg'), 'utf8')).trim();
-  if (metadata.id !== entry.name || !/^[a-z][a-z0-9-]*$/.test(metadata.id)) throw new Error(`Invalid card id: ${entry.name}`);
-  if (!metadata.label || !metadata.description || !Number.isFinite(metadata.order)) throw new Error(`Invalid metadata: ${entry.name}`);
-  for (const value of [metadata.width, metadata.height]) if (!Number.isFinite(value) || value <= 0) throw new Error(`Invalid dimensions: ${entry.name}`);
-  for (const value of [metadata.avatar?.x, metadata.avatar?.y, metadata.avatar?.size]) if (!Number.isFinite(value) || value < 0) throw new Error(`Invalid avatar: ${entry.name}`);
-  if (metadata.avatar.x + metadata.avatar.size > metadata.width || metadata.avatar.y + metadata.avatar.size > metadata.height) throw new Error(`Avatar outside canvas: ${entry.name}`);
-  if (!template.includes(`viewBox="0 0 ${metadata.width} ${metadata.height}"`)) throw new Error(`SVG dimensions disagree with metadata: ${entry.name}`);
-  if (!template.startsWith('<svg ') || !template.endsWith('</svg>') || /<\s*(script|foreignObject|iframe)\b|\bon\w+\s*=|(?:href|src)\s*=\s*["'](?!#)|url\(\s*["']?(?!#)/i.test(template)) throw new Error(`SVG must be self-contained: ${entry.name}`);
-  for (const [, key] of template.matchAll(/\{\{(\w+)\}\}/g)) if (!placeholders.has(key)) throw new Error(`Unknown placeholder ${key}: ${entry.name}`);
+  if (metadata.id !== entry.name || !/^[a-z][a-z0-9-]*$/.test(metadata.id)) {
+    throw new Error(`Invalid card id: ${entry.name}`);
+  }
+  if (!metadata.label || !metadata.description || !Number.isFinite(metadata.order)) {
+    throw new Error(`Invalid metadata: ${entry.name}`);
+  }
+  for (const value of [metadata.width, metadata.height]) {
+    if (!Number.isFinite(value) || value <= 0) throw new Error(`Invalid dimensions: ${entry.name}`);
+  }
+  for (const value of [metadata.avatar?.x, metadata.avatar?.y, metadata.avatar?.size]) {
+    if (!Number.isFinite(value) || value < 0) throw new Error(`Invalid avatar: ${entry.name}`);
+  }
+  if (metadata.avatar.x + metadata.avatar.size > metadata.width
+    || metadata.avatar.y + metadata.avatar.size > metadata.height) {
+    throw new Error(`Avatar outside canvas: ${entry.name}`);
+  }
+  if (!Array.isArray(metadata.fields) || metadata.fields.length === 0) {
+    throw new Error(`fields[] required: ${entry.name}`);
+  }
+  const fieldKeys = new Set();
+  for (const field of metadata.fields) {
+    if (!field || typeof field.key !== 'string' || !placeholders.has(field.key)) {
+      throw new Error(`Unknown or invalid field key in ${entry.name}: ${field?.key}`);
+    }
+    if (fieldKeys.has(field.key)) throw new Error(`Duplicate field ${field.key}: ${entry.name}`);
+    fieldKeys.add(field.key);
+    if (typeof field.required !== 'boolean') throw new Error(`field.required must be boolean: ${entry.name}/${field.key}`);
+    if (!field.required && typeof field.defaultOn !== 'boolean') {
+      throw new Error(`optional field needs defaultOn: ${entry.name}/${field.key}`);
+    }
+  }
+  if (!template.includes(`viewBox="0 0 ${metadata.width} ${metadata.height}"`)) {
+    throw new Error(`SVG dimensions disagree with metadata: ${entry.name}`);
+  }
+  if (!template.startsWith('<svg ') || !template.endsWith('</svg>')
+    || /<\s*(script|foreignObject|iframe)\b|\bon\w+\s*=|(?:href|src)\s*=\s*["'](?!#)|url\(\s*["']?(?!#)/i.test(template)) {
+    throw new Error(`SVG must be self-contained: ${entry.name}`);
+  }
+  assertBalancedIf(template, entry.name);
+  const used = collectKeys(template);
+  for (const key of used) {
+    if (!placeholders.has(key)) throw new Error(`Unknown placeholder ${key}: ${entry.name}`);
+    if (!fieldKeys.has(key)) throw new Error(`Placeholder ${key} not declared in fields: ${entry.name}`);
+  }
+  for (const key of fieldKeys) {
+    if (!used.has(key)) throw new Error(`Field ${key} declared but unused in SVG: ${entry.name}`);
+  }
   cards.push({ ...metadata, template });
 }
+
 cards.sort((a, b) => a.order - b.order || a.id.localeCompare(b.id));
 if (!cards.length) throw new Error('No usage cards found');
 const catalog = cards.map(({ template, ...metadata }) => metadata);
 const artwork = Object.fromEntries(cards.map(card => [card.id, card.template]));
-const source = `// Generated by scripts/build-usage-cards.mjs from cards/. Do not edit.\nexport const USAGE_CARD_CATALOG = ${JSON.stringify(catalog, null, 2)} as const;\nexport type UsageCardStyle = typeof USAGE_CARD_CATALOG[number]['id'];\nexport const USAGE_CARD_TEMPLATES: Record<UsageCardStyle, string> = ${JSON.stringify(artwork, null, 2)};\n`;
+const source = `// Generated by scripts/build-usage-cards.mjs from cards/. Do not edit.
+export const USAGE_CARD_CATALOG = ${JSON.stringify(catalog, null, 2)} as const;
+export type UsageCardStyle = typeof USAGE_CARD_CATALOG[number]['id'];
+export type UsageCardFieldKey = typeof USAGE_CARD_CATALOG[number]['fields'][number]['key'];
+export const USAGE_CARD_TEMPLATES: Record<UsageCardStyle, string> = ${JSON.stringify(artwork, null, 2)};
+`;
 const output = process.argv[2] ? path.resolve(process.argv[2]) : path.join(root, 'packages/core/src/usage-cards.ts');
 await writeFile(output, source);
-console.log(`Exported ${cards.length} usage cards`);
+console.log(`Exported ${cards.length} usage cards → ${output}`);
