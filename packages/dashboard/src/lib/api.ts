@@ -43,11 +43,13 @@ export interface ModelUsageRow {
  *
  *   { success: true,  message: 'ok',        data: T }
  *   { success: false, message: 'CODE_NAME', data: null }
+ *   // AppError (cloud): data may be `{ detail: string }` with the human reason
  *
  * `request<T>` enforces this contract at the fetch boundary:
- *   - non-2xx HTTP      → throw `Error('NAME ${status}')`
- *   - 2xx but `success=false` → throw `Error(message)` (server-side code)
- *   - 2xx and `success=true`  → return `data` (the inner payload, not the envelope)
+ *   - non-2xx / non-JSON → throw with HTTP status fallback
+ *   - `success=false`    → throw `Error(detail)` when `data.detail` is a string,
+ *                          otherwise `Error(message)` (server-side code)
+ *   - `success=true`     → return `data` (the inner payload, not the envelope)
  *
  * Callers always work with the unwrapped `data` shape (e.g. `UsageSummary`
  * directly), so they never have to walk `.data.xxx` and never see `null`
@@ -57,6 +59,12 @@ interface Envelope<T> {
   success: boolean;
   message: string;
   data: T | null;
+}
+
+function envelopeDetail(data: unknown): string | null {
+  if (data === null || typeof data !== 'object' || Array.isArray(data)) return null;
+  const detail = (data as { detail?: unknown }).detail;
+  return typeof detail === 'string' && detail.trim() ? detail.trim() : null;
 }
 
 async function request<T>(input: string, init?: RequestInit): Promise<T> {
@@ -70,7 +78,9 @@ async function request<T>(input: string, init?: RequestInit): Promise<T> {
   }
   if (!res.ok || !body || body.success !== true || body.data === null) {
     const code = body?.message ?? `HTTP ${res.status}`;
-    throw new Error(code);
+    const detail = envelopeDetail(body?.data);
+    // Prefer server detail (e.g. unknown template reason) over bare CODE_NAME.
+    throw new Error(detail ?? code);
   }
   return body.data;
 }
@@ -310,6 +320,7 @@ export function setApiBearer(token: string | null): void {
   } catch {
     // ignore
   }
+  if (typeof window !== 'undefined') window.dispatchEvent(new Event('tud:api-identity-changed'));
 }
 
 export function hasConfiguredApiBearer(): boolean {
@@ -779,3 +790,67 @@ export function apiErrorHint(message: string): string | null {
   }
   return null;
 }
+
+export interface EmbedCardView {
+  shareId: string;
+  enabled: boolean;
+  label: string | null;
+  templateId: string;
+  showFields: string[];
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface EmbedCatalogCard {
+  id: string;
+  label: string;
+  description: string;
+  order: number;
+  width: number;
+  height: number;
+  avatar: { x: number; y: number; size: number };
+  fields: Array<{ key: string; required: boolean; defaultOn?: boolean }>;
+}
+
+/** Absolute public image root; never an IPC or local collector address. */
+export function getEmbedApiBase(): string {
+  return new URL(apiBase() || '/api', window.location.origin).toString().replace(/\/$/, '');
+}
+
+function embedCardsUrl(suffix = ''): string {
+  return `${functionsPrefix()}embed-cards${suffix}`;
+}
+
+async function embedCardsRequest<T>(method: string, suffix = '', body?: unknown): Promise<T> {
+  if (isCliBackend()) throw new Error('EMBED_SERVER_ONLY');
+  return request<T>(embedCardsUrl(suffix), {
+    method,
+    headers: {
+      ...authHeaders(),
+      ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}),
+    },
+    ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+  });
+}
+
+export const fetchEmbedCards = () => embedCardsRequest<EmbedCardView[]>('GET');
+export const fetchEmbedCatalog = () => embedCardsRequest<EmbedCatalogCard[]>('GET', '/catalog');
+export const createEmbedCard = (body: {
+  templateId: string;
+  label?: string | null;
+  showFields?: string[];
+}) => embedCardsRequest<EmbedCardView>('POST', '', body);
+export const fetchEmbedCard = (shareId: string) =>
+  embedCardsRequest<EmbedCardView>('GET', `/${encodeURIComponent(shareId)}`);
+export const updateEmbedCard = (
+  shareId: string,
+  body: {
+    enabled?: boolean;
+    label?: string | null;
+    templateId?: string;
+    showFields?: string[];
+    regenerate?: boolean;
+  },
+) => embedCardsRequest<EmbedCardView>('PATCH', `/${encodeURIComponent(shareId)}`, body);
+export const deleteEmbedCard = (shareId: string) =>
+  embedCardsRequest<{ ok: boolean }>('DELETE', `/${encodeURIComponent(shareId)}`);

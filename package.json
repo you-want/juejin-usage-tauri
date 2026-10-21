@@ -39,7 +39,9 @@
     "start:desktop": "pnpm --filter \"@juejin-opensource/jusage-desktop^...\" build && pnpm --filter @juejin-opensource/jusage-desktop start",
     "changeset": "changeset",
     "version-packages": "changeset version",
-    "release": "pnpm build:cli && changeset publish"
+    "release": "pnpm build:cli && changeset publish",
+    "cards:build": "node scripts/build-usage-cards.mjs",
+    "cards:watch": "node scripts/watch-usage-cards.mjs"
   },
   "engines": {
     "node": ">=20"

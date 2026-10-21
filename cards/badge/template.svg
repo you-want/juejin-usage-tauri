@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="284" height="20" viewBox="0 0 284 20" role="img" aria-label="Shields Badge 用量卡">
+<defs>
+<linearGradient id="s" x2="0" y2="100%">
+<stop offset="0" stop-color="#bbb" stop-opacity=".1"/>
+<stop offset="1" stop-opacity=".1"/>
+</linearGradient>
+</defs>
+{{#if total}}
+<g transform="translate({{x_total}} 0)">
+<clipPath id="r_total"><rect width="98" height="20" rx="3"/></clipPath>
+<g clip-path="url(#r_total)">
+<rect width="48" height="20" fill="#555"/>
+<rect x="48" width="50" height="20" fill="#007ec6"/>
+<rect width="98" height="20" fill="url(#s)"/>
+</g>
+<g fill="#fff" text-anchor="middle" font-family="Verdana,Geneva,DejaVu Sans,sans-serif" text-rendering="geometricPrecision" font-size="11">
+<text x="24" y="14" fill="#010101" fill-opacity=".3">tokens</text>
+<text x="24" y="13">tokens</text>
+<text x="73" y="14" fill="#010101" fill-opacity=".3">{{total}}</text>
+<text x="73" y="13">{{total}}</text>
+</g>
+</g>
+{{/if}}
+{{#if cost}}
+<g transform="translate({{x_cost}} 0)">
+<clipPath id="r_cost"><rect width="90" height="20" rx="3"/></clipPath>
+<g clip-path="url(#r_cost)">
+<rect width="36" height="20" fill="#555"/>
+<rect x="36" width="54" height="20" fill="#4c1"/>
+<rect width="90" height="20" fill="url(#s)"/>
+</g>
+<g fill="#fff" text-anchor="middle" font-family="Verdana,Geneva,DejaVu Sans,sans-serif" text-rendering="geometricPrecision" font-size="11">
+<text x="18" y="14" fill="#010101" fill-opacity=".3">cost</text>
+<text x="18" y="13">cost</text>
+<text x="63" y="14" fill="#010101" fill-opacity=".3">{{cost}}</text>
+<text x="63" y="13">{{cost}}</text>
+</g>
+</g>
+{{/if}}
+{{#if today}}
+<g transform="translate({{x_today}} 0)">
+<clipPath id="r_today"><rect width="88" height="20" rx="3"/></clipPath>
+<g clip-path="url(#r_today)">
+<rect width="42" height="20" fill="#555"/>
+<rect x="42" width="46" height="20" fill="#9f9f9f"/>
+<rect width="88" height="20" fill="url(#s)"/>
+</g>
+<g fill="#fff" text-anchor="middle" font-family="Verdana,Geneva,DejaVu Sans,sans-serif" text-rendering="geometricPrecision" font-size="11">
+<text x="21" y="14" fill="#010101" fill-opacity=".3">today</text>
+<text x="21" y="13">today</text>
+<text x="65" y="14" fill="#010101" fill-opacity=".3">{{today}}</text>
+<text x="65" y="13">{{today}}</text>
+</g>
+</g>
+{{/if}}
+</svg>

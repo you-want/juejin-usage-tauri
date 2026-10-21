@@ -55,6 +55,10 @@
       "types": "./dist/reconcile-skip.d.ts",
       "import": "./dist/reconcile-skip.js"
     },
+    "./usage-cards": {
+      "types": "./dist/usage-cards.d.ts",
+      "import": "./dist/usage-cards.js"
+    },
     "./subscription": {
       "types": "./dist/subscription/index.d.ts",
       "import": "./dist/subscription/index.js",
@@ -88,7 +92,7 @@
     "access": "public"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json && node -e \"require('node:fs').copyFileSync('src/pricing/pricing.json','dist/pricing/pricing.json')\"",
+    "build": "node ../../scripts/build-usage-cards.mjs && tsc -p tsconfig.json && node -e \"require('node:fs').copyFileSync('src/pricing/pricing.json','dist/pricing/pricing.json')\"",
     "dev": "tsc -p tsconfig.json --watch",
     "sync:pricing": "node scripts/sync-pricing.mjs",
     "test": "pnpm test:compile && node --test dist-test/test/*.test.js",
