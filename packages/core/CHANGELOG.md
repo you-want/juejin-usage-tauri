@@ -1,5 +1,16 @@
 # @juejin-opensource/jusage-core
 
+## 0.1.15
+
+### Patch Changes
+
+- 新增 DevEco Code 用量采集：读取本地 `deveco.db` 并独立统计 token。
+- 线上用量面板支持生成可嵌入博客 / GitHub README 的 SVG 用量卡片，可切换样式、复制链接并管理公开展示标识。
+- CLI Web 首页可展示本机各渠道订阅套餐与剩余额度，无需启动桌面端。
+- 同步进度文件 `cursors.json` 改为原子写入，避免中途退出后进度丢失、需要重扫历史。
+- 修复 Codex 累计快照漏算缓存输入差值导致费用偏高；修复 OpenCode / DevEco Code 先写 token、后补时间戳时可能漏记用量。
+- 内置定价表同步 models.dev：补充 Gemini 4 Argon、Muse Wonder 1.0、MiniMax-M3.1-Flash、DeepSeek V4.1 Flash 1017，并为 GLM-4.5V / 4.6V 补齐缓存读取价。
+
 ## 0.1.14
 
 ### Patch Changes

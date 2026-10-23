@@ -1,5 +1,15 @@
 # @juejin-opensource/jusage
 
+## 0.1.15
+
+### Patch Changes
+
+- CLI Web 首页可展示本机各渠道订阅套餐与剩余额度，并可按渠道刷新；Qoder Add-on 额度统一显示剩余百分比。
+- 新增 DevEco Code 用量采集；内置面板支持 SVG 用量卡片嵌入能力。
+- 同步进度改为原子写入；修复 Codex 缓存输入差值与 OpenCode / DevEco 时间戳漏记。
+- Updated dependencies
+  - @juejin-opensource/jusage-core@0.1.15
+
 ## 0.1.14
 
 ### Patch Changes

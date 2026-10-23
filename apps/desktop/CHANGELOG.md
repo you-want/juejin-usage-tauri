@@ -1,5 +1,15 @@
 # @juejin-opensource/jusage-desktop
 
+## 0.1.15
+
+### Patch Changes
+
+- 新增 DevEco Code 用量采集；支持读取 Qoder App 订阅额度与资源包余额，退出或切换账号不再沿用旧额度。
+- 修复 Codex 额度请求未走系统代理导致读取失败，临时网络异常后窗口聚焦可自动重试。
+- Qoder Add-on 额度统一显示剩余百分比；同步进度改为原子写入，避免中途退出后进度丢失。
+- Updated dependencies
+  - @juejin-opensource/jusage-core@0.1.15
+
 ## 0.1.14
 
 ### Patch Changes

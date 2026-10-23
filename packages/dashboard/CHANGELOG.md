@@ -1,5 +1,14 @@
 # @juejin-opensource/jusage-dashboard
 
+## 0.1.15
+
+### Patch Changes
+
+- 支持生成可嵌入博客 / GitHub README 的 SVG 用量卡片：多样式、链接复制、公开展示标识停用与重置。
+- 新增 DevEco Code 用量展示；下载页等工具图标对齐官方品牌。
+- Updated dependencies
+  - @juejin-opensource/jusage-core@0.1.15
+
 ## 0.1.14
 
 ### Patch Changes
