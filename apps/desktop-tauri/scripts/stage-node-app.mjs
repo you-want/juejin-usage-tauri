@@ -25,17 +25,14 @@
  *
  * Run with: node apps/desktop-tauri/scripts/stage-node-app.mjs
  */
-import { cpSync, rmSync, existsSync, chmodSync } from 'node:fs';
+import { cpSync, rmSync, existsSync, chmodSync, readFileSync, realpathSync, readdirSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, '../../..');
 const outDir = path.join(here, '../src-tauri/node-app');
-
-/** A package's real files in the pnpm store (symlinks point here). */
-const pnpmPkg = (name, version) =>
-  path.join(repoRoot, `node_modules/.pnpm/${name}@${version}/node_modules/${name}`);
 
 // (a) resolve the host Node runtime to bundle.
 const nodeBin = process.env.TUD_NODE_BIN || process.execPath;
@@ -101,28 +98,112 @@ cpSync(corePkg, path.join(coreMod, 'package.json'));
 // the core's `main`/`exports` point at ./dist; pricing.json ships in dist/.
 
 // node-app/app/node_modules/<runtime deps>
-const runtimeDeps = [
-  ['hono', '4.12.28'],
-  ['proper-lockfile', '4.1.2'],
-  ['graceful-fs', '4.2.11'],
-  ['retry', '0.12.0'],
-  ['signal-exit', '3.0.7'],
-];
-for (const [name, version] of runtimeDeps) {
-  const src = pnpmPkg(name, version);
-  if (!existsSync(src)) {
-    // Fall back to the hoisted root if the exact version is missing.
-    const alt = path.join(repoRoot, 'node_modules', name);
-    if (existsSync(alt)) {
-      cpSync(alt, path.join(outDir, 'app/node_modules', name), { recursive: true });
-      continue;
+// Core's DIRECT dependencies are derived from its package.json so an upstream
+// dependency addition (fzstd/yaml landed in v0.1.15 and broke v0.2.1 exactly
+// this way) can never silently vanish from the bundle again. Versions resolve
+// through the pnpm store; the hoisted root is the fallback.
+// graceful-fs / retry / signal-exit are proper-lockfile's TRANSITIVE deps —
+// pnpm's isolated layout does not expose them to the core package, so they
+// stay listed here until upstream switches to a hoisted layout.
+const coreDeps = Object.keys(
+  JSON.parse(readFileSync(corePkg, 'utf8')).dependencies ?? {},
+);
+const transitiveDeps = ['graceful-fs', 'retry', 'signal-exit'];
+const runtimeDeps = [...new Set([...coreDeps, ...transitiveDeps])];
+const coreDir = path.join(repoRoot, 'packages/core');
+const nmOut = path.join(outDir, 'app/node_modules');
+
+/**
+ * Stage the exact store copy of `storeEntry` (".pnpm/<name>@<ver>") plus its
+ * own nested deps — mirrors what core resolves at runtime under pnpm's
+ * isolated layout, so a hoisted duplicate (signal-exit@4 vs proper-lockfile's
+ * @3) can never shadow the wrong version into the bundle.
+ */
+function stageFromStore(storeEntry, outName) {
+  const src = path.join(repoRoot, 'node_modules/.pnpm', storeEntry, 'node_modules', outName);
+  cpSync(src, path.join(nmOut, outName), { recursive: true });
+}
+
+/** ".pnpm/<name>@<ver>[/...]" entries whose package name === `name`. */
+function storeEntriesFor(name) {
+  const dir = path.join(repoRoot, 'node_modules/.pnpm');
+  if (!existsSync(dir)) return [];
+  return readdirSync(dir)
+    .filter((entry) => entry === `${name}@${entry.slice(name.length + 1)}` || entry.startsWith(`${name}@`))
+    .filter((entry) => !entry.endsWith('-peer'))
+    .sort(compareVersionsDesc);
+}
+
+for (const name of runtimeDeps) {
+  if (coreDeps.includes(name)) {
+    // Direct dep of core: ask core's own resolution which store copy it uses.
+    let resolved = null;
+    try {
+      resolved = execFileSync(
+        process.execPath,
+        [
+          '-e',
+          'console.log(require.resolve(process.argv[1], { paths: [process.argv[2]] }))',
+          name,
+          coreDir,
+        ],
+        { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] },
+      ).trim();
+    } catch {
+      // fall through to the store scan below
     }
-    throw new Error(`missing runtime dep for sidecar bundle: ${name}@${version}`);
+    if (resolved) {
+      const marker = `/node_modules/${name}`;
+      const i = resolved.lastIndexOf(marker);
+      if (i >= 0) {
+        cpSync(realpathSync(resolved.slice(0, i + marker.length)), path.join(nmOut, name), { recursive: true });
+        continue;
+      }
+    }
   }
-  cpSync(src, path.join(outDir, 'app/node_modules', name), { recursive: true });
+
+  // Transitive dep (or resolution failed): copy EVERY store version that the
+  // resolved dependency tree can reach — simplest correct rule: all versions
+  // of that name in the store (small: 1-2 each), preserving nested layouts.
+  const entries = storeEntriesFor(name);
+  if (entries.length === 0) {
+    throw new Error(`missing runtime dep for sidecar bundle: ${name}`);
+  }
+  for (const entry of entries) {
+    const pkgDir = path.join(repoRoot, 'node_modules/.pnpm', entry, 'node_modules', name);
+    cpSync(pkgDir, path.join(nmOut, name), { recursive: true, force: true });
+    // Carry nested deps of this store entry too (proper-lockfile@4.1.2 nests
+    // signal-exit@3/graceful-fs/retry inside its own node_modules).
+    const nested = path.join(repoRoot, 'node_modules/.pnpm', entry, 'node_modules');
+    for (const nestedName of readdirSync(nested)) {
+      if (nestedName === name || nestedName.startsWith('.')) continue;
+      if (nestedName.startsWith('@')) {
+        // scoped nested dep
+        const scope = path.join(nested, nestedName);
+        for (const inner of readdirSync(scope)) {
+          cpSync(path.join(scope, inner), path.join(nmOut, nestedName, inner), { recursive: true, force: true });
+        }
+        continue;
+      }
+      cpSync(path.join(nested, nestedName), path.join(nmOut, nestedName), { recursive: true, force: true });
+    }
+  }
 }
 
 console.log(`[stage-node-app] staged Tauri desktop-host runtime → ${path.relative(repoRoot, outDir)}`);
 console.log(`[stage-node-app]   node runtime: ${nodeBin} (host arch)`);
 console.log(`[stage-node-app]   desktop-host: ${cliDesktopHostDist} (→ app/dist/index.js)`);
 console.log(`[stage-node-app]   deps:         ${runtimeDeps.map(([n]) => n).join(', ')}`);
+
+/** Semver-ish descending sort: higher version first (best effort). */
+function compareVersionsDesc(a, b) {
+  const pa = a.slice(a.indexOf('@', 1) + 1).split('.');
+  const pb = b.slice(b.indexOf('@', 1) + 1).split('.');
+  for (let i = 0; i < Math.max(pa.length, pb.length); i += 1) {
+    const na = Number(pa[i] ?? 0);
+    const nb = Number(pb[i] ?? 0);
+    if (na !== nb) return nb - na;
+  }
+  return a < b ? 1 : a > b ? -1 : 0;
+}
+

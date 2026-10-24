@@ -2,6 +2,13 @@
 
 本文件只记录 Tauri 社区版（`main` 分支）相对上游的增量；上游自身功能变化见其 CHANGELOG。
 
+## 0.2.2（启动修复，2026-10-24）
+
+- **修复 v0.2.1 安装版 sidecar 无法启动**（应用有窗无数据）：上游 v0.1.15 给 core 新增 fzstd/yaml 依赖，
+  staging 白名单未跟上 → ERR_MODULE_NOT_FOUND。staging 脚本改为自动推导 core 直接依赖 +
+  按 pnpm 解析树携带传递依赖的正确版本（signal-exit@3 而非被 hoist 的 @4）
+- staging 现在对依赖版本做断言式解析，上游再加依赖会随构建自动进入安装包
+
 ## 0.2.1（迁移新家，2026-10-24）
 
 - 仓库迁移至 **you-want/juejin-usage-tauri**（独立仓库，不再是 fork）；分支模型调整：`main` = 社区版主线，`upstream` = 官方 juejin-cn 镜像
