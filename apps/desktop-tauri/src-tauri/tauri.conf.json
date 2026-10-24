@@ -5,7 +5,6 @@
   "identifier": "com.juejin.tud.desktop",
   "build": {
     "beforeDevCommand": "pnpm dev",
-    "devUrl": "http://127.0.0.1:1720",
     "beforeBuildCommand": "pnpm build",
     "frontendDist": "../dist"
   },

@@ -58,10 +58,17 @@ fn create_main_window(app: &AppHandle) {
     // blank page. Data requests still reach the sidecar, but via the JS
     // `window.tud` bridge (`tud.api.request` → `sidecar_url` → 8462), not as
     // the page origin.
-    // `WebviewUrl::App` is correct for bundled builds. In dev, use the full
-    // Vite URL explicitly: macOS WKWebView can otherwise remain on its
-    // initial `about:blank` document even though the `devUrl + path` URL is
-    // reported to the navigation callback as allowed.
+    // Load the dashboard as a Tauri static resource (`App(...)`), exactly like
+    // the tray-popover (`index.html?view=tray-popover`) and pet (`pet.html`)
+    // windows. The main window never navigates to a loopback HTTP origin:
+    // neither the Node sidecar (8462) nor the Vite dev server — on macOS
+    // WKWebView those loads can stall at the provisional stage and leave the
+    // webview on `about:blank` forever (observed with both `WebviewUrl::App`
+    // resolved against `devUrl` and an explicit `WebviewUrl::External` loopback
+    // URL, even though `on_navigation` reports the URL as allowed). Dev
+    // therefore runs WITHOUT `devUrl` (see `tauri.conf.json`), so `tauri dev`
+    // serves the embedded `frontendDist` through the same `tauri://localhost`
+    // custom protocol as release builds.
     let initial_webview_url = WebviewUrl::App("dashboard/index.html".into());
     // Inject the Tauri-backed `window.tud` bridge before the dashboard's own
     // scripts run. The dashboard is a standalone build (its own `main.tsx`),

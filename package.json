@@ -6,12 +6,12 @@
   "packageManager": "pnpm@11.1.2",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/juejin-cn/juejin-usage.git"
+    "url": "git+https://github.com/K-H-N-L/juejin-usage.git"
   },
   "bugs": {
-    "url": "https://github.com/juejin-cn/juejin-usage/issues"
+    "url": "https://github.com/K-H-N-L/juejin-usage/issues"
   },
-  "homepage": "https://github.com/juejin-cn/juejin-usage#readme",
+  "homepage": "https://github.com/K-H-N-L/juejin-usage#readme",
   "scripts": {
     "build": "pnpm -r build",
     "build:packages": "pnpm --filter \"./packages/**\" -r build",
@@ -36,7 +36,7 @@
     "release:desktop:mac": "pnpm --filter \"@juejin-opensource/jusage-desktop^...\" build && pnpm --filter @juejin-opensource/jusage-desktop release:mac",
     "release:desktop:win": "pnpm --filter \"@juejin-opensource/jusage-desktop^...\" build && pnpm --filter @juejin-opensource/jusage-desktop release:win",
     "start:desktop": "pnpm --filter \"@juejin-opensource/jusage-desktop^...\" build && pnpm --filter @juejin-opensource/jusage-desktop start",
-    "dev:desktop:tauri": "pnpm build:cli && pnpm --filter @juejin-opensource/jusage-desktop-tauri tauri dev",
+    "dev:desktop:tauri": "pnpm build:cli && pnpm --filter @juejin-opensource/jusage-desktop-tauri tauri dev --no-dev-server",
     "build:desktop:tauri": "pnpm build:cli && pnpm stage:desktop:tauri && pnpm --filter @juejin-opensource/jusage-desktop-tauri tauri build",
     "stage:desktop:tauri": "pnpm --filter @juejin-opensource/jusage-dashboard build:tauri && node apps/desktop-tauri/scripts/stage-node-app.mjs",
     "changeset": "changeset",
