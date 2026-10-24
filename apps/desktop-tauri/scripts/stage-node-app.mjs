@@ -206,6 +206,40 @@ for (const name of runtimeDeps) {
   }
 }
 
+// ---- runtime-irrelevant payload stripping (phase-① size slimming) ----------
+// hono: types/ is pure .d.ts (never loaded at runtime), cjs/ duplicates the
+// ESM the sidecar actually imports, jsx/client are server-JSX/browser extras.
+// yaml: browser/ build is unused from Node.
+const strips = [
+  ['hono/dist/types', null],
+  ['hono/dist/cjs', null],
+  ['hono/dist/jsx', null],
+  ['hono/dist/client', null],
+  ['hono/dist/adapter', null],
+  ['yaml/browser', null],
+  ['yaml/README.md', null],
+];
+let stripped = 0;
+for (const [rel] of strips) {
+  const target = path.join(nmOut, rel);
+  if (existsSync(target)) {
+    rmSync(target, { recursive: true, force: true });
+    stripped += 1;
+  }
+}
+// core dist source maps (if any) — dead weight in the bundle.
+for (const map of ['@juejin-opensource/jusage-core']) {
+  const distDir = path.join(nmOut, map, 'dist');
+  if (existsSync(distDir)) {
+    for (const f of readdirSync(distDir, { recursive: true })) {
+      if (String(f).endsWith('.map')) {
+        rmSync(path.join(distDir, String(f)), { force: true });
+        stripped += 1;
+      }
+    }
+  }
+}
+
 console.log(`[stage-node-app] staged Tauri desktop-host runtime → ${path.relative(repoRoot, outDir)}`);
 console.log(`[stage-node-app]   node runtime: ${nodeBin} (host arch)`);
 console.log(`[stage-node-app]   desktop-host: ${cliDesktopHostDist} (→ app/dist/index.js)`);
