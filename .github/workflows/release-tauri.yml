@@ -13,7 +13,44 @@ on:
   workflow_dispatch:
 
 jobs:
+  # 阶段①-2 体积瘦身：macOS 用 small-icu 自建 node（官方构建内嵌全量 ICU ~30MB）。
+  # core 的 4 处 Intl 调用均为 formatToParts 构造（locale 无关），small-icu 安全。
+  build-node-macos:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-14
+            platform: darwin-arm64
+          - os: macos-15-intel
+            platform: darwin-x64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Cache small-icu node build
+        id: cache
+        uses: actions/cache@v4
+        with:
+          path: node-small-icu
+          key: node-small-icu-${{ matrix.platform }}-v22.22.1
+
+      - name: Build node from source (--with-intl=small-icu)
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          curl -fsSL -o node-src.tar.gz https://nodejs.org/dist/v22.22.1/node-v22.22.1.tar.gz
+          tar xzf node-src.tar.gz
+          cd node-v22.22.1
+          ./configure --with-intl=small-icu
+          make -j3
+          mkdir -p ../node-small-icu
+          cp ./node ../node-small-icu/node
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: node-small-icu-${{ matrix.platform }}
+          path: node-small-icu/node
+
   build:
+    needs: build-node-macos
     strategy:
       fail-fast: false
       matrix:
@@ -55,6 +92,17 @@ jobs:
           # （apps/desktop/.npmrc 的 npmmirror 镜像对海外 runner 不稳定）
           ELECTRON_SKIP_BINARY_DOWNLOAD: 1
         run: pnpm install --frozen-lockfile || (sleep 20 && pnpm install --frozen-lockfile)
+
+      - name: Download small-icu node (macOS)
+        if: runner.os == 'macOS'
+        uses: actions/download-artifact@v4
+        with:
+          name: node-small-icu-${{ matrix.platform }}
+          path: node-small-icu
+
+      - name: Make small-icu node executable (macOS)
+        if: runner.os == 'macOS'
+        run: chmod +x node-small-icu/node && echo "TUD_NODE_BIN=$PWD/node-small-icu/node" >> "$GITHUB_ENV"
 
       - name: Build core + cli
         run: pnpm run build:cli
