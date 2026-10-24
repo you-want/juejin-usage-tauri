@@ -6,12 +6,12 @@
   "packageManager": "pnpm@11.1.2",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/K-H-N-L/juejin-usage.git"
+    "url": "git+https://github.com/you-want/juejin-usage-tauri.git"
   },
   "bugs": {
-    "url": "https://github.com/K-H-N-L/juejin-usage/issues"
+    "url": "https://github.com/you-want/juejin-usage-tauri/issues"
   },
-  "homepage": "https://github.com/K-H-N-L/juejin-usage#readme",
+  "homepage": "https://github.com/you-want/juejin-usage-tauri#readme",
   "scripts": {
     "build": "pnpm -r build",
     "build:packages": "pnpm --filter \"./packages/**\" -r build",

@@ -112,16 +112,16 @@ emoji 与 [PR 模板](.github/PULL_REQUEST_TEMPLATE.md)的分类保持一致：�
 ```markdown
 ## 🖥️ Desktop
 
-- 🆕 新增 xxx。[#123](https://github.com/K-H-N-L/juejin-usage/pull/123) [@someone](https://github.com/someone)
-- 🐞 修复 xxx 导致 xxx 的问题。[#124](https://github.com/K-H-N-L/juejin-usage/pull/124) [@someone](https://github.com/someone)
+- 🆕 新增 xxx。[#123](https://github.com/you-want/juejin-usage-tauri/pull/123) [@someone](https://github.com/someone)
+- 🐞 修复 xxx 导致 xxx 的问题。[#124](https://github.com/you-want/juejin-usage-tauri/pull/124) [@someone](https://github.com/someone)
 
 ## ⌨️ CLI
 
-- 🔌 新增 xxx 数据源解析支持。[#125](https://github.com/K-H-N-L/juejin-usage/pull/125) [@someone](https://github.com/someone)
+- 🔌 新增 xxx 数据源解析支持。[#125](https://github.com/you-want/juejin-usage-tauri/pull/125) [@someone](https://github.com/someone)
 
 ## 🌐 Web
 
-- 💄 优化 xxx 的展示。[#126](https://github.com/K-H-N-L/juejin-usage/pull/126) [@someone](https://github.com/someone)
+- 💄 优化 xxx 的展示。[#126](https://github.com/you-want/juejin-usage-tauri/pull/126) [@someone](https://github.com/someone)
 
 ## 📦 下载
 
@@ -132,7 +132,7 @@ emoji 与 [PR 模板](.github/PULL_REQUEST_TEMPLATE.md)的分类保持一致：�
 | Windows | 见下方附件 `*-setup.exe` |
 | CLI | `npm i -g @juejin-opensource/jusage` |
 
-**Full Changelog**: https://github.com/K-H-N-L/juejin-usage/compare/v0.1.6...v0.2.0
+**Full Changelog**: https://github.com/you-want/juejin-usage-tauri/compare/v0.1.6...v0.2.0
 ```
 
 若某一端本次无改动，删掉对应分组，不要留空标题。

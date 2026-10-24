@@ -6,13 +6,13 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/K-H-N-L/juejin-usage.git",
+    "url": "git+https://github.com/you-want/juejin-usage-tauri.git",
     "directory": "packages/cli"
   },
   "bugs": {
-    "url": "https://github.com/K-H-N-L/juejin-usage/issues"
+    "url": "https://github.com/you-want/juejin-usage-tauri/issues"
   },
-  "homepage": "https://github.com/K-H-N-L/juejin-usage#readme",
+  "homepage": "https://github.com/you-want/juejin-usage-tauri#readme",
   "keywords": [
     "ai",
     "token",

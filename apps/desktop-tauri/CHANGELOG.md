@@ -1,6 +1,12 @@
 # Tauri 社区版更新日志
 
-本文件只记录 Tauri 社区版（`feat/desktop-tauri-v2` 分支）相对上游的增量；上游自身功能变化见其 CHANGELOG。
+本文件只记录 Tauri 社区版（`main` 分支）相对上游的增量；上游自身功能变化见其 CHANGELOG。
+
+## 0.2.1（迁移新家，2026-10-24）
+
+- 仓库迁移至 **you-want/juejin-usage-tauri**（独立仓库，不再是 fork）；分支模型调整：`main` = 社区版主线，`upstream` = 官方 juejin-cn 镜像
+- 应用内全部对外链接与自动更新源切换到新仓库
+- 老仓库（K-H-N-L）v0.2.0 的 latest.json 将指向本仓库资产，已装用户可无缝升级
 
 ## 0.2.0（社区版首个功能完整版，2026-10-24）
 

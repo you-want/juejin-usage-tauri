@@ -10,7 +10,7 @@ import {
 import { tud } from '../lib/tud-bridge';
 
 /** Community (Tauri) edition reports issues on its own fork. */
-const FEEDBACK_URL = 'https://github.com/K-H-N-L/juejin-usage/issues/new';
+const FEEDBACK_URL = 'https://github.com/you-want/juejin-usage-tauri/issues/new';
 
 /** Desktop about body — shell version + supported tools. */
 export function AboutContent() {

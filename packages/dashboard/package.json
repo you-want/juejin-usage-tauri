@@ -6,7 +6,7 @@
   "type": "module",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/K-H-N-L/juejin-usage.git",
+    "url": "git+https://github.com/you-want/juejin-usage-tauri.git",
     "directory": "packages/dashboard"
   },
   "scripts": {

@@ -48,12 +48,13 @@
 
 ```bash
 git remote add upstream https://github.com/juejin-cn/juejin-usage.git   # 首次
-git fetch upstream
-git checkout main && git merge --ff-only upstream/main && git push origin main
-git checkout feat/desktop-tauri-v2 && git merge main && git push        # 开发线跟进上游
+git remote add juejin-cn https://github.com/juejin-cn/juejin-usage.git   # 首次
+git fetch juejin-cn
+git checkout upstream && git merge --ff-only juejin-cn/main && git push origin upstream
+git checkout main && git merge upstream && git push
 ```
 
-`main` 不放自己的提交（保持 `--ff-only` 可用）；所有开发都在 `feat/desktop-tauri-v2`（对外默认分支）。
+`upstream` 分支不放自己的提交（保持 `--ff-only` 可用）；所有开发都在 `main`。远端 `upstream` 更名注意：官方上游远端在本仓叫 `juejin-cn`（避免与 `upstream` 分支撞名）。
 
 ## 发版（维护者）
 

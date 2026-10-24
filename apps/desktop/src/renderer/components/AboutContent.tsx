@@ -8,7 +8,7 @@ import {
   formatSupportedTool,
 } from '@/lib/about';
 
-const FEEDBACK_URL = 'https://github.com/K-H-N-L/juejin-usage/issues/new';
+const FEEDBACK_URL = 'https://github.com/you-want/juejin-usage-tauri/issues/new';
 
 /** Shared about body — version + supported tools. */
 export function AboutContent() {

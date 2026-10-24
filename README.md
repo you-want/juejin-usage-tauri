@@ -10,11 +10,11 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/K-H-N-L/juejin-usage/releases">
-    <img src="https://img.shields.io/github/v/release/K-H-N-L/juejin-usage?include_prereleases&style=flat-square" alt="release">
+  <a href="https://github.com/you-want/juejin-usage-tauri/releases">
+    <img src="https://img.shields.io/github/v/release/you-want/juejin-usage-tauri?include_prereleases&style=flat-square" alt="release">
   </a>
-  <a href="https://github.com/K-H-N-L/juejin-usage/issues">
-    <img src="https://img.shields.io/github/issues/K-H-N-L/juejin-usage?style=flat-square" alt="issues">
+  <a href="https://github.com/you-want/juejin-usage-tauri/issues">
+    <img src="https://img.shields.io/github/issues/you-want/juejin-usage-tauri?style=flat-square" alt="issues">
   </a>
 </p>
 
@@ -26,11 +26,11 @@
 - 壳层为 Rust（Tauri 2）+ Node sidecar（`jusage desktop-host`），架构说明见 [apps/desktop-tauri/README.md](apps/desktop-tauri/README.md)
 - 与官方版功能对齐进行中，逐项进度见[功能对齐清单](apps/desktop-tauri/docs/parity-audit.md)
 
-**分支模型**：`feat/desktop-tauri-v2`（默认分支）是社区版开发线；`main` 仅与上游保持镜像同步，不接受本地提交。
+**分支模型**：独立社区仓库（you-want/juejin-usage-tauri）；`main` 为社区版主线，`upstream` 为官方 juejin-cn 镜像分支。
 
 ## 安装
 
-- **Tauri 社区版**：安装包发布于 [Releases](https://github.com/K-H-N-L/juejin-usage/releases)（发版基建准备中，当前可按下方「开发」本地构建运行）
+- **Tauri 社区版**：安装包发布于 [Releases](https://github.com/you-want/juejin-usage-tauri/releases)（发版基建准备中，当前可按下方「开发」本地构建运行）
 - **官方 Electron 版 / CLI**：见官方[下载页](https://juejin.cn/aiusage/download)与 [juejin-cn/juejin-usage](https://github.com/juejin-cn/juejin-usage)
 
 首次启动会自动采集本机已产生的 AI 编码工具用量；面板展示费用、Token、请求数和趋势。macOS 可从菜单栏查看今日用量，Windows 从托盘进入。
@@ -72,9 +72,10 @@ pnpm build:desktop:tauri  # 打包
 同步上游（`main` 只做镜像，更新单向合入开发线）：
 
 ```bash
-git fetch upstream
-git checkout main && git merge --ff-only upstream/main && git push origin main
-git checkout feat/desktop-tauri-v2 && git merge main && git push
+git remote add juejin-cn https://github.com/juejin-cn/juejin-usage.git   # 首次
+git fetch juejin-cn
+git checkout upstream && git merge --ff-only juejin-cn/main && git push origin upstream
+git checkout main && git merge upstream && git push
 ```
 
 ## 📚 文档
@@ -86,7 +87,7 @@ git checkout feat/desktop-tauri-v2 && git merge main && git push
 
 ## 🤝 反馈与贡献
 
-- Tauri 社区版问题/想法：[本仓库 issues](https://github.com/K-H-N-L/juejin-usage/issues)
+- Tauri 社区版问题/想法：[本仓库 issues](https://github.com/you-want/juejin-usage-tauri/issues)
 - 通用功能（解析器、面板、CLI）欢迎直接向 [官方仓库](https://github.com/juejin-cn/juejin-usage) 提交，社区版会定期同步
 
 ## 🙏 鸣谢

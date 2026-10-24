@@ -38,10 +38,10 @@ export const GITEE_RELEASES_URL = `${GITEE_REPO_URL}/releases`;
 export const GITEE_RELEASES_API =
   'https://gitee.com/api/v5/repos/juejin-cn/juejin-usage/releases?per_page=20&direction=desc';
 
-export const GITHUB_REPO_URL = 'https://github.com/K-H-N-L/juejin-usage';
+export const GITHUB_REPO_URL = 'https://github.com/you-want/juejin-usage-tauri';
 export const GITHUB_RELEASES_URL = `${GITHUB_REPO_URL}/releases`;
 export const GITHUB_RELEASES_API =
-  'https://api.github.com/repos/K-H-N-L/juejin-usage/releases?per_page=20';
+  'https://api.github.com/repos/you-want/juejin-usage-tauri/releases?per_page=20';
 
 export const CLI_INSTALL_COMMAND = 'npm i -g @juejin-opensource/jusage';
 export const CLI_INSTALL_HINT = `$ ${CLI_INSTALL_COMMAND}`;

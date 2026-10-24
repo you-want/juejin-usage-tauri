@@ -11,7 +11,7 @@ assignees: ''
 缺少「端 / 版本 / 复现步骤」的 issue 我们无法定位，会被标记 need more info，14 天无回应将关闭。
 
 不确定是不是 Bug、或只是想问用法？请走 Discussions：
-https://github.com/K-H-N-L/juejin-usage/discussions
+https://github.com/you-want/juejin-usage-tauri/discussions
 -->
 
 ### 🖥️ 受影响的端
@@ -65,6 +65,6 @@ Web：无需版本号，写上你访问的日期
 
 ### ✅ 提交前自查
 
-- [ ] 我已搜索过[已有 issue](https://github.com/K-H-N-L/juejin-usage/issues?q=is%3Aissue)，没有重复
-- [ ] 我已阅读 [FAQ](https://github.com/K-H-N-L/juejin-usage/blob/main/FAQ.md)
+- [ ] 我已搜索过[已有 issue](https://github.com/you-want/juejin-usage-tauri/issues?q=is%3Aissue)，没有重复
+- [ ] 我已阅读 [FAQ](https://github.com/you-want/juejin-usage-tauri/blob/main/FAQ.md)
 - [ ] 我确认**没有同时运行 Desktop 和 CLI**（两者共用 `~/.ai-usage/` 与同一个本地服务，同时开会互相抢占，常见表现就是 `LOCAL_RUNTIME_NOT_READY`）

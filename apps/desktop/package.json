@@ -6,7 +6,7 @@
   "description": "Juejin AI Usage 统计客户端：Token 用量明细追踪，本地记录、云端同步，还有线上排行榜。",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/K-H-N-L/juejin-usage.git",
+    "url": "git+https://github.com/you-want/juejin-usage-tauri.git",
     "directory": "apps/desktop"
   },
   "main": "./out/main/index.js",

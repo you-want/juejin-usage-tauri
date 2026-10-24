@@ -1,7 +1,7 @@
 # Tauri 版 ↔ Electron 版功能对齐对照清单
 
 > 基准分支 `feat/desktop-tauri-v2`（2026-10 快照）。
-> 目标：Tauri 社区版功能对齐官方 Electron 版（`apps/desktop`），在 K-H-N-L/juejin-usage 独立发版。
+> 目标：Tauri 社区版功能对齐官方 Electron 版（`apps/desktop`），在 you-want/juejin-usage-tauri 独立发版。
 > 状态含义：✅ 已有（对齐或等价实现）｜🟡 部分（核心在但有关键缺口）｜❌ 缺失。
 
 ## 0. 架构对照（先读这个）
