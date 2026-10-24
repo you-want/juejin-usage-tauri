@@ -29,6 +29,11 @@ interface ImportMetaEnv {
    * SPA router basepath (e.g. `/aiusage`). Independent of asset CDN base.
    */
   readonly VITE_ROUTER_BASE?: string;
+  /**
+   * Desktop shell overlay gate — statically replaced (boolean literal) via
+   * `define` in vite.config.ts from the build environment.
+   */
+  readonly VITE_DESKTOP_SHELL?: boolean;
 }
 
 interface ImportMeta {

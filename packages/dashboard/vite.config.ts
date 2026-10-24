@@ -78,6 +78,11 @@ export default defineConfig(({ mode }) => {
     define: {
       __APP_VERSION__: JSON.stringify(pkg.version),
       'import.meta.env.VITE_API_BASE': JSON.stringify(apiBase),
+      // Statically true/false so the DesktopShell lazy chunk is dead-code
+      // eliminated in web / CLI builds (unset env → false).
+      'import.meta.env.VITE_DESKTOP_SHELL': JSON.stringify(
+        Boolean(env.VITE_DESKTOP_SHELL),
+      ),
     },
     plugins: [
       tanstackRouter({

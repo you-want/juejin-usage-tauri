@@ -76,7 +76,11 @@ async function transportRequest<T>(
           : undefined;
     const deadline = Date.now() + LOCAL_RUNTIME_RETRY_MS;
     for (;;) {
-      const { status, body: raw } = await window.tud.api.request(input, {
+      // `hasDesktopApi()` gated this path; the assertion keeps the ambient
+      // window type optional for every other consumer.
+      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+      const transport = window.tud!.api.request;
+      const { status, body: raw } = await transport(input, {
         method: init?.method,
         body,
         headers,
@@ -505,4 +509,71 @@ export function apiErrorHint(message: string): string | null {
       : '请在「设置」中配置鉴权 Token，或检查 Token 是否有效。';
   }
   return null;
+}
+
+export interface UsageDeviceInfo {
+  device_id: string;
+  event_count: number;
+  first_occurred_at: string | null;
+  last_occurred_at: string | null;
+  last_upload_at: string | null;
+}
+
+export interface CalibrateDaySummary {
+  date: string;
+  kinds: Array<'online_missing' | 'online_only' | 'mismatch'>;
+  localOnlyRows: number;
+  onlineOnlyRows: number;
+  mismatchRows: number;
+  tokenDelta: number;
+  reportedCostDeltaUsd: number | null;
+  outOfIngestWindow: boolean;
+}
+
+export interface CalibratePreviewSummary {
+  diffDayCount: number;
+  onlineMissingDays: number;
+  onlineMissingRows: number;
+  onlineMissingTokens: number;
+  onlineOnlyDays: number;
+  onlineOnlyRows: number;
+  onlineOnlyTokens: number;
+  mismatchDays: number;
+  mismatchRows: number;
+  mismatchTokenDelta: number;
+  mismatchReportedCostDeltaUsd: number | null;
+}
+
+export interface CalibratePreviewResponse {
+  deviceId: string;
+  ingestMinOccurredAt: string | null;
+  from: string;
+  to: string;
+  days: CalibrateDaySummary[];
+  summary: CalibratePreviewSummary;
+  otherOnlineDevices: UsageDeviceInfo[];
+}
+
+export async function fetchCalibratePreview(): Promise<CalibratePreviewResponse> {
+  const { others } = apiPrefixes();
+  return request<CalibratePreviewResponse>(`${others}calibrate-preview`, {
+    headers: authHeaders(),
+  });
+}
+
+export async function applyCalibrate(
+  selectedDates: string[],
+): Promise<{
+  batches: number;
+  deleted: number;
+  upserted: number;
+  floored: number;
+  preview: CalibratePreviewResponse;
+}> {
+  const { others } = apiPrefixes();
+  return request(`${others}calibrate-apply`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    body: JSON.stringify({ selectedDates }),
+  });
 }

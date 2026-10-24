@@ -1,6 +1,7 @@
 import type { ToastQueue } from '@heroui/react';
 import { useEffect, useRef } from 'react';
 import type { AutoUpdateState } from '../shared/auto-update';
+import { tud } from '../lib/tud-bridge';
 import type { AppToastContent } from './AppToastProvider';
 
 type AutoUpdateNoticeProps = {
@@ -13,6 +14,8 @@ export function AutoUpdateNotice({ toastQueue }: AutoUpdateNoticeProps) {
 
   useEffect(() => {
     let cancelled = false;
+    const bridge = tud();
+    if (!bridge) return;
 
     const showCompletedToast = (state: AutoUpdateState) => {
       const version = state.completedVersion;
@@ -24,15 +27,15 @@ export function AutoUpdateNotice({ toastQueue }: AutoUpdateNoticeProps) {
         description: '新版本已安装完成。',
         variant: 'success',
       });
-      void window.tud.acknowledgeUpdateCompleted().catch((reason) => {
+      void bridge.acknowledgeUpdateCompleted().catch((reason) => {
         if (!cancelled) {
           console.warn('确认更新完成通知失败:', reason);
         }
       });
     };
 
-    const unsubscribe = window.tud.onAutoUpdateStateChanged(showCompletedToast);
-    void window.tud
+    const unsubscribe = bridge.onAutoUpdateStateChanged(showCompletedToast);
+    void bridge
       .getAutoUpdateState()
       .then((state) => {
         if (!cancelled) showCompletedToast(state);

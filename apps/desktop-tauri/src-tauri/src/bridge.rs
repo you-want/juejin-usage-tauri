@@ -77,40 +77,37 @@ pub const TUD_BRIDGE_INIT_SCRIPT: &str = r#"
   }
 
   // --- invoke (mirror of @tauri-apps/api/core invoke) ---------------------
-  var invokeCmds = new Set([
-    "version", "platform",
-    "window_minimize", "window_toggle_maximize", "window_close", "window_show_main",
-    "app_quit", "open_external", "copy_image_to_clipboard", "resize_tray_popover",
-    "auto_update_get_state", "auto_update_check", "auto_update_install", "auto_update_ack_completed",
-    "theme_get", "theme_set",
-    "dashboard_range_get", "dashboard_range_set",
-    "autostart_get", "autostart_set", "autostart_get_hidden", "autostart_set_hidden",
-    "desktop_pet_get", "desktop_pet_set_enabled", "desktop_pet_set_selected",
-    "desktop_pet_set_preferences", "desktop_pet_set_mouse_ignored",
-    "desktop_pet_begin_drag", "desktop_pet_end_drag", "pet_show_context_menu",
-    "tud_api_request", "tud_bridge_ready",
-  ]);
   function invoke(cmd, args) {
-    // Tauri v2 invoke signature: invoke(cmd, args, cargoCmd, coreFeature?, resolveFn?)
-    return internals.invoke(cmd, args || {}, undefined, cmd, invokeCmds.has(cmd));
+    return internals.invoke(cmd, args || {}, undefined);
   }
 
   // --- listen (mirror of @tauri-apps/api/event listen) --------------------
+  // Tauri 2.11 protocol: `transformCallback` returns the callback id
+  // SYNCHRONOUSLY (a number, not a Promise), registration goes through
+  // `plugin:event|listen` (not the v1 `tauri://listen`), and unlisten pairs
+  // `__TAURI_EVENT_PLUGIN_INTERNALS__.unregisterListener` with
+  // `plugin:event|unlisten`.
   function listen(channel, cb) {
-    return internals
-      .transformCallback(function (event) {
-        cb(event);
-      })
-      .then(function (cbId) {
-        return internals
-          .invoke("tauri://listen", { event: channel, target: { kind: "Any" }, handler: cbId })
-          .then(function () {
-            return function () {
-              internals.handleCallback(cbId);
-              return internals.invoke("tauri://unlisten", { event: channel, handler: cbId });
-            };
-          });
-      });
+    var cbId = internals.transformCallback(function (event) {
+      cb(event);
+    });
+    return invoke("plugin:event|listen", {
+      event: channel,
+      target: { kind: "Any" },
+      handler: cbId,
+    }).then(function (eventId) {
+      return function () {
+        try {
+          var eventInternals = window.__TAURI_EVENT_PLUGIN_INTERNALS__;
+          if (eventInternals && typeof eventInternals.unregisterListener === "function") {
+            eventInternals.unregisterListener(channel, eventId);
+          }
+        } catch (err) {
+          // unregisterListener is an optimization, not a hard requirement
+        }
+        invoke("plugin:event|unlisten", { event: channel, eventId: eventId }).catch(function () {});
+      };
+    });
   }
 
   function listenOnce(channel, validate, callback) {
@@ -231,6 +228,37 @@ pub const TUD_BRIDGE_INIT_SCRIPT: &str = r#"
   // Prove the bridge installed in this webview (observable in the Tauri log,
   // independent of eval callbacks which have been flaky).
   invoke("tud_bridge_ready", { detail: location.href || "about:blank" }).catch(function () {});
+
+  // Shell → page event forwarding. The bundled dashboard build has no
+  // Electron-style AppShell inside the page, so the injected bridge acts as
+  // the shell: re-publish Rust-side events as the DOM CustomEvents that the
+  // dashboard's `shell-events` layer and the `DesktopShell` overlay listen
+  // for (`tud:data-synced` refresh, `tud:open-settings`, login receipts,
+  // runtime notices).
+  function domEvent(name, detail) {
+    try {
+      window.dispatchEvent(new CustomEvent(name, { detail: detail }));
+    } catch (err) {
+      console.error("[tud-desktop] domEvent failed:", name, err);
+    }
+  }
+  listenRaw("tud:data-synced", function () { domEvent("tud:data-synced"); });
+  listenOnce("app:open-settings", function (p) { return p == null || typeof p === "object"; }, function (p) {
+    domEvent("tud:open-settings", (p && typeof p === "object") ? p : {});
+  });
+  listenOnce("app:juejin-link-result", function (p) { return p == null || typeof p === "object"; }, function (p) {
+    // Match Electron: focus the main window so the receipt is visible.
+    invoke("window_show_main").catch(function () {});
+    var raw = (p == null ? {} : p);
+    domEvent("tud:juejin-link-result", {
+      ok: raw.ok === true,
+      message: (typeof raw.message === "string" && raw.message.trim()) ? raw.message.trim() : undefined,
+    });
+  });
+  listenOnce("app:runtime-notice", function (p) { return p != null && typeof p === "object"; }, function (p) {
+    if (p.kind !== "config-reset") { return; }
+    domEvent("tud:runtime-notice", { kind: "config-reset", tokenSalvaged: p.tokenSalvaged === true });
+  });
 
   // Patch `platform` with the real OS once resolved (the dashboard reads it
   // synchronously, so the "win32" default is only a brief placeholder).

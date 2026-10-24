@@ -1,6 +1,9 @@
 @import "@fontsource-variable/jetbrains-mono";
 @import "tailwindcss";
 @import "@heroui/styles";
+/* Desktop shell overlay (Tauri build) sources — scanned in every build so the
+ * shared components' utility classes exist when the overlay chunk loads. */
+@source "../../desktop-ui/src";
 
 :root {
   --font-dashboard-sans: "JetBrains Mono Variable", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", "Noto Sans SC", system-ui, sans-serif;

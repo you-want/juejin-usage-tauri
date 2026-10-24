@@ -18,8 +18,9 @@
     "noFallthroughCasesInSwitch": true,
     "baseUrl": ".",
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      "@juejin-opensource/jusage-desktop-ui/*": ["../desktop-ui/src/*"]
     }
   },
-  "include": ["src", "mock-users.json"]
+  "include": ["src", "mock-users.json", "../desktop-ui/types/window-tud.d.ts"]
 }

@@ -6,13 +6,13 @@
   "type": "module",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/juejin-cn/juejin-usage.git",
+    "url": "git+https://github.com/K-H-N-L/juejin-usage.git",
     "directory": "packages/dashboard"
   },
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && cross-env VITE_API_TARGET=cli VITE_BASE=/ VITE_ROUTER_BASE=/ vite build",
-    "build:tauri": "tsc -b && cross-env VITE_API_TARGET=cli VITE_BASE=/dashboard/ VITE_ROUTER_BASE= vite build",
+    "build:tauri": "tsc -b && cross-env VITE_DESKTOP_SHELL=1 VITE_API_TARGET=cli VITE_BASE=/dashboard/ VITE_ROUTER_BASE= vite build",
     "preview": "vite preview",
     "test": "node --experimental-strip-types --test src/lib/dashboard-fetch-days.test.ts src/lib/dashboard-data.test.ts src/lib/usage-filter.test.ts src/lib/downloads.test.ts src/lib/leaderboard.test.ts src/lib/pricing-catalog.test.ts src/lib/model-provider.test.ts"
   },
@@ -22,6 +22,7 @@
     "@heroui/react": "^3.2.4",
     "@heroui/styles": "^3.2.4",
     "@juejin-opensource/jusage-core": "workspace:*",
+    "@juejin-opensource/jusage-desktop-ui": "workspace:*",
     "@lobehub/icons-static-svg": "^1.94.0",
     "@nivo/heatmap": "^0.99.0",
     "@tailwindcss/vite": "^4.3.2",

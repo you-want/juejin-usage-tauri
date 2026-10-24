@@ -1,0 +1,1593 @@
+import { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  Alert,
+  Button,
+  Card,
+  Checkbox,
+  Description,
+  Label,
+  ListBox,
+  Modal,
+  NumberField,
+  Select,
+  Slider,
+  Tabs,
+  Toast,
+  ToastQueue,
+} from '@heroui/react';
+import {
+  getLatestUpdateVersion,
+  getUpdateToolbarAction,
+  updateStatusMessage,
+  type AutoUpdateState,
+} from '../shared/auto-update';
+import {
+  fetchConfig,
+  saveConfig,
+  type TudConfigView,
+} from '../lib/api';
+import { openJuejinLogin } from '../lib/juejin-client-link';
+import {
+  tud,
+  isTrayUsageMode,
+  type DesktopPetCatalogEntry,
+  type DesktopPetInvalidEntry,
+  type TrayUsageMode,
+} from '../lib/tud-bridge';
+import { DESKTOP_PETS } from '../pets';
+import { AboutContent } from './AboutContent';
+import { DataCalibrateSection } from './DataCalibrateSection';
+import { JuejinLoginConsentModal } from './JuejinLoginConsentModal';
+import { PetSelectPreview } from './PetSelectPreview';
+import { StatusBanner } from './StatusBanner';
+import {
+  OPEN_SETTINGS_EVENT,
+  dispatchJuejinLinkChanged,
+  type OpenSettingsDetail,
+  type SettingsTabId,
+} from '../lib/shell-events';
+
+type DesktopSettingsTabId = SettingsTabId;
+
+const TAB_ITEMS: { id: DesktopSettingsTabId; label: string }[] = [
+  { id: 'pet', label: '桌面宠物' },
+  { id: 'sync', label: '云端同步' },
+  { id: 'app', label: '应用' },
+  { id: 'about', label: '关于' },
+];
+
+/** Gitee README section: 桌面宠物（自定义宠物包用法）. */
+const CUSTOM_PET_DOCS_URL =
+  'https://gitee.com/juejin-cn/juejin-usage/blob/main/README.md#%E6%A1%8C%E9%9D%A2%E5%AE%A0%E7%89%A9%E5%8F%AF%E9%80%89';
+
+/**
+ * Dialog is `max-h-[90vh]`. Header + tab list take ~9rem, so a 78vh panel
+ * overflows the body and gets clipped. Bound the panel to the leftover space
+ * so `overflow-y-auto` both scrolls and stays fully visible.
+ */
+const SETTINGS_SCROLL_PANEL =
+  'max-h-[calc(90vh-9rem)] overflow-y-auto p-4 pb-8 text-left';
+const SETTINGS_FIXED_FOOTER_PANEL =
+  'flex max-h-[calc(90vh-9rem)] min-h-0 flex-col overflow-hidden p-4 text-left';
+
+/** Built-in fallback used until a shell implements catalog commands. */
+const BUILTIN_PET_CATALOG: DesktopPetCatalogEntry[] = DESKTOP_PETS.map(
+  (pet) => ({
+    id: pet.id,
+    displayName: pet.displayName,
+    description: pet.description,
+    source: 'builtin' as const,
+  }),
+);
+
+/**
+ * The desktop settings modal — 4 tabs (pet / sync / app / about), mounted by
+ * the shell layer (Electron AppShell / Tauri `DesktopShell`). Feature-detects
+ * optional bridge members so it renders correctly on any shell vintage.
+ */
+export function DesktopSettingsModal({
+  isOpen,
+  onOpenChange,
+  activeTab: controlledTab,
+  onTabChange,
+}: {
+  isOpen: boolean;
+  onOpenChange: (open: boolean) => void;
+  activeTab?: DesktopSettingsTabId;
+  onTabChange?: (tab: DesktopSettingsTabId) => void;
+}) {
+  return (
+    <Modal.Backdrop
+      isOpen={isOpen}
+      onOpenChange={onOpenChange}
+      variant="opaque"
+    >
+      <Modal.Container
+        className="w-full max-w-[720px] sm:w-[720px]"
+        scroll="inside"
+        size="lg"
+      >
+        <Modal.Dialog
+          aria-label="设置"
+          className="flex max-h-[90vh] w-full flex-col overflow-hidden sm:w-[640px] sm:max-w-[640px]"
+        >
+          <Modal.CloseTrigger aria-label="关闭设置" />
+          <Modal.Header>
+            <Modal.Heading>设置</Modal.Heading>
+          </Modal.Header>
+          <Modal.Body className="min-h-0 flex-1 overflow-hidden p-0">
+            <DesktopSettingsPanel
+              activeTab={controlledTab}
+              isOpen={isOpen}
+              onTabChange={onTabChange}
+            />
+          </Modal.Body>
+        </Modal.Dialog>
+      </Modal.Container>
+    </Modal.Backdrop>
+  );
+}
+
+export function DesktopSettingsPanel({
+  activeTab,
+  /** Refresh locally installed pets whenever the settings modal opens. */
+  isOpen = true,
+  onTabChange,
+}: {
+  activeTab?: DesktopSettingsTabId;
+  isOpen?: boolean;
+  onTabChange?: (tab: DesktopSettingsTabId) => void;
+} = {}) {
+  const [toastQueue] = useState(
+    () => new ToastQueue({ maxVisibleToasts: 1 }),
+  );
+  const [uncontrolledTab, setUncontrolledTab] =
+    useState<DesktopSettingsTabId>('pet');
+  const tab = activeTab ?? uncontrolledTab;
+  const setTab = onTabChange ?? setUncontrolledTab;
+  const [petCatalog, setPetCatalog] = useState<DesktopPetCatalogEntry[]>(BUILTIN_PET_CATALOG);
+  const [invalidPets, setInvalidPets] = useState<DesktopPetInvalidEntry[]>([]);
+  const [catalogSelectedPetId, setCatalogSelectedPetId] = useState<string>();
+  const [refreshingPets, setRefreshingPets] = useState(false);
+  const [petCatalogError, setPetCatalogError] = useState<string | null>(null);
+  const [installingPetId, setInstallingPetId] = useState<string | null>(null);
+  const petCatalogRequest = useRef(0);
+
+  const applyPetCatalog = useCallback((
+    catalog: {
+      pets: DesktopPetCatalogEntry[];
+      invalidPets: DesktopPetInvalidEntry[];
+      selectedPetId: string;
+      remoteError?: string | null;
+    },
+  ) => {
+    setPetCatalog(catalog.pets);
+    setInvalidPets(catalog.invalidPets);
+    setCatalogSelectedPetId(catalog.selectedPetId);
+    setPetCatalogError(catalog.remoteError ?? null);
+  }, []);
+
+  const refreshPetCatalog = useCallback(async () => {
+    const bridge = tud();
+    if (!bridge) return;
+    const request = ++petCatalogRequest.current;
+    setRefreshingPets(true);
+    setPetCatalogError(null);
+    try {
+      if (typeof bridge.refreshDesktopPetCatalog === 'function') {
+        // Local first so the panel is usable offline; then merge community pets.
+        const local = await bridge.refreshDesktopPetCatalog();
+        if (request !== petCatalogRequest.current) return;
+        setPetCatalog(local.pets);
+        setInvalidPets(local.invalidPets);
+        setCatalogSelectedPetId(local.selectedPetId);
+
+        if (typeof bridge.fetchRemoteDesktopPetCatalog === 'function') {
+          const remote = await bridge.fetchRemoteDesktopPetCatalog(true);
+          if (request !== petCatalogRequest.current) return;
+          applyPetCatalog(remote);
+        }
+        return;
+      }
+
+      // No catalog commands on this shell yet — built-ins + current selection.
+      const pref = await bridge.getDesktopPet();
+      if (request !== petCatalogRequest.current) return;
+      setPetCatalog(BUILTIN_PET_CATALOG);
+      setInvalidPets([]);
+      setCatalogSelectedPetId(pref.selectedPetId);
+    } catch (reason) {
+      if (request === petCatalogRequest.current) {
+        setPetCatalogError(
+          reason instanceof Error ? reason.message : '刷新宠物列表失败',
+        );
+      }
+      throw reason;
+    } finally {
+      if (request === petCatalogRequest.current) setRefreshingPets(false);
+    }
+  }, [applyPetCatalog]);
+
+  const installRemotePet = useCallback(async (id: string) => {
+    const bridge = tud();
+    if (!bridge?.installRemoteDesktopPet) return;
+    setInstallingPetId(id);
+    setPetCatalogError(null);
+    try {
+      const catalog = await bridge.installRemoteDesktopPet(id);
+      applyPetCatalog(catalog);
+    } catch (reason) {
+      setPetCatalogError(
+        reason instanceof Error ? reason.message : '下载宠物失败',
+      );
+      throw reason;
+    } finally {
+      setInstallingPetId(null);
+    }
+  }, [applyPetCatalog]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    void refreshPetCatalog().catch(() => {
+      // The pet panel presents the failure when the user opens that tab.
+    });
+  }, [isOpen, refreshPetCatalog]);
+
+  useEffect(() => {
+    const onOpen = (event: Event) => {
+      const detail = (event as CustomEvent<OpenSettingsDetail>).detail;
+      if (detail?.loginSuccess) {
+        toastQueue.add({
+          title: '登录成功',
+          variant: 'success',
+        });
+        dispatchJuejinLinkChanged();
+        return;
+      }
+      if (detail?.loginError) {
+        toastQueue.add({
+          title: '关联失败',
+          description: detail.loginError,
+          variant: 'danger',
+        });
+      }
+    };
+    window.addEventListener(OPEN_SETTINGS_EVENT, onOpen);
+    return () => window.removeEventListener(OPEN_SETTINGS_EVENT, onOpen);
+  }, [toastQueue]);
+
+  return (
+    <div className="flex min-h-0 w-full flex-1 flex-col">
+      <Toast.Provider placement="top end" queue={toastQueue} />
+      <Tabs
+        className="flex min-h-0 w-full flex-1 flex-col text-center"
+        selectedKey={tab}
+        onSelectionChange={(key) => setTab(String(key) as DesktopSettingsTabId)}
+      >
+        <Tabs.ListContainer className="m-3 mr-14 w-fit">
+          <Tabs.List aria-label="设置分类" className="w-fit">
+            {TAB_ITEMS.map((item) => (
+              <Tabs.Tab
+                className="h-6 w-fit px-3 text-xs text-normal aria-selected:text-accent-foreground"
+                id={item.id}
+                key={item.id}
+              >
+                {item.label}
+                <Tabs.Indicator className="bg-accent" />
+              </Tabs.Tab>
+            ))}
+          </Tabs.List>
+        </Tabs.ListContainer>
+
+        <Tabs.Panel className={`${SETTINGS_SCROLL_PANEL} min-w-0`} id="pet">
+          {tab === 'pet' && (
+            <DesktopPetSettings
+              catalogSelectedPetId={catalogSelectedPetId}
+              catalogError={petCatalogError}
+              installingPetId={installingPetId}
+              invalidPets={invalidPets}
+              pets={petCatalog}
+              refreshingPets={refreshingPets}
+              onInstallRemotePet={(id) => {
+                void installRemotePet(id).catch(() => {
+                  // Error is already shown via petCatalogError.
+                });
+              }}
+              onRefreshPets={() => {
+                void refreshPetCatalog().catch(() => {
+                  // catalogError is set inside refreshPetCatalog.
+                });
+              }}
+            />
+          )}
+        </Tabs.Panel>
+        <Tabs.Panel className={`${SETTINGS_FIXED_FOOTER_PANEL} font-normal`} id="sync">
+          {tab === 'sync' && (
+            <CliSyncSettings
+              onNotify={(toast) => toastQueue.add(toast)}
+              onSaved={() =>
+                toastQueue.add({
+                  description: '写入本机 CLI 配置',
+                  title: '已保存',
+                  variant: 'success',
+                })
+              }
+            />
+          )}
+        </Tabs.Panel>
+        <Tabs.Panel className={SETTINGS_SCROLL_PANEL} id="app">
+          {tab === 'app' && <AppSettingsPanel />}
+        </Tabs.Panel>
+        <Tabs.Panel className={SETTINGS_SCROLL_PANEL} id="about">
+          {tab === 'about' && <AboutContent />}
+        </Tabs.Panel>
+      </Tabs>
+    </div>
+  );
+}
+
+function DesktopPetSettings({
+  catalogSelectedPetId,
+  catalogError,
+  installingPetId,
+  invalidPets,
+  pets,
+  refreshingPets,
+  onInstallRemotePet,
+  onRefreshPets,
+}: {
+  catalogSelectedPetId?: string;
+  catalogError: string | null;
+  installingPetId: string | null;
+  invalidPets: DesktopPetInvalidEntry[];
+  pets: DesktopPetCatalogEntry[];
+  refreshingPets: boolean;
+  onInstallRemotePet: (id: string) => void;
+  onRefreshPets: () => void;
+}) {
+  const [enabled, setEnabled] = useState(false);
+  const [selectedPetId, setSelectedPetId] = useState('hawking');
+  const [scale, setScale] = useState(50);
+  const [frameIntervalMs, setFrameIntervalMs] = useState(180);
+  const [autoMoveEnabled, setAutoMoveEnabled] = useState(true);
+  const [autoMoveIntervalMinutes, setAutoMoveIntervalMinutes] = useState(2);
+  const [syncFeedbackEnabled, setSyncFeedbackEnabled] = useState(false);
+  const [syncFeedbackDurationSec, setSyncFeedbackDurationSec] = useState(3);
+  const saveTimer = useRef<number | null>(null);
+  const pendingPreferenceChanges = useRef<{
+    scale?: number;
+    frameIntervalMs?: number;
+    autoMoveEnabled?: boolean;
+    autoMoveIntervalMinutes?: number;
+    syncFeedbackEnabled?: boolean;
+    syncFeedbackDurationSec?: number;
+  }>({});
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [petMenuOpen, setPetMenuOpen] = useState(false);
+  const keepPetMenuOpen = useRef(false);
+  const latestCatalogSelectedPetId = useRef(catalogSelectedPetId);
+
+  useEffect(() => {
+    latestCatalogSelectedPetId.current = catalogSelectedPetId;
+    if (catalogSelectedPetId) setSelectedPetId(catalogSelectedPetId);
+  }, [catalogSelectedPetId]);
+
+  // While a community pet downloads, ignore Select close attempts so the menu stays open.
+  useEffect(() => {
+    if (installingPetId) {
+      keepPetMenuOpen.current = true;
+      setPetMenuOpen(true);
+      return;
+    }
+    if (keepPetMenuOpen.current) {
+      keepPetMenuOpen.current = false;
+      setPetMenuOpen(true);
+    }
+  }, [installingPetId]);
+
+  useEffect(() => {
+    const bridge = tud();
+    if (!bridge) {
+      setLoading(false);
+      return;
+    }
+    let cancelled = false;
+    const applyPref = (
+      pref: {
+        enabled: boolean;
+        selectedPetId: string;
+        scale: number;
+        frameIntervalMs: number;
+        autoMoveEnabled: boolean;
+        autoMoveIntervalMinutes: number;
+        syncFeedbackEnabled: boolean;
+        syncFeedbackDurationSec: number;
+      },
+      skipMotion = false,
+    ) => {
+      setEnabled(pref.enabled);
+      setSelectedPetId(pref.selectedPetId);
+      if (skipMotion) return;
+      setScale(Math.round(pref.scale * 100));
+      setFrameIntervalMs(pref.frameIntervalMs);
+      setAutoMoveEnabled(pref.autoMoveEnabled);
+      setAutoMoveIntervalMinutes(pref.autoMoveIntervalMinutes);
+      setSyncFeedbackEnabled(pref.syncFeedbackEnabled);
+      setSyncFeedbackDurationSec(pref.syncFeedbackDurationSec);
+    };
+
+    void bridge
+      .getDesktopPet()
+      .then((pref) => {
+        if (!cancelled) {
+          applyPref({
+            ...pref,
+            selectedPetId: latestCatalogSelectedPetId.current ?? pref.selectedPetId,
+          });
+        }
+      })
+      .catch((reason) => {
+        if (!cancelled) {
+          setError(
+            reason instanceof Error ? reason.message : '加载桌面宠物设置失败',
+          );
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+
+    const unsubscribe = bridge.onDesktopPetPreferences((pref) => {
+      applyPref(pref, saveTimer.current !== null);
+    });
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
+  }, []);
+
+  const onChange = async (next: boolean) => {
+    const bridge = tud();
+    if (!bridge) return;
+    const previous = enabled;
+    setEnabled(next);
+    setError(null);
+    try {
+      await bridge.setDesktopPetEnabled(next);
+    } catch (reason) {
+      setEnabled(previous);
+      setError(
+        reason instanceof Error ? reason.message : '更新桌面宠物设置失败',
+      );
+    }
+  };
+
+  const onSelectedPetChange = async (value: string | number | null) => {
+    const bridge = tud();
+    if (!bridge || value === null) return;
+    const next = String(value);
+    if (next.startsWith('invalid:')) return;
+    const pet = pets.find((item) => item.id === next);
+    if (!pet || pet.source === 'remote') return;
+    const previous = selectedPetId;
+    setSelectedPetId(next);
+    setError(null);
+    try {
+      await bridge.setSelectedDesktopPet(next);
+    } catch (reason) {
+      setSelectedPetId(previous);
+      setError(
+        reason instanceof Error ? reason.message : '切换桌面宠物失败',
+      );
+    }
+  };
+
+  const savePetPreferences = async (changes: {
+    scale?: number;
+    frameIntervalMs?: number;
+    autoMoveEnabled?: boolean;
+    autoMoveIntervalMinutes?: number;
+    syncFeedbackEnabled?: boolean;
+    syncFeedbackDurationSec?: number;
+  }) => {
+    const bridge = tud();
+    if (!bridge) return;
+    try {
+      const saved = await bridge.setDesktopPetPreferences(changes);
+      setScale(Math.round(saved.scale * 100));
+      setFrameIntervalMs(saved.frameIntervalMs);
+      setAutoMoveEnabled(saved.autoMoveEnabled);
+      setAutoMoveIntervalMinutes(saved.autoMoveIntervalMinutes);
+      setSyncFeedbackEnabled(saved.syncFeedbackEnabled);
+      setSyncFeedbackDurationSec(saved.syncFeedbackDurationSec);
+    } catch (reason) {
+      setError(
+        reason instanceof Error ? reason.message : '更新桌面宠物设置失败',
+      );
+    }
+  };
+
+  const schedulePetPreferenceSave = (changes: {
+    scale?: number;
+    frameIntervalMs?: number;
+    autoMoveEnabled?: boolean;
+    autoMoveIntervalMinutes?: number;
+    syncFeedbackEnabled?: boolean;
+    syncFeedbackDurationSec?: number;
+  }) => {
+    pendingPreferenceChanges.current = {
+      ...pendingPreferenceChanges.current,
+      ...changes,
+    };
+    if (saveTimer.current !== null) window.clearTimeout(saveTimer.current);
+    saveTimer.current = window.setTimeout(() => {
+      saveTimer.current = null;
+      const pending = pendingPreferenceChanges.current;
+      pendingPreferenceChanges.current = {};
+      void savePetPreferences(pending);
+    }, 80);
+  };
+
+  useEffect(
+    () => () => {
+      if (saveTimer.current !== null) window.clearTimeout(saveTimer.current);
+    },
+    [],
+  );
+
+  const bridge = tud();
+  const supportsOpenDirectory =
+    typeof bridge?.openDesktopPetDirectory === 'function';
+  const supportsRemoteInstall =
+    typeof bridge?.installRemoteDesktopPet === 'function';
+  const petControlsDisabled = loading || !enabled || refreshingPets;
+  const selectablePets = pets.filter((pet) => pet.source !== 'remote');
+  const remotePets = supportsRemoteInstall
+    ? pets.filter((pet) => pet.source === 'remote')
+    : [];
+
+  const openPetDirectory = async () => {
+    setError(null);
+    try {
+      const result = await bridge?.openDesktopPetDirectory?.();
+      if (result) setError(result);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : '打开宠物素材目录失败');
+    }
+  };
+
+  const openPetDocs = async () => {
+    setError(null);
+    try {
+      const result = await bridge?.openExternal(CUSTOM_PET_DOCS_URL);
+      if (result && !result.ok) setError(result.message ?? '打开使用文档失败');
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : '打开使用文档失败');
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-4">
+      {(error ?? catalogError) && (
+        <StatusBanner tone="error" title={error ?? catalogError ?? ''} />
+      )}
+      <div className="min-w-0">
+        <p className="mb-3 text-sm text-muted">
+          显示悬浮宠物。拖动可移动位置，右键可打开菜单。
+        </p>
+        <Checkbox
+          id="desktop-pet-enabled"
+          isDisabled={loading}
+          isSelected={enabled}
+          onChange={(checked) => {
+            void onChange(checked);
+          }}
+        >
+          <Checkbox.Content>
+            <Checkbox.Control>
+              <Checkbox.Indicator />
+            </Checkbox.Control>
+            显示桌面宠物
+          </Checkbox.Content>
+        </Checkbox>
+        <div className="mt-5 flex flex-col gap-5 px-4 pb-1">
+          <Select
+            aria-label="选择桌面宠物"
+            isDisabled={petControlsDisabled}
+            isOpen={petMenuOpen}
+            value={selectedPetId}
+            variant="secondary"
+            onChange={onSelectedPetChange}
+            onOpenChange={(open) => {
+              if (!open && keepPetMenuOpen.current) return;
+              setPetMenuOpen(open);
+            }}
+          >
+            <Label>宠物形象</Label>
+            <Select.Trigger>
+              <span className="flex min-w-0 flex-1 items-center gap-2">
+                <PetSelectPreview petId={selectedPetId} />
+                {/* textValue only — default Value clones the whole ListBox.Item (incl. preview). */}
+                <Select.Value>
+                  {({ selectedText }) => selectedText}
+                </Select.Value>
+              </span>
+              <Select.Indicator />
+            </Select.Trigger>
+            <Select.Popover
+              shouldCloseOnInteractOutside={() => !keepPetMenuOpen.current}
+            >
+              <ListBox aria-label="桌面宠物列表">
+                {selectablePets.map((pet) => (
+                  <ListBox.Item
+                    id={pet.id}
+                    key={pet.id}
+                    textValue={pet.displayName}
+                  >
+                    <div className="flex min-w-0 items-center gap-2">
+                      <PetSelectPreview petId={pet.id} />
+                      <div className="flex min-w-0 flex-col gap-0.5">
+                        <span>{pet.displayName}</span>
+                        <span className="text-xs text-muted">
+                          {pet.description}
+                        </span>
+                      </div>
+                    </div>
+                    <ListBox.ItemIndicator />
+                  </ListBox.Item>
+                ))}
+                {invalidPets.map((pet) => {
+                  const label = `${pet.directory} 无效：${pet.reason}`;
+                  return (
+                    <ListBox.Item
+                      id={`invalid:${pet.directory}`}
+                      isDisabled
+                      key={`invalid:${pet.directory}`}
+                      textValue={label}
+                    >
+                      <div className="flex min-w-0 flex-col gap-0.5">
+                        <span>{pet.directory} 无效</span>
+                        <span className="text-xs text-muted">{pet.reason}</span>
+                      </div>
+                    </ListBox.Item>
+                  );
+                })}
+              </ListBox>
+              {remotePets.length > 0 && (
+                <div className="mt-1 border-t border-border/50 pt-1">
+                  <p className="px-2 py-1 text-xs text-muted">社区宠物（下载后可选）</p>
+                  {remotePets.map((pet) => {
+                    const installing = installingPetId === pet.id;
+                    return (
+                      <div
+                        className="flex items-center gap-2 px-2 py-1.5 opacity-55"
+                        key={pet.id}
+                      >
+                        <PetSelectPreview
+                          petId={pet.id}
+                          spritesheetUrl={pet.previewUrl}
+                        />
+                        <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+                          <span className="truncate text-sm text-muted">
+                            {pet.displayName}
+                          </span>
+                          <span className="truncate text-xs text-muted">
+                            {pet.description || '下载后即可选用'}
+                          </span>
+                        </div>
+                        <Button
+                          className="shrink-0"
+                          isDisabled={installingPetId !== null || refreshingPets}
+                          isPending={installing}
+                          size="sm"
+                          variant="secondary"
+                          onPress={() => {
+                            keepPetMenuOpen.current = true;
+                            setPetMenuOpen(true);
+                            onInstallRemotePet(pet.id);
+                          }}
+                          // Keep Select focus so the popover does not dismiss on press.
+                          onMouseDown={(event) => {
+                            event.preventDefault();
+                          }}
+                        >
+                          {installing ? '下载中' : '下载'}
+                        </Button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </Select.Popover>
+          </Select>
+          <div className="flex justify-end gap-2 -mt-2">
+            <Button
+              isDisabled={refreshingPets}
+              size="sm"
+              variant="secondary"
+              onPress={() => { onRefreshPets(); }}
+            >
+              刷新
+            </Button>
+            {supportsOpenDirectory && (
+              <Button
+                size="sm"
+                variant="secondary"
+                onPress={() => { void openPetDirectory(); }}
+              >
+                打开宠物目录
+              </Button>
+            )}
+            <Button
+              size="sm"
+              variant="secondary"
+              onPress={() => { void openPetDocs(); }}
+            >
+              自定义指南
+            </Button>
+          </div>
+          <Slider
+            isDisabled={petControlsDisabled}
+            maxValue={75}
+            minValue={35}
+            onChange={(value) => {
+              const next = Array.isArray(value) ? (value[0] ?? scale) : value;
+              setScale(next);
+              schedulePetPreferenceSave({ scale: next / 100 });
+            }}
+            step={5}
+            value={scale}
+          >
+            <Label>宠物大小</Label>
+            <Slider.Output>{`${scale}%`}</Slider.Output>
+            <Slider.Track>
+              <Slider.Fill />
+              <Slider.Thumb />
+            </Slider.Track>
+          </Slider>
+          <Checkbox
+            id="desktop-pet-auto-move-enabled"
+            isDisabled={petControlsDisabled}
+            isSelected={autoMoveEnabled}
+            onChange={(checked) => {
+              setAutoMoveEnabled(checked);
+              void savePetPreferences({ autoMoveEnabled: checked });
+            }}
+          >
+            <Checkbox.Content>
+              <Checkbox.Control>
+                <Checkbox.Indicator />
+              </Checkbox.Control>
+              自动跑动
+            </Checkbox.Content>
+          </Checkbox>
+          <NumberField
+            isDisabled={petControlsDisabled || !autoMoveEnabled}
+            maxValue={120}
+            minValue={1}
+            onChange={(value) => {
+              if (!Number.isFinite(value)) return;
+              const next = Math.min(120, Math.max(1, Math.round(value)));
+              setAutoMoveIntervalMinutes(next);
+              schedulePetPreferenceSave({ autoMoveIntervalMinutes: next });
+            }}
+            step={1}
+            value={autoMoveIntervalMinutes}
+            variant="secondary"
+          >
+            <Label>跑动间隔</Label>
+            <NumberField.Group>
+              <NumberField.DecrementButton />
+              <NumberField.Input />
+              <NumberField.IncrementButton />
+            </NumberField.Group>
+            <Description>
+              宠物空闲 {autoMoveIntervalMinutes} 分钟后，会在当前屏幕内随机自然跑动。
+            </Description>
+          </NumberField>
+          <Slider
+            isDisabled={petControlsDisabled}
+            maxValue={320}
+            minValue={120}
+            onChange={(value) => {
+              const next = Array.isArray(value)
+                ? (value[0] ?? frameIntervalMs)
+                : value;
+              setFrameIntervalMs(next);
+              schedulePetPreferenceSave({ frameIntervalMs: next });
+            }}
+            step={10}
+            value={frameIntervalMs}
+          >
+            <Label>动作速度</Label>
+            <Slider.Output>{`${frameIntervalMs} ms / 帧`}</Slider.Output>
+            <Slider.Track>
+              <Slider.Fill />
+              <Slider.Thumb />
+            </Slider.Track>
+          </Slider>
+          <Checkbox
+            id="desktop-pet-sync-feedback-enabled"
+            isDisabled={petControlsDisabled}
+            isSelected={syncFeedbackEnabled}
+            onChange={(checked) => {
+              setSyncFeedbackEnabled(checked);
+              void savePetPreferences({ syncFeedbackEnabled: checked });
+            }}
+          >
+            <Checkbox.Content>
+              <Checkbox.Control>
+                <Checkbox.Indicator />
+              </Checkbox.Control>
+              同步后提示 Token 增量
+            </Checkbox.Content>
+          </Checkbox>
+          <NumberField
+            isDisabled={petControlsDisabled || !syncFeedbackEnabled}
+            maxValue={10}
+            minValue={1}
+            onChange={(value) => {
+              if (!Number.isFinite(value)) return;
+              const next = Math.min(10, Math.max(1, Math.round(value)));
+              setSyncFeedbackDurationSec(next);
+              schedulePetPreferenceSave({ syncFeedbackDurationSec: next });
+            }}
+            step={1}
+            value={syncFeedbackDurationSec}
+            variant="secondary"
+          >
+            <Label>提示时长</Label>
+            <NumberField.Group>
+              <NumberField.DecrementButton />
+              <NumberField.Input />
+              <NumberField.IncrementButton />
+            </NumberField.Group>
+            <Description>
+              同步到新增 Token 时，气泡展示 {syncFeedbackDurationSec} 秒后自动关闭。
+            </Description>
+          </NumberField>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** CLI：云同步配置（不含开机自启 / 设备信息）。 */
+function CliSyncSettings({
+  onSaved,
+  onNotify,
+}: {
+  onSaved: () => void;
+  onNotify: (toast: {
+    title: string;
+    description?: string;
+    variant: 'success' | 'danger';
+  }) => void;
+}) {
+  const [config, setConfig] = useState<TudConfigView | null>(null);
+  const [enabled, setEnabled] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [confirmLogoutOpen, setConfirmLogoutOpen] = useState(false);
+  const [consentOpen, setConsentOpen] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const data = await fetchConfig();
+      setConfig(data);
+      setEnabled(data.juejin.enabled);
+      setError(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '加载配置失败');
+      setConfig(null);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  // Deep-link / tray may open settings after writing config — force reload.
+  useEffect(() => {
+    const onOpen = (event: Event) => {
+      const detail = (event as CustomEvent<OpenSettingsDetail>).detail;
+      if (detail?.reloadConfig || detail?.tab === 'sync') {
+        void load();
+      }
+    };
+    window.addEventListener(OPEN_SETTINGS_EVENT, onOpen);
+    return () => window.removeEventListener(OPEN_SETTINGS_EVENT, onOpen);
+  }, [load]);
+
+  // Also refresh when the window regains focus (e.g. login page while modal up).
+  useEffect(() => {
+    const onFocus = () => {
+      void load();
+    };
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  }, [load]);
+
+  const onEnabledChange = async (next: boolean) => {
+    const prev = enabled;
+    setEnabled(next);
+    setSaving(true);
+    setError(null);
+    try {
+      const saved = await saveConfig({ juejin: { enabled: next } });
+      setConfig(saved);
+      onSaved();
+    } catch (e) {
+      setEnabled(prev);
+      setError(e instanceof Error ? e.message : '保存失败');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const onConfirmLogout = async () => {
+    setSaving(true);
+    setError(null);
+    try {
+      const saved = await saveConfig({
+        juejin: {
+          token: null,
+          originUserId: null,
+          userName: null,
+          avatarLarge: null,
+        },
+      });
+      setConfig(saved);
+      setConfirmLogoutOpen(false);
+      dispatchJuejinLinkChanged();
+      onNotify({
+        title: '已退出登录',
+        variant: 'success',
+      });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '退出失败');
+      setConfirmLogoutOpen(false);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (loading) {
+    return <p className="text-muted">加载配置…</p>;
+  }
+
+  const stripQuotes = (value: string) =>
+    value.replace(/^['"]+|['"]+$/g, '').trim();
+  const userId = config?.juejin.userId ?? null;
+  const originUserId = stripQuotes(config?.juejin.originUserId?.trim() || '');
+  const userName = config?.juejin.userName?.trim() || '';
+  const avatarLarge = config?.juejin.avatarLarge?.trim() || '';
+  const hasToken = config?.juejin.hasToken ?? false;
+  // Prefer originUserId; legacy plain token (non-jau) can still show as fallback.
+  const linkedPlain =
+    userId && !userId.startsWith('jau.') ? stripQuotes(userId) : '';
+  const displayUserId = originUserId || linkedPlain || null;
+
+  const handleJuejinLogin = () => {
+    void openJuejinLogin().then((result) => {
+      if (result.ok) return;
+      onNotify({
+        title: '无法打开浏览器',
+        description:
+          result.message === 'POPUP_BLOCKED'
+            ? '请允许弹窗后重试'
+            : (result.message ?? '请稍后重试'),
+        variant: 'danger',
+      });
+    });
+  };
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-hidden">
+      {error && <StatusBanner tone="error" title={error} />}
+      <p className="shrink-0 text-sm text-muted">
+        开启后本地 sync 完成会自动上报掘金
+      </p>
+      <div className="min-h-0 flex-1 space-y-4 overflow-y-auto pr-1">
+      <Checkbox
+          id="cli-juejin-enabled"
+          isDisabled={saving}
+          isSelected={enabled}
+          onChange={(checked) => {
+            void onEnabledChange(checked);
+          }}
+        >
+          <Checkbox.Content>
+            <Checkbox.Control>
+              <Checkbox.Indicator />
+            </Checkbox.Control>
+            启用云端同步
+          </Checkbox.Content>
+        </Checkbox>
+
+        <div className="flex items-start justify-between gap-4 text-sm">
+          <span className="shrink-0 text-muted">关联账号</span>
+          {userId ? (
+            <div className="flex min-w-0 items-center gap-2.5">
+              {avatarLarge ? (
+                <img
+                  alt={userName || '用户头像'}
+                  className="size-8 shrink-0 rounded-full object-cover"
+                  referrerPolicy="no-referrer"
+                  src={avatarLarge}
+                  title={userName || undefined}
+                />
+              ) : (
+                <span
+                  aria-hidden="true"
+                  className="inline-flex size-8 shrink-0 items-center justify-center rounded-full bg-accent/15 text-[13px] text-accent"
+                  title={userName || undefined}
+                >
+                  {(userName || userId).slice(0, 1)}
+                </span>
+              )}
+              <div className="min-w-0 text-right">
+                <p
+                  className="truncate text-foreground"
+                  title={userName || undefined}
+                >
+                  {userName || '已关联'}
+                </p>
+                <p
+                  className="break-all font-mono text-xs text-muted"
+                  title={
+                    displayUserId
+                      ? undefined
+                      : '缺少 originUserId，请重新掘金登录关联'
+                  }
+                >
+                  {displayUserId ?? '缺少用户 ID（请重新登录关联）'}
+                </p>
+              </div>
+            </div>
+          ) : (
+            <span className="text-muted">未关联</span>
+          )}
+        </div>
+
+        {enabled && !userId && (
+          <p className="text-xs text-amber-600 dark:text-amber-400">
+            {hasToken
+              ? '尚未通过掘金登录关联账号；关联前不会上报。'
+              : '已开启同步但未关联用户 ID，上报将跳过。'}
+          </p>
+        )}
+
+        <DataCalibrateSection
+          linked={Boolean(userId)}
+          onNotify={onNotify}
+        />
+      </div>
+
+      <div className="mt-auto flex shrink-0 justify-end gap-2">
+          {userId ? (
+            <Button
+              isDisabled={saving}
+              onPress={() => setConfirmLogoutOpen(true)}
+              variant="danger"
+            >
+              退出登录
+            </Button>
+          ) : (
+            <Button
+              isDisabled={saving}
+              onPress={() => setConsentOpen(true)}
+              variant="primary"
+            >
+              掘金登录
+            </Button>
+          )}
+      </div>
+
+
+      <JuejinLoginConsentModal
+        isOpen={consentOpen}
+        onConfirm={handleJuejinLogin}
+        onOpenChange={setConsentOpen}
+      />
+
+      <Modal.Backdrop
+        isOpen={confirmLogoutOpen}
+        onOpenChange={setConfirmLogoutOpen}
+        variant="opaque"
+      >
+        <Modal.Container size="sm">
+          <Modal.Dialog>
+            <Modal.CloseTrigger aria-label="关闭" />
+            <Modal.Header>
+              <Modal.Heading>退出登录</Modal.Heading>
+            </Modal.Header>
+            <Modal.Body className="text-sm text-muted">
+              确认清除本机保存的用户 ID？清除后需重新通过掘金登录关联。
+            </Modal.Body>
+            <Modal.Footer className="gap-2">
+              <Button slot="close" variant="tertiary">
+                取消
+              </Button>
+              <Button
+                isDisabled={saving}
+                onPress={() => {
+                  void onConfirmLogout();
+                }}
+                variant="danger"
+              >
+                确认退出
+              </Button>
+            </Modal.Footer>
+          </Modal.Dialog>
+        </Modal.Container>
+      </Modal.Backdrop>
+    </div>
+  );
+}
+
+/** 自动更新 + 开机自启 + 设备信息。 */
+function AppSettingsPanel() {
+  const bridge = tud();
+  const isMac = bridge?.platform === 'darwin';
+  const supportsTrayUsage = isMac && typeof bridge?.getShowTrayUsage === 'function';
+  const [config, setConfig] = useState<TudConfigView | null>(null);
+  const [openAtLogin, setOpenAtLogin] = useState(true);
+  const [autostartLoading, setAutostartLoading] = useState(true);
+  const [autostartError, setAutostartError] = useState<string | null>(null);
+  const [launchHidden, setLaunchHidden] = useState(true);
+  const [showTrayUsage, setShowTrayUsage] = useState(true);
+  const [trayUsageMode, setTrayUsageMode] = useState<TrayUsageMode>('both');
+  const [trayUsageLoading, setTrayUsageLoading] = useState(true);
+  const [trayUsageError, setTrayUsageError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void fetchConfig()
+      .then((data) => {
+        if (!cancelled) {
+          setConfig(data);
+          setError(null);
+        }
+      })
+      .catch((e) => {
+        if (!cancelled) {
+          setError(e instanceof Error ? e.message : '加载配置失败');
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    const bridge = tud();
+    if (!bridge) return;
+    let cancelled = false;
+    setAutostartLoading(true);
+    void bridge
+      .getOpenAtLogin()
+      .then((value) => {
+        if (!cancelled) {
+          setOpenAtLogin(value);
+          setAutostartError(null);
+        }
+      })
+      .then(() => {
+        if (cancelled) return;
+        return bridge.getLaunchHidden().then((value) => {
+          if (!cancelled) setLaunchHidden(value);
+        });
+      })
+      .catch((e) => {
+        if (!cancelled) {
+          setAutostartError(
+            e instanceof Error ? e.message : '加载开机自启设置失败',
+          );
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setAutostartLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const onOpenAtLoginChange = async (next: boolean) => {
+    const bridge = tud();
+    if (!bridge) return;
+    const prev = openAtLogin;
+    setOpenAtLogin(next);
+    setAutostartError(null);
+    try {
+      await bridge.setOpenAtLogin(next);
+    } catch (e) {
+      setOpenAtLogin(prev);
+      setAutostartError(
+        e instanceof Error ? e.message : '更新开机自启失败',
+      );
+    }
+  };
+
+  const onLaunchHiddenChange = async (next: boolean) => {
+    const bridge = tud();
+    if (!bridge) return;
+    const prev = launchHidden;
+    setLaunchHidden(next);
+    try {
+      await bridge.setLaunchHidden(next);
+    } catch (e) {
+      setLaunchHidden(prev);
+      setAutostartError(
+        e instanceof Error ? e.message : '更新静默启动设置失败',
+      );
+    }
+  };
+
+  useEffect(() => {
+    const bridge = tud();
+    let cancelled = false;
+    if (isMac && typeof bridge?.getShowTrayUsage === 'function') {
+      setTrayUsageLoading(true);
+      void Promise.all([
+        bridge.getShowTrayUsage(),
+        bridge.getTrayUsageMode?.(),
+      ])
+        .then(([enabled, mode]) => {
+          if (!cancelled) {
+            setShowTrayUsage(enabled);
+            if (isTrayUsageMode(mode)) setTrayUsageMode(mode);
+            setTrayUsageError(null);
+          }
+        })
+        .catch((e) => {
+          if (!cancelled) {
+            setTrayUsageError(
+              e instanceof Error ? e.message : '加载托盘用量设置失败',
+            );
+          }
+        })
+        .finally(() => {
+          if (!cancelled) setTrayUsageLoading(false);
+        });
+    } else {
+      setTrayUsageLoading(false);
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [isMac]);
+
+  const onShowTrayUsageChange = async (next: boolean) => {
+    const bridge = tud();
+    if (!bridge?.setShowTrayUsage) return;
+    const prev = showTrayUsage;
+    setShowTrayUsage(next);
+    setTrayUsageError(null);
+    try {
+      await bridge.setShowTrayUsage(next);
+    } catch (e) {
+      setShowTrayUsage(prev);
+      setTrayUsageError(
+        e instanceof Error ? e.message : '更新托盘用量设置失败',
+      );
+    }
+  };
+
+  const onTrayUsageModeChange = async (next: TrayUsageMode) => {
+    const bridge = tud();
+    if (!bridge?.setTrayUsageMode) return;
+    const prev = trayUsageMode;
+    setTrayUsageMode(next);
+    setTrayUsageError(null);
+    try {
+      await bridge.setTrayUsageMode(next);
+    } catch (e) {
+      setTrayUsageMode(prev);
+      setTrayUsageError(
+        e instanceof Error ? e.message : '更新托盘用量显示方式失败',
+      );
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-5">
+      {error && <StatusBanner tone="error" title={error} />}
+      {autostartError && (
+        <StatusBanner tone="error" title={autostartError} />
+      )}
+      {trayUsageError && (
+        <StatusBanner tone="error" title={trayUsageError} />
+      )}
+
+      <div className="flex flex-col gap-2">
+        <Checkbox
+          id="desktop-open-at-login"
+          isDisabled={autostartLoading}
+          isSelected={openAtLogin}
+          onChange={(checked) => {
+            void onOpenAtLoginChange(checked);
+          }}
+        >
+          <Checkbox.Content>
+            <Checkbox.Control>
+              <Checkbox.Indicator />
+            </Checkbox.Control>
+            开机时自动启动
+          </Checkbox.Content>
+        </Checkbox>
+        {openAtLogin && (
+          <>
+            <Checkbox
+              id="desktop-launch-hidden"
+              isDisabled={autostartLoading}
+              isSelected={launchHidden}
+              onChange={(checked) => {
+                void onLaunchHiddenChange(checked);
+              }}
+            >
+              <Checkbox.Content>
+                <Checkbox.Control>
+                  <Checkbox.Indicator />
+                </Checkbox.Control>
+                静默启动
+              </Checkbox.Content>
+            </Checkbox>
+            {launchHidden && (
+              <p className="text-xs text-muted">
+                开机后只出现托盘，不弹出主窗口
+              </p>
+            )}
+          </>
+        )}
+        {supportsTrayUsage && (
+          <>
+            <Checkbox
+              id="desktop-show-tray-usage"
+              isDisabled={trayUsageLoading}
+              isSelected={showTrayUsage}
+              onChange={(checked) => {
+                void onShowTrayUsageChange(checked);
+              }}
+            >
+              <Checkbox.Content>
+                <Checkbox.Control>
+                  <Checkbox.Indicator />
+                </Checkbox.Control>
+                在菜单栏托盘显示今日用量
+              </Checkbox.Content>
+            </Checkbox>
+            {showTrayUsage && (
+              <div className="mt-2 max-w-xs pl-4">
+                <Select
+                  aria-label="菜单栏用量显示方式"
+                  isDisabled={trayUsageLoading}
+                  value={trayUsageMode}
+                  variant="secondary"
+                  onChange={(value) => {
+                    if (isTrayUsageMode(value)) {
+                      void onTrayUsageModeChange(value);
+                    }
+                  }}
+                >
+                  <Label>显示方式</Label>
+                  <Select.Trigger>
+                    <Select.Value>{({ selectedText }) => selectedText}</Select.Value>
+                    <Select.Indicator />
+                  </Select.Trigger>
+                  <Select.Popover>
+                    <ListBox aria-label="菜单栏用量显示方式列表">
+                      <ListBox.Item id="both" textValue="Token 和金额">
+                        Token 和金额
+                        <ListBox.ItemIndicator />
+                      </ListBox.Item>
+                      <ListBox.Item id="tokens" textValue="仅 Token">
+                        仅 Token
+                        <ListBox.ItemIndicator />
+                      </ListBox.Item>
+                      <ListBox.Item id="cost" textValue="仅金额">
+                        仅金额
+                        <ListBox.ItemIndicator />
+                      </ListBox.Item>
+                    </ListBox>
+                  </Select.Popover>
+                </Select>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+
+      <AutoUpdateSettings />
+
+      {!loading && config && (
+        <Card variant="tertiary" className="rounded-xl shadow-none">
+          <Card.Header>
+            <Card.Title>设备信息</Card.Title>
+          </Card.Header>
+          <Card.Content className="flex flex-col gap-2 text-sm">
+            <InfoRow label="设备 ID" value={config.deviceId} />
+            <InfoRow
+              label="上报起点"
+              value={config.statsSince.slice(0, 19).replace('T', ' ')}
+            />
+            <InfoRow
+              label="上次同步"
+              value={
+                config.lastSyncAt
+                  ? new Date(config.lastSyncAt).toLocaleString()
+                  : '从未'
+              }
+            />
+            <InfoRow
+              label="上次上报"
+              value={
+                config.lastUploadAt
+                  ? new Date(config.lastUploadAt).toLocaleString()
+                  : '从未'
+              }
+            />
+          </Card.Content>
+        </Card>
+      )}
+    </div>
+  );
+}
+
+function AutoUpdateSettings() {
+  const [state, setState] = useState<AutoUpdateState | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [installPending, setInstallPending] = useState(false);
+
+  useEffect(() => {
+    const bridge = tud();
+    if (!bridge) return;
+    let cancelled = false;
+    let receivedEvent = false;
+    const unsubscribe = bridge.onAutoUpdateStateChanged((next) => {
+      receivedEvent = true;
+      if (!cancelled) {
+        setState(next);
+        if (next.status !== 'error') setActionError(null);
+      }
+    });
+    void bridge
+      .getAutoUpdateState()
+      .then((next) => {
+        if (!cancelled && !receivedEvent) {
+          setState(next);
+        }
+      })
+      .catch((reason) => {
+        if (!cancelled) {
+          setActionError(
+            reason instanceof Error ? reason.message : '读取更新状态失败',
+          );
+        }
+      });
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
+  }, []);
+
+  const check = async () => {
+    const bridge = tud();
+    if (!bridge) return;
+    setActionError(null);
+    try {
+      setState(await bridge.checkForUpdates());
+    } catch (reason) {
+      setActionError(
+        reason instanceof Error ? reason.message : '检查更新失败',
+      );
+    }
+  };
+
+  const install = async () => {
+    const bridge = tud();
+    if (!bridge) return;
+    setActionError(null);
+    setInstallPending(true);
+    try {
+      await bridge.installDownloadedUpdate();
+    } catch (reason) {
+      setActionError(
+        reason instanceof Error ? reason.message : '更新并重启失败',
+      );
+    } finally {
+      setInstallPending(false);
+    }
+  };
+
+  const status = state?.status ?? 'idle';
+  const busy =
+    status === 'checking' ||
+    status === 'downloading' ||
+    status === 'downloaded' ||
+    status === 'installing';
+  const message = updateStatusMessage(state);
+  const latestVersion = getLatestUpdateVersion(state);
+  const error = actionError ?? (status === 'error' ? state?.message : null);
+  // Check failures can be retried with the persistent check button.
+  const updateAction = status === 'error' ? null : getUpdateToolbarAction(state);
+
+  return (
+    <Card className="rounded-xl shadow-none" variant="tertiary">
+      <Card.Header>
+        <div className="flex w-full items-center justify-between gap-4">
+          <Card.Title>应用更新</Card.Title>
+          <div className="flex shrink-0 items-center gap-2">
+            <Button
+              className="shrink-0"
+              isDisabled={!state || status === 'unsupported' || busy || installPending}
+              isPending={status === 'checking'}
+              onPress={() => {
+                void check();
+              }}
+              size="sm"
+              variant="outline"
+            >
+              检查更新
+            </Button>
+            {updateAction && (
+              <Button
+                aria-busy={installPending || updateAction.request === null}
+                className="shrink-0"
+                isDisabled={installPending || updateAction.request === null}
+                onPress={() => {
+                  if (updateAction.request === 'install') void install();
+                }}
+                size="sm"
+                variant="primary"
+              >
+                {updateAction.label}
+              </Button>
+            )}
+          </div>
+        </div>
+      </Card.Header>
+      <Card.Content className="flex flex-col gap-3">
+        <InfoRow
+          label="当前版本"
+          value={`v${state?.currentVersion ?? '—'}`}
+        />
+        {latestVersion && (
+          <InfoRow label="最新版本" value={`v${latestVersion}`} />
+        )}
+
+        {error && (
+          <Alert status="danger">
+            <Alert.Indicator />
+            <Alert.Content>
+              <Alert.Title>更新失败</Alert.Title>
+              <Alert.Description>{error}</Alert.Description>
+            </Alert.Content>
+          </Alert>
+        )}
+
+        {message && <p className="text-xs text-muted">{message}</p>}
+      </Card.Content>
+    </Card>
+  );
+}
+
+function InfoRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-center justify-between gap-4 text-sm">
+      <span className="text-muted">{label}</span>
+      <span className="break-all text-right font-mono text-xs">{value}</span>
+    </div>
+  );
+}

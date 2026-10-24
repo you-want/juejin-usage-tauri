@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { Suspense, lazy, useEffect, useMemo, useState } from 'react';
 import { Outlet, useLocation, useNavigate } from '@tanstack/react-router';
 // Sidebar / FAB chrome temporarily hidden — actions moved to FilterChromeActions.
 // import {
@@ -35,6 +35,20 @@ import { cn } from '@/lib/utils';
 const AUTO_INSTALL_GUIDE_KEY = 'tud.installGuideAutoOpened';
 const AUTO_JUEJIN_LOGIN_KEY = 'tud.autoJuejinLoginPrompted';
 
+/**
+ * Desktop shell overlay (4-tab settings modal, update toasts, deep-link
+ * receipts) — only present in the Tauri desktop build. Statically false in
+ * web / CLI builds, so the lazy chunk is fully tree-shaken there.
+ */
+const DESKTOP_SHELL_ENABLED: boolean = import.meta.env.VITE_DESKTOP_SHELL ?? false;
+const DesktopShellOverlay = DESKTOP_SHELL_ENABLED
+  ? lazy(() =>
+      import('@juejin-opensource/jusage-desktop-ui/components/DesktopShell').then(
+        (module) => ({ default: module.DesktopShell }),
+      ),
+    )
+  : null;
+
 /** Root shell: filter chrome actions + nested route outlet. */
 export function AppShell() {
   const navigate = useNavigate();
@@ -64,7 +78,9 @@ export function AppShell() {
 
   useEffect(() => {
     if (pathname !== '/settings') return;
-    setSettingsOpen(true);
+    // Desktop shell owns the settings modal; the page's own
+    // `dispatchOpenSettings()` opens it.
+    if (!DESKTOP_SHELL_ENABLED) setSettingsOpen(true);
     void navigate({ to: '/dashboard', replace: true });
   }, [pathname, navigate]);
 
@@ -240,6 +256,7 @@ useEffect(() => {
                 hideTrigger
                 isOpen={settingsOpen}
                 onOpenChange={setSettingsOpen}
+                listenForOpenEvent={!DESKTOP_SHELL_ENABLED}
               />
               <AboutModal
                 hideTrigger
@@ -247,6 +264,11 @@ useEffect(() => {
                 onOpenChange={setAboutOpen}
               />
               <ShareActivityModal />
+              {DesktopShellOverlay ? (
+                <Suspense fallback={null}>
+                  <DesktopShellOverlay />
+                </Suspense>
+              ) : null}
             </div>
           </div>
         </InstallGuideUiProvider>
