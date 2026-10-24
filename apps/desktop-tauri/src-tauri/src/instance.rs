@@ -104,3 +104,31 @@ pub fn acquire(app: &tauri::AppHandle) -> Result<(), String> {
         Ok(())
     }
 }
+
+/// Windows: a named kernel mutex (raw FFI, no extra crate). Held for the
+/// process lifetime; a second instance observes ERROR_ALREADY_EXISTS and
+/// exits. argv deep-link forwarding to the first instance remains a gap —
+/// Windows cold-start links are already handled via `find_deep_link_in_argv`.
+#[cfg(target_os = "windows")]
+pub fn acquire_windows() -> bool {
+    #[repr(transparent)]
+    struct Handle(*mut core::ffi::c_void);
+    extern "system" {
+        fn CreateMutexW(
+            lpmutexattributes: *mut core::ffi::c_void,
+            binitialowner: i32,
+            lpname: *const u16,
+        ) -> *mut core::ffi::c_void;
+        fn GetLastError() -> u32;
+    }
+    const ERROR_ALREADY_EXISTS: u32 = 183;
+    use std::os::windows::ffi::OsStrExt;
+    let name: Vec<u16> = std::ffi::OsString::from("Global\\com.juejin.tud.desktop.single")
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect();
+    // Intentionally never closed: the handle's lifetime IS the lock.
+    let handle = unsafe { CreateMutexW(std::ptr::null_mut(), 0, name.as_ptr()) };
+    let _ = Handle(handle);
+    !handle.is_null() && unsafe { GetLastError() } != ERROR_ALREADY_EXISTS
+}

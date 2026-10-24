@@ -57,6 +57,7 @@ import {
 } from '@juejin-opensource/jusage-core';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { buildPetSyncFeedback, type PetUsageSnapshot } from './desktop-pet-feedback.js';
 import { createDesktopPetsApi } from './desktop-pets-api.js';
 import { evictCliAutostart } from './evict-cli-autostart.js';
 
@@ -85,9 +86,63 @@ function announcePort(port: number): void {
   process.stdout.write(`PORT=${port}\n`);
 }
 
-/** Emit a data-synced marker on stdout (host translates it to `tud:data-synced`). */
-function notifySynced(): void {
-  process.stdout.write('SYNCED\n');
+/** Local-`YYYY-MM-DD` in the machine timezone (matches the daily rows). */
+function localDateString(d = new Date()): string {
+  const local = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const mm = String(local.getMonth() + 1).padStart(2, '0');
+  const dd = String(local.getDate()).padStart(2, '0');
+  return `${local.getFullYear()}-${mm}-${dd}`;
+}
+
+/** Baseline for the celebration delta (seeded once the server is up). */
+let lastPetSnapshot: PetUsageSnapshot | null = null;
+/** The in-process local-api Hono app, set in `boot` (summary/daily reads). */
+let localApiApp: ReturnType<typeof createLocalApiApp> | null = null;
+
+async function fetchPetSnapshot(): Promise<PetUsageSnapshot | null> {
+  const api = localApiApp;
+  if (!api) return null;
+  try {
+    const [summaryRes, dailyRes] = await Promise.all([
+      api.request('/functions/tud-account-usage-summary'),
+      api.request('/functions/tud-usage-daily?days=90'),
+    ]);
+    const summary = (await summaryRes.json()) as { data?: { totalTokens?: number } | null };
+    const daily = (await dailyRes.json()) as {
+      data?: Array<{ date?: unknown; tokens?: unknown }> | { rows?: Array<{ date?: unknown; tokens?: unknown }> } | null;
+    };
+    const rows = Array.isArray(daily.data) ? daily.data : (daily.data && Array.isArray((daily.data as { rows?: unknown[] }).rows) ? (daily.data as { rows: Array<{ date?: unknown; tokens?: unknown }> }).rows : []);
+    const totalTokens = Number(summary.data?.totalTokens);
+    if (!Number.isFinite(totalTokens)) return null;
+    return {
+      totalTokens,
+      dailyRows: rows.flatMap((row) => {
+        const date = typeof row.date === 'string' ? row.date : null;
+        const tokens = Number(row.tokens);
+        return date && Number.isFinite(tokens) ? [{ date, tokens: Math.max(0, tokens) }] : [];
+      }),
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Emit a data-synced marker on stdout (host translates it to
+ * `tud:data-synced`). When a delta against the previous snapshot adds tokens,
+ * the Electron celebration payload rides along:
+ * `SYNCED {"addedTokens":..,"isDailyRecord":..,"activeStreakDays":..}`.
+ */
+async function notifySynced(): Promise<void> {
+  const current = await fetchPetSnapshot();
+  let payload: string | null = null;
+  if (current && lastPetSnapshot) {
+    const feedback = buildPetSyncFeedback(lastPetSnapshot, current, localDateString());
+    if (feedback) payload = JSON.stringify(feedback);
+  }
+  if (current) lastPetSnapshot = current;
+  const line = payload ? `SYNCED ${payload}` : 'SYNCED';
+  process.stdout.write(line + '\n');
 }
 
 /**
@@ -169,6 +224,18 @@ function resolveDashboardDir(): string {
 }
 
 export async function boot(): Promise<void> {
+  // Reap with the Tauri host: if the app is force-killed (SIGKILL leaves the
+  // child alive), the orphaned sidecar is re-parented and must exit instead of
+  // holding :8462 and tud.pid forever.
+  const hostPid = process.ppid;
+  const parentWatch = setInterval(() => {
+    if (process.ppid !== hostPid) {
+      process.stderr.write('host process gone; exiting sidecar\n');
+      process.exit(0);
+    }
+  }, 3_000);
+  parentWatch.unref?.();
+
   // Same takeover as the desktop client cold start: evict CLI autostart so its
   // KeepAlive cannot revive the CLI, stop the CLI runtime kind, then claim the
   // runtime as the desktop owner (force).
@@ -217,7 +284,9 @@ export async function boot(): Promise<void> {
   const applyAfterSync = createApplyAfterSync({
     getBucketStore: () => runtime!.bucketStore,
     getAggregateCache: () => runtime?.aggregateCache,
-    onApplied: notifySynced,
+    onApplied: () => {
+      void notifySynced();
+    },
   });
 
   const { stop, runSync } = watchRuntimeSignals({
@@ -257,6 +326,7 @@ export async function boot(): Promise<void> {
     },
   });
 
+  localApiApp = app;
   const host = '127.0.0.1';
   const port = resolveDesktopHostPort();
   // Desktop-shell pet catalog (local scan / community list / install /
@@ -279,6 +349,10 @@ export async function boot(): Promise<void> {
     }
   }
   server = httpServer;
+  // Seed the celebration baseline so the first sync compares against boot state.
+  void fetchPetSnapshot().then((snapshot) => {
+    lastPetSnapshot = snapshot ?? lastPetSnapshot;
+  });
 
   // Report the bound port FIRST so the host can start health-polling / wiring.
   announcePort(actualPort);

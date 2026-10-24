@@ -167,3 +167,26 @@ body,
 .desktop-pet-preload {
   display: none;
 }
+
+/* Sync celebration header (delta bubble) */
+.desktop-pet-bubble-celebration {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 6px;
+  padding: 2px 0 4px;
+}
+
+.desktop-pet-bubble-celebration-tokens {
+  color: var(--pet-glow-primary, #7c8cff);
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.desktop-pet-bubble-celebration-badge {
+  background: rgba(124, 140, 255, 0.16);
+  border-radius: 999px;
+  color: inherit;
+  font-size: 10px;
+  padding: 1px 7px;
+}

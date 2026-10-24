@@ -300,7 +300,39 @@ pub fn deeplink_apply(
 /// bounded sidecar wait in [`apply`] subsumes Electron's `pendingDeepLinkUrl`
 /// queue: if the sidecar isn't up yet, the result is delivered to the renderer
 /// once it reports its port.
+/// Windows: register the `juejin-usage://` protocol for this executable under
+/// HKCU (per-user, no admin). Idempotent. macOS registration lives in the
+/// bundled Info.plist (`src-tauri/Info.plist`).
+#[cfg(target_os = "windows")]
+fn register_scheme_windows() {
+    let exe = std::env::current_exe()
+        .map(|p| p.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let classes = r"HKCU\Software\Classes\juejin-usage";
+    let _ = std::process::Command::new("reg")
+        .args(["add", classes, "/ve", "/t", "REG_SZ", "/d", "URL:Juejin Usage", "/f"])
+        .output();
+    let _ = std::process::Command::new("reg")
+        .args(["add", classes, "/v", "URL Protocol", "/t", "REG_SZ", "/d", "", "/f"])
+        .output();
+    let command = format!("\"{exe}\" \"%1\"");
+    let _ = std::process::Command::new("reg")
+        .args([
+            "add",
+            &format!("{classes}\\shell\\open\\command"),
+            "/ve",
+            "/t",
+            "REG_SZ",
+            "/d",
+            &command,
+            "/f",
+        ])
+        .output();
+}
+
 pub fn create(app: &AppHandle) {
+    #[cfg(target_os = "windows")]
+    register_scheme_windows();
     let args: Vec<String> = std::env::args().collect();
     let Some(raw) = find_deep_link_in_argv(&args) else {
         return;

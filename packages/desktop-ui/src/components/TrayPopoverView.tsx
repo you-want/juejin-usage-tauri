@@ -30,6 +30,7 @@ import { DATA_SYNCED_EVENT } from '../lib/shell-events';
 import { sourceColor, sourceLabel } from '../lib/tokens';
 import { Check } from '@gravity-ui/icons';
 import { ThemeToggle } from './ThemeToggle';
+import { TraySubscriptions } from './TraySubscriptions';
 import { TrayTrendChart } from './TrayTrendChart';
 import './TrayPopoverView.css';
 
@@ -416,6 +417,8 @@ export function TrayPopoverView() {
                   totalTokens={summary.totalTokens}
                 />
               )}
+
+              <TraySubscriptions />
 
               {topModels.length > 0 && (
                 <DistributionMiniCard

@@ -20,8 +20,8 @@ export interface DesktopPetPreferences {
   frameIntervalMs: number;
   autoMoveEnabled: boolean;
   autoMoveIntervalMinutes: number;
-  syncFeedbackEnabled: boolean;
-  syncFeedbackDurationSec: number;
+  syncFeedbackEnabled?: boolean;
+  syncFeedbackDurationSec?: number;
 }
 
 export interface DesktopPetCatalogEntry {

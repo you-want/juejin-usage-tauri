@@ -40,6 +40,13 @@ git checkout feat/desktop-tauri-v2 && git merge main && git push        # 开发
 
 `main` 不放自己的提交（保持 `--ff-only` 可用）；所有开发都在 `feat/desktop-tauri-v2`（对外默认分支）。
 
+## 发版（维护者）
+
+1. bump 版本：只改 `apps/desktop-tauri/package.json` 的 `version`（`sync-version.mjs` 会同步 tauri.conf.json 与 Cargo.toml）
+2. 打标签推送：`git tag v0.x.y && git push origin v0.x.y` → 触发 `.github/workflows/release-tauri.yml`（三平台矩阵构建 + minisign 签名 + latest.json 合并 + Release）
+3. 前置：仓库 Secrets 已配置 `TAURI_SIGNING_PRIVATE_KEY`（`~/.tauri/juejin-usage-community.key` 的内容）与 `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`（密钥未设密码，占位即可）
+4. 本地完整打包验证：`pnpm build:desktop:tauri`（需要 `TUD_NODE_BIN` 指向目标架构的 node 二进制）
+
 ## 文档
 
 - [docs/troubleshooting.md](docs/troubleshooting.md) — 故障排查手册（白屏/注入桥协议等已踩坑案例，遇到问题先查这里）

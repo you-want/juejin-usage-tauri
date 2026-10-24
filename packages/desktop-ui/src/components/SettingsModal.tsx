@@ -401,8 +401,8 @@ function DesktopPetSettings({
         frameIntervalMs: number;
         autoMoveEnabled: boolean;
         autoMoveIntervalMinutes: number;
-        syncFeedbackEnabled: boolean;
-        syncFeedbackDurationSec: number;
+        syncFeedbackEnabled?: boolean;
+        syncFeedbackDurationSec?: number;
       },
       skipMotion = false,
     ) => {
@@ -413,8 +413,8 @@ function DesktopPetSettings({
       setFrameIntervalMs(pref.frameIntervalMs);
       setAutoMoveEnabled(pref.autoMoveEnabled);
       setAutoMoveIntervalMinutes(pref.autoMoveIntervalMinutes);
-      setSyncFeedbackEnabled(pref.syncFeedbackEnabled);
-      setSyncFeedbackDurationSec(pref.syncFeedbackDurationSec);
+      setSyncFeedbackEnabled(pref.syncFeedbackEnabled ?? false);
+      setSyncFeedbackDurationSec(pref.syncFeedbackDurationSec ?? 3);
     };
 
     void bridge
@@ -499,8 +499,8 @@ function DesktopPetSettings({
       setFrameIntervalMs(saved.frameIntervalMs);
       setAutoMoveEnabled(saved.autoMoveEnabled);
       setAutoMoveIntervalMinutes(saved.autoMoveIntervalMinutes);
-      setSyncFeedbackEnabled(saved.syncFeedbackEnabled);
-      setSyncFeedbackDurationSec(saved.syncFeedbackDurationSec);
+      setSyncFeedbackEnabled(saved.syncFeedbackEnabled ?? false);
+      setSyncFeedbackDurationSec(saved.syncFeedbackDurationSec ?? 3);
     } catch (reason) {
       setError(
         reason instanceof Error ? reason.message : '更新桌面宠物设置失败',

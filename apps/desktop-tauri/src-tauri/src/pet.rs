@@ -102,11 +102,38 @@ fn global_cursor() -> Option<(f64, f64)> {
         let p = ev.location();
         Some((p.x, p.y))
     }
-    #[cfg(not(target_os = "macos"))]
+    // Windows: raw Win32 FFI (user32 is always loaded; no extra crate).
+    // GetCursorPos returns physical pixels — convert to logical via the
+    // primary monitor's scale factor to match the macOS point coordinates.
+    #[cfg(target_os = "windows")]
+    {
+        #[repr(C)]
+        struct Point {
+            x: i32,
+            y: i32,
+        }
+        extern "system" {
+            fn GetCursorPos(lppoint: *mut Point) -> i32;
+        }
+        let mut p = Point { x: 0, y: 0 };
+        if unsafe { GetCursorPos(&mut p) } == 0 {
+            return None;
+        }
+        let scale = PRIMARY_SCALE.get().map(|s| s.load(std::sync::atomic::Ordering::Relaxed)).unwrap_or(1.0);
+        Some((p.x as f64 / scale, p.y as f64 / scale))
+    }
+
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     {
         None
     }
 }
+
+/// Primary-monitor scale captured at setup (the drag poll runs off-thread;
+/// a Win32 monitor query from there is not worth the unsafe surface).
+#[cfg(target_os = "windows")]
+pub static PRIMARY_SCALE: std::sync::OnceLock<std::sync::atomic::AtomicF64> =
+    std::sync::OnceLock::new();
 
 /// Logical work-area of the monitor the pet window currently sits on.
 fn monitor_work_area(w: &WebviewWindow) -> Option<(f64, f64, f64, f64)> {
@@ -445,6 +472,7 @@ fn ensure_pet_window(app: &tauri::AppHandle) -> Option<WebviewWindow> {
     if let Some(w) = app.get_webview_window(PET_LABEL) {
         return Some(w);
     }
+    normalize_selection(app);
     let pref = prefs_of(app);
     let bounds = work_area_for(app, None);
     let pos = match (pref.position, bounds) {
@@ -558,6 +586,28 @@ fn show_pet_menu(app: &tauri::AppHandle, x: f64, y: f64) {
         let scale = win.scale_factor().unwrap_or(1.0);
         let pos = tauri::PhysicalPosition::new((x * scale) as i32, (y * scale) as i32);
         let _ = win.popup_menu_at(&menu, pos);
+    }
+}
+
+/// Electron parity: a selected pet that is no longer selectable (deleted from
+/// `~/.ai-usage/pets/`) falls back to hawking, and the corrected preference is
+/// broadcast so open settings views follow.
+fn normalize_selection(app: &tauri::AppHandle) {
+    let sidecar = app.state::<crate::sidecar::SidecarState>();
+    let next = app.state::<PrefsState>().patch(|p| {
+        if let Some(pref) = p.desktop_pet.as_mut() {
+            if !crate::pet_catalog::is_selectable_pet(&sidecar, &pref.selected_pet_id) {
+                eprintln!(
+                    "[tud-desktop] selected pet \"{}\" no longer installed; falling back to hawking",
+                    pref.selected_pet_id
+                );
+                pref.selected_pet_id = "hawking".to_string();
+            }
+        }
+    });
+    if let Some(pref) = next.desktop_pet {
+        use tauri::Emitter as _;
+        let _ = app.emit("desktop-pet:preferences", &pref);
     }
 }
 

@@ -34,6 +34,16 @@ pub struct Prefs {
     /// 桌面宠物偏好；未启用/未配置时缺省（`None` 不落盘）。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub desktop_pet: Option<DesktopPetPref>,
+    /// macOS 菜单栏托盘是否显示今日用量；缺省开启。
+    #[serde(default = "default_true")]
+    pub show_tray_usage: bool,
+    /// 菜单栏用量显示方式（both / tokens / cost）；缺省 both。
+    #[serde(default = "default_tray_usage_mode")]
+    pub tray_usage_mode: String,
+}
+
+fn default_tray_usage_mode() -> String {
+    "both".to_string()
 }
 
 fn default_true() -> bool {
@@ -69,6 +79,16 @@ pub struct DesktopPetPref {
     pub auto_move_enabled: bool,
     /// 自动移动间隔（分钟），夹在 1–120。缺省 2。
     pub auto_move_interval_minutes: u32,
+    /// 同步后是否提示 Token 增量（宠物气泡）。缺省关闭。
+    #[serde(default)]
+    pub sync_feedback_enabled: bool,
+    /// 同步提示时长（秒），夹在 1–10。缺省 3。
+    #[serde(default = "default_sync_feedback_duration")]
+    pub sync_feedback_duration_sec: u32,
+}
+
+fn default_sync_feedback_duration() -> u32 {
+    3
 }
 
 impl Default for DesktopPetPref {
@@ -82,6 +102,8 @@ impl Default for DesktopPetPref {
             frame_interval_ms: 180,
             auto_move_enabled: true,
             auto_move_interval_minutes: 2,
+            sync_feedback_enabled: false,
+            sync_feedback_duration_sec: 3,
         }
     }
 }
@@ -94,6 +116,8 @@ impl Default for Prefs {
             theme_mode: None,
             dashboard_range: None,
             desktop_pet: None,
+            show_tray_usage: true,
+            tray_usage_mode: "both".to_string(),
         }
     }
 }

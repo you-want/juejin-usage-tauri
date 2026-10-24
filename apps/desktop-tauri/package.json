@@ -7,7 +7,7 @@
   "type": "module",
   "scripts": {
     "dev": "pnpm build:dashboard && node ./scripts/copy-dashboard.mjs && vite build",
-    "build": "pnpm build:dashboard && node ./scripts/copy-dashboard.mjs && tsc -p tsconfig.json --noEmit && vite build",
+    "build": "node ./scripts/sync-version.mjs && pnpm build:dashboard && node ./scripts/copy-dashboard.mjs && tsc -p tsconfig.json --noEmit && vite build",
     "build:dashboard": "pnpm --filter @juejin-opensource/jusage-dashboard build:tauri",
     "preview": "vite preview",
     "typecheck": "tsc -p tsconfig.json --noEmit",

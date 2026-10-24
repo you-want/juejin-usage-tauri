@@ -16,12 +16,11 @@ if (typeof window.tud?.onDataSynced === 'function') {
   });
 }
 
-// This entry only hosts the tray popover (`?view=tray-popover`). The main
-// dashboard window no longer loads this renderer — it loads the CLI-hosted
-// dashboard dist served over loopback (`http://127.0.0.1:8462/`, see
-// `tauri.conf.json` main window url + `sidecar.rs`), so the dashboard
-// router / `AppShell` / `DashboardPage` copy that used to live under
-// `routes/` + `pages/` was removed in the same pass.
+// This entry only hosts the tray popover (`?view=tray-popover`) and the pet
+// window (`pet.html`, separate entry). The main dashboard window loads the
+// bundled dashboard dist as a Tauri static resource (`tauri://localhost/
+// dashboard/index.html`, embedded from `src/renderer/public/dashboard/`); its
+// `window.tud` bridge is injected by `bridge.rs`'s init script, not this file.
 const isTrayPopover = new URLSearchParams(window.location.search).get('view') === 'tray-popover';
 
 createRoot(document.getElementById('root')!).render(

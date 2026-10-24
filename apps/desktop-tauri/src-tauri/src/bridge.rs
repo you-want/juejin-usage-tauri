@@ -123,7 +123,9 @@ pub const TUD_BRIDGE_INIT_SCRIPT: &str = r#"
     var unlisten = null;
     var settled = false;
     function settle() { if (settled) return; settled = true; }
-    listen(channel, function () { callback(); }).then(function (fn) { unlisten = fn; settle(); });
+    listen(channel, function (event) {
+      callback(event && typeof event === "object" ? event.payload : undefined);
+    }).then(function (fn) { unlisten = fn; settle(); });
     return function () { settle(); if (unlisten) { unlisten(); } };
   }
 
@@ -164,6 +166,10 @@ pub const TUD_BRIDGE_INIT_SCRIPT: &str = r#"
     setOpenAtLogin: function (enabled) { return invoke("autostart_set", { enabled: enabled }); },
     getLaunchHidden: function () { return invoke("autostart_get_hidden"); },
     setLaunchHidden: function (hidden) { return invoke("autostart_set_hidden", { hidden: hidden }); },
+    getShowTrayUsage: function () { return invoke("tray_usage_get"); },
+    setShowTrayUsage: function (enabled) { return invoke("tray_usage_set", { enabled: enabled }); },
+    getTrayUsageMode: function () { return invoke("tray_usage_mode_get"); },
+    setTrayUsageMode: function (mode) { return invoke("tray_usage_mode_set", { mode: mode }); },
 
     getDesktopPet: function () { return invoke("desktop_pet_get"); },
     setDesktopPetEnabled: function (enabled) { return invoke("desktop_pet_set_enabled", { enabled: enabled }); },
@@ -247,7 +253,7 @@ pub const TUD_BRIDGE_INIT_SCRIPT: &str = r#"
       console.error("[tud-desktop] domEvent failed:", name, err);
     }
   }
-  listenRaw("tud:data-synced", function () { domEvent("tud:data-synced"); });
+  listenRaw("tud:data-synced", function (payload) { domEvent("tud:data-synced", payload); });
   listenOnce("app:open-settings", function (p) { return p == null || typeof p === "object"; }, function (p) {
     domEvent("tud:open-settings", (p && typeof p === "object") ? p : {});
   });

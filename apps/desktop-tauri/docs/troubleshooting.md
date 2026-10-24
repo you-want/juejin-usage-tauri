@@ -96,6 +96,23 @@
 - 已修：`sidecar.rs` 在 `cfg!(dev)` 时**优先**使用 repo 的 `packages/cli/dist/desktop-host.js`，staging 仅 release 生效（2026-10-24）。
 - 手动清理：`rm -rf apps/desktop-tauri/src-tauri/target/debug/node-app`；怀疑 sidecar 跑旧代码时先 `lsof -ti :8462` 看进程路径。
 
+
+---
+
+## 案例 4：sidecar 僵尸进程累积（STAT=UE，kill -9 无效）（2026-10-24）
+
+### 症状签名
+
+- `ps -axo pid,ppid,stat,command | grep desktop-host` 出现多个 PPID=1、STAT 含 **U**（uninterruptible wait）+E（exiting）的 node 进程，`kill -9` 杀不掉
+- 新启动的 sidecar 也无 `PORT=` 输出并进入 U 状态（连锁）；应用数据请求却仍可能成功（内核里残留的 listen socket 仍被某个僵尸持有）
+- 根因链：强杀宿主（pkill/SIGKILL）→ sidecar 成孤儿 → 某个内核调用（最可能是 `~/.ai-usage` 下的 flock，或 evict 时的子进程等待）卡进不可中断等待 → 该进程持有的文件锁永不释放 → 后继 sidecar 加锁时同样卡死 U
+
+### 解法与预防
+
+- **处置**：这类 U 状态进程只能重启电脑清除。重启后确认 `ps -axo stat,command | grep desktop-host | grep -v grep` 为空再启动应用。
+- **预防（已内置）**：`desktop-host.ts` 启动时记录 `process.ppid` 并每 3 秒校验，宿主消失即优雅退出——正常强杀场景下不会再留孤儿。
+- 开发期惯例：退出 dev 用托盘「退出」（走 `sidecar::stop` 优雅链路），不要依赖 pkill。
+
 ---
 
 ## 排查工具箱

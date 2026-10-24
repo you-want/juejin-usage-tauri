@@ -1,0 +1,136 @@
+name: release-tauri
+
+# Tauri 社区版发版：多平台构建 + minisign 签名 + GitHub Release（含 latest.json）。
+# 触发：推送 v* 标签（如 v0.2.0）。
+#
+# 首次使用前需要在仓库 Settings → Secrets and variables → Actions 添加：
+#   TAURI_SIGNING_PRIVATE_KEY         私钥文件内容（~/.tauri/juejin-usage-community.key）
+#   TAURI_SIGNING_PRIVATE_KEY_PASSWORD  留空的占位（密钥未设密码）— secret 不能为空值，
+#                                       可设为任意非敏感字符串，updater 只在密钥有密码时使用
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-14          # Apple Silicon
+            target: aarch64-apple-darwin
+            platform: darwin-arm64
+          - os: macos-13          # Intel
+            target: x86_64-apple-darwin
+            platform: darwin-x64
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            platform: win32-x64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: apps/desktop-tauri/src-tauri
+
+      - name: Install deps
+        run: pnpm install --frozen-lockfile
+
+      - name: Build core + cli
+        run: pnpm run build:cli
+
+      - name: Download Node runtime for sidecar staging
+        shell: bash
+        run: |
+          NODE_VER=v20.18.1
+          case "${{ matrix.platform }}" in
+            darwin-arm64) ART=node-$NODE_VER-darwin-arm64; EXE=node/bin/node ;;
+            darwin-x64)   ART=node-$NODE_VER-darwin-x64;   EXE=node/bin/node ;;
+            win32-x64)    ART=node-$NODE_VER-win-x64;      EXE=node/node.exe ;;
+          esac
+          if [[ "${{ matrix.platform }}" == win32-x64 ]]; then
+            curl -fsSL -o node.zip "https://nodejs.org/dist/$NODE_VER/$ART.zip"
+            unzip -q node.zip
+          else
+            curl -fsSL -o node.tar.gz "https://nodejs.org/dist/$NODE_VER/$ART.tar.gz"
+            tar xzf node.tar.gz
+          fi
+          echo "TUD_NODE_BIN=$PWD/$ART/$EXE" >> "$GITHUB_ENV"
+
+      - name: Build Tauri bundle (signed)
+        shell: bash
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: pnpm --filter @juejin-opensource/jusage-desktop-tauri tauri build --target ${{ matrix.target }}
+
+      - name: Collect artifacts + per-platform updater manifest
+        shell: bash
+        run: |
+          BUNDLE=apps/desktop-tauri/src-tauri/target/${{ matrix.target }}/release/bundle
+          mkdir -p dist-upload
+          # macOS: dmg + updater .app.tar.gz/.sig；Windows: nsis + .zip/.sig
+          find "$BUNDLE/macos" -name '*.dmg' -exec cp {} dist-upload/ \; 2>/dev/null || true
+          find "$BUNDLE/macos" -name '*.app.tar.gz*' -exec cp {} dist-upload/ \; 2>/dev/null || true
+          find "$BUNDLE/nsis" \( -name '*.exe' -o -name '*.zip' -o -name '*.sig' \) -exec cp {} dist-upload/ \; 2>/dev/null || true
+          # CLI 生成的 latest.json（单平台）重命名为 latest.<platform>.json 供合并
+          for f in "$BUNDLE"/latest.json; do
+            [ -f "$f" ] && cp "$f" "dist-upload/latest.${{ matrix.platform }}.json"
+          done
+          ls -la dist-upload
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tauri-${{ matrix.platform }}
+          path: dist-upload/*
+
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Merge per-platform manifests into latest.json
+        run: |
+          node -e '
+          const fs = require("fs");
+          const parts = fs.readdirSync("artifacts").filter(f => /^latest\..+\.json$/.test(f));
+          if (parts.length === 0) { console.error("no per-platform latest.json found"); process.exit(1); }
+          const merged = { version: "", pub_date: "", platforms: {} };
+          for (const part of parts) {
+            const body = JSON.parse(fs.readFileSync(`artifacts/${part}`, "utf8"));
+            merged.version = body.version || merged.version;
+            merged.pub_date = body.pub_date || merged.pub_date;
+            merged.notes = body.notes || merged.notes;
+            for (const [key, entry] of Object.entries(body.platforms || {})) {
+              merged.platforms[key] = entry;
+            }
+          }
+          fs.writeFileSync("artifacts/latest.json", JSON.stringify(merged, null, 2));
+          console.log(JSON.stringify(merged.platforms, null, 2));
+          '
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/*
+          generate_release_notes: true

@@ -55,8 +55,8 @@
 | 掘金登录 consent / deep-link 结果 toast | ✅ | ✅（2026-10-24） | ✅ | 注入桥转发 `app:juejin-link-result` → DOM 事件，`DesktopShell` 弹 toast 并刷新关联 chrome；设置弹窗打开时由面板内 toast 接管 |
 | 运行时通知（config-reset）toast | ✅ | ✅（2026-10-24） | ✅ | 注入桥转发 `app:runtime-notice` → `DesktopShell` toast |
 | 主窗后台同步后自动刷新 | ✅ | ✅（2026-10-24 修复） | ✅ | 此前 dashboard dist 无人桥接 `onDataSynced` → DOM 事件，主窗同步后不刷新；注入桥现已转发 `tud:data-synced` |
-| data-synced → 宠物庆祝 payload | `local-api-ipc.ts` 附 addedTokens/isDailyRecord/streakDays | `SYNCED` 裸标记 | 🟡 | `desktop-host.ts:88`；宠物气泡庆祝链路断 |
-| macOS Dock accessory 切换（关窗藏 Dock / 显示恢复） | ✅ `app.dock.hide/show` + 竞态防护 | 未实现 | ❌ | 需验证 Tauri `set_activation_policy` 等价能力 |
+| data-synced → 宠物庆祝 payload | 附 addedTokens/isDailyRecord/streakDays | ✅（2026-10-24，pet-sync-feedback 移植进 sidecar，SYNCED 附 JSON，宠物气泡自动弹出按偏好时长展示） | ✅ | |
+| macOS Dock accessory 切换（关窗藏 Dock / 显示恢复） | ✅ | ✅（2026-10-24，set_activation_policy Accessory/Regular 全挂点：关窗/显示/Dock 点击/托盘打开） | ✅ | |
 | macOS activate（点击 Dock 图标）不误建窗 | ✅ | ✅（2026-10-24，RunEvent::Reopen → 无可见窗时显示主窗） | ✅ | |
 
 ### 已知环境问题：WKWebView 拒绝加载回环 HTTP（2026-10-24 定案）
@@ -72,10 +72,10 @@
 | 托盘图标 + 右键菜单（显示/同步/设置/退出） | ✅ | ✅ | ✅ | `tray.rs:174-226`，菜单项与 Electron 一致 |
 | macOS 左键 popover、右键菜单；Win/Linux setContextMenu | ✅ | ✅ | ✅ | `tray.rs:233-283` |
 | popover 窗口（无边框/置顶/失焦隐藏/高度自适应 200-700） | ✅ | ✅ | ✅ | `tray.rs:64-140` + `resize_tray_popover` |
-| **popover 锚定到真实托盘图标位置** | `positionPopoverNearTray` + workArea 钳制 | 固定主屏右上角 | 🟡 | Tauri 托盘无 getBounds，需平台方案（macOS 可读状态项位置） |
-| popover 按主题设置窗口背景色 | ✅ | 无 | 🟡 | 小项，dark 模式闪白问题 |
-| **macOS 菜单栏实时用量胶囊**（tray-usage:get/set + mode both/tokens/cost + 系统唤醒刷新） | ✅ | 无 | ❌ | 数据端点 `/functions/tud-usage-summary` 在 sidecar 已可用，只差胶囊本体与偏好 |
-| 托盘内订阅卡（popover 里 13 张卡） | ✅ | 无 | ❌ | 随 §2 一并补 |
+| **popover 锚定到真实托盘图标位置** | `positionPopoverNearTray` + workArea 钳制 | ✅（2026-10-24，TrayIcon::rect() 锚定，上下半屏自适应，rect 不可用时回落右上角） | ✅ | |
+| popover 按主题设置窗口背景色 | ✅ | 🟡 未做（渲染层深色正常，仅开窗瞬间闪白） | 🟡 | 小项 |
+| **macOS 菜单栏实时用量胶囊**（tray-usage get/set + mode + 刷新） | ✅ | ✅（2026-10-24，TrayState + set_title，sidecar 起动/每次同步/偏好变化刷新；系统唤醒刷新未接——无对应事件） | ✅ | |
+| 托盘内订阅卡（popover 里） | ✅ 完整卡 | ✅ 摘要版（2026-10-24，TraySubscriptions 单行摘要 + 经 invoke 代理绕 Origin 门禁；完整卡片在主窗） | 🟡 | |
 
 ## 5. 桌面宠物
 
@@ -84,7 +84,7 @@
 | 内置 3 只（hawking/yoyo/click）+ 精灵动画（idle/run-l/run-r + 镜像修复） | ✅ | ✅ | ✅ | `pet.rs` + desktop-ui `DesktopPetView` |
 | 窗口属性（透明/置顶/全 Space/不抢焦点/Win 关圆角） | ✅ | ✅ | 🟡 | macOSPrivateApi 已开 |
 | 贝塞尔自动漫游（1-120min、1.6-5.2s、方向动画、位置持久化 + workArea 钳制） | ✅ | ✅ | ✅ | 全套移植 `pet.rs:190-378` |
-| 拖拽（主进程轮询光标，8ms，免 IPC） | ✅ 全平台 | 仅 macOS | 🟡 | `global_cursor` 非 macOS 返回 None；Win/Linux 需补（Win 可用 GetCursorPos） |
+| 拖拽（主进程轮询光标，8ms，免 IPC） | ✅ 全平台 | 🟡 macOS + Windows（GetCursorPos FFI，未真机验证）；Linux 仍缺 | 🟡 | |
 | 点击穿透（sprite alpha < 16 忽略） | ✅ forward:true 保持 mousemove | alpha 检测已移植 | 🟡 | **Tauri `set_ignore_cursor_events` 无 forward 语义，忽略后能否恢复捕获需实测**（可能需 Rust 侧光标轮询兜底） |
 | 右键菜单（显示/同步/设置(pet tab)/退出宠物） | ✅ | ✅ | ✅ | 渲染层上报坐标 + 原生菜单 `pet.rs:518-562` |
 | 偏好（scale 0.35-0.75 / 帧 120-320ms / autoMove / 庆祝开关时长） | ✅ | ✅ | ✅ | `prefs.rs` + clamp 一致 |
@@ -101,7 +101,7 @@
 | 功能点 | Electron | Tauri | 状态 | 说明 |
 |---|---|---|---|---|
 | 更新状态机（8 态 + camelCase 对齐渲染层契约） | ✅ | ✅ | ✅ | `updater.rs:32-63` |
-| 启动即查 + **每 6 小时周期查** | ✅ | 仅启动查 + 手动 | 🟡 | 补周期任务 |
+| 启动即查 + **每 6 小时周期查** | ✅ | ✅（2026-10-24 周期线程） | ✅ | |
 | 下载进度事件 / 自动下载安装 / 重启 | ✅ | ✅ | ✅ | `request_restart` + 30s 看门狗 + marker 回滚 |
 | 安装前释放 runtime（停托盘/标记退出/停 sidecar） | ✅ | ✅（app_quit 停 sidecar） | ✅ | |
 | 新版首启完成提示 + ack | ✅ | ✅ | ✅ | marker 机制一致 |
@@ -116,9 +116,9 @@
 | 开机自启注册（打包后） | `app.setLoginItemSettings` | tauri-plugin-autostart | ✅ | |
 | **launch-hidden 参数接线**（登录项带 `--hidden` 静默启动） | ✅ | ✅（2026-10-24，弃用 autostart 插件改自写登录项：macOS LaunchAgent / Win 注册表 / Linux .desktop，参数随偏好；含单测） | ✅ | |
 | 自启首次默认开启 | ✅ | 未见等价 | ❌ | 小项随设置面板补 |
-| App 单实例锁 | `requestSingleInstanceLock` 全平台 | 🟡 macOS 由 LaunchServices 天然单实例（Opened/Reopen 达成聚焦与转发语义）；Unix flock 兜底；**Windows 仍无守卫** | 🟡 | |
+| App 单实例锁 | `requestSingleInstanceLock` 全平台 | ✅ macOS LaunchServices + Unix flock + Windows 具名互斥体（FFI，未真机验证）；Win 二实例 argv 转发仍缺 | 🟡 | |
 | 第二实例 → 通知首实例聚焦/转发深链 | ✅ second-instance | ❌ 直接退出 | ❌ | 需用 tauri 单实例插件的事件转发 |
-| **deep link OS 级注册与接收**（`juejin-usage://`，macOS open-url / Win 协议分发） | ✅ | 🟡 macOS 已接：`src-tauri/Info.plist` 注册 scheme + `RunEvent::Opened` 应用（运行中 OS 激活首实例）；dev 非 bundled 无法路由，待首个 release 构建实测。Windows 注册表写入待接、二实例转发仍缺 | 🟡 | |
+| **deep link OS 级注册与接收**（`juejin-usage://`） | ✅ | ✅ macOS（Info.plist + Opened）+ Windows（HKCU 注册表注册，未真机验证）；dev 无法路由，release 实测待做 | 🟡 | |
 | 主题三态 + 持久化 + 广播 | ✅ | ✅ | ✅ | `theme.rs` |
 | **跟随 OS 外观**（system 模式实时 resolved） | ✅ nativeTheme 监听 | ✅（2026-10-24，ThemeChanged 事件 + 启动探测；实测切换深浅色即时跟随并广播） | ✅ | |
 
@@ -126,14 +126,14 @@
 
 | 功能点 | 现状 | 状态 |
 |---|---|---|
-| GitHub Actions Tauri 多平台构建（mac arm64/x64 dmg、win nsis、可选 linux） | 无任何 Tauri workflow（仅 ci.yml 测试 + sync-release.yml 同步 Gitee） | ❌ |
-| 签名流水线（`TAURI_SIGNING_PRIVATE_KEY` → latest.json + 产物签名） | 全仓库无引用 | ❌ |
-| 更新源指向自己仓库 | 指向官方 Gitee | ❌ |
-| 版本号统一管理 | desktop-tauri 不在 changesets 内；2026-10-24 已将 Cargo.toml 对齐 0.1.9（与 tauri.conf.json / package.json 一致），后续仍需脚本化或纳入 changesets | 🟡 |
+| GitHub Actions Tauri 多平台构建 | ✅ `release-tauri.yml`（mac arm64/x64 + win x64，签名，latest.json 合并；待 secrets 配置后首跑） | 🟡 |
+| 签名流水线 | ✅ 密钥对已生成（本地 `~/.tauri/juejin-usage-community.key`），公钥已嵌入 tauri.conf.json；CI secrets 待用户配置 | 🟡 |
+| 更新源指向自己仓库 | ✅ 指向 K-H-N-L Releases latest.json | ✅ |
+| 版本号统一管理 | ✅ `sync-version.mjs`（package.json 单源，构建时同步 conf/Cargo） | ✅ |
 | 打包 node 运行时按目标 arch 准备（stage-node-app.mjs 依赖 TUD_NODE_BIN） | 脚本已就绪，但 release 需按矩阵准备各平台 node 二进制 | 🟡 |
 | Windows 代码签名 / macOS 公证 | Electron 版亦未签（Win 待补、mac notarize 已配） | 🟡 对齐官方现状即可，先不阻塞 |
-| README / 架构文档 | `apps/desktop-tauri/README.md` 仍是官方模板 stub | ❌ |
-| 死代码 / 过期注释 | `src/renderer/pets.ts` 死代码；main.tsx/bridge.ts/sidecar.rs 头注释过期（仍说 8462 导航/占位端口） | 🟡 |
+| README / 架构文档 / CHANGELOG | ✅ 重写 + troubleshooting + parity-audit + 社区版 CHANGELOG | ✅ |
+| 死代码 / 过期注释 | ✅ pets.ts 已删、main.tsx 注释已修 | ✅ |
 | CLI/Web dist 体积 | `VITE_DESKTOP_SHELL` 门控后 DesktopShell JS chunk 已被 tree-shake；但 Vite transform 阶段仍会发射 3 张宠物 webp 孤儿资源（~1.1MB，无 JS 引用）进所有 dashboard 构建 | 🟡 P3 打包时过滤 |
 | capabilities ACL | default capability 仅 `windows:["main"]`，tray-popover / desktop-pet 未列入 | 🟡 需验证并补齐 |
 

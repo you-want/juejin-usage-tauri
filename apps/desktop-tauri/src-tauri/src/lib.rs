@@ -236,6 +236,7 @@ fn window_close(window: Window) {
 
 #[tauri::command]
 fn window_show_main(app: AppHandle) {
+    set_dock_visible(&app, true);
     if let Some(main) = app.get_webview_window("main") {
         let _ = main.show();
         let _ = main.set_focus();
@@ -413,6 +414,57 @@ fn autostart_set_hidden(
 // hook (Tauri's `WebviewEvent` has no context-menu variant, so the pet renderer
 // pops the native menu via this command).
 
+// ---- tray usage (macOS menu-bar capsule) ------------------------------------
+// Prefs-backed; the capsule itself is refreshed by `tray::refresh_usage_title`
+// (sidecar boot / every sync / pref change).
+
+#[tauri::command]
+fn tray_usage_get(state: State<'_, PrefsState>) -> bool {
+    state.get().show_tray_usage
+}
+
+#[tauri::command]
+fn tray_usage_set(app: AppHandle, state: State<'_, PrefsState>, enabled: bool) -> bool {
+    state.patch(|p| p.show_tray_usage = enabled);
+    let _ = app.emit("tray-usage:changed", enabled);
+    tray::refresh_usage_title(&app);
+    enabled
+}
+
+#[tauri::command]
+fn tray_usage_mode_get(state: State<'_, PrefsState>) -> String {
+    state.get().tray_usage_mode
+}
+
+#[tauri::command]
+fn tray_usage_mode_set(app: AppHandle, state: State<'_, PrefsState>, mode: String) -> String {
+    if !matches!(mode.as_str(), "both" | "tokens" | "cost") {
+        return state.get().tray_usage_mode;
+    }
+    let next = state.patch(|p| p.tray_usage_mode = mode.clone());
+    let _ = app.emit("tray-usage-mode:changed", &next.tray_usage_mode);
+    tray::refresh_usage_title(&app);
+    next.tray_usage_mode
+}
+
+/// macOS dock policy: hide the Dock icon while only the tray remains
+/// (Electron `app.dock.hide()` parity), restore it whenever the main window
+/// is shown again.
+#[cfg(target_os = "macos")]
+pub(crate) fn set_dock_visible(app: &AppHandle, visible: bool) {
+    let policy = if visible {
+        tauri::ActivationPolicy::Regular
+    } else {
+        tauri::ActivationPolicy::Accessory
+    };
+    if let Err(err) = app.set_activation_policy(policy) {
+        eprintln!("[tud-desktop] set_activation_policy failed: {err}");
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+pub(crate) fn set_dock_visible(_app: &AppHandle, _visible: bool) {}
+
 // ---- auto update (P4) -------------------------------------------------------
 // Real behavior lives in `updater.rs` (tauri-plugin-updater state machine +
 // marker rollback + install watchdog). The `auto_update_*` commands and the
@@ -431,6 +483,7 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .manage(ThemeState::default())
         .manage(DashboardRangeState::default())
+        .manage(tray::TrayState::default())
         .manage(PrefsState::default())
         .manage(SidecarState::default())
         .manage(Arc::new(PetState::default()))
@@ -511,6 +564,15 @@ pub fn run() {
                 }
             }
 
+            // Windows: capture the primary monitor scale for the pet drag
+            // cursor poll (Win32 GetCursorPos returns physical pixels).
+            #[cfg(target_os = "windows")]
+            if let Ok(Some(monitor)) = app.primary_monitor() {
+                if let Ok(scale) = monitor.scale_factor() {
+                    let _ = pet::PRIMARY_SCALE.set(std::sync::atomic::AtomicF64::new(scale));
+                }
+            }
+
             // Resolve `system` theme mode against the actual OS appearance once
             // the main window exists (later changes arrive via ThemeChanged).
             if let Some(main) = app.get_webview_window("main") {
@@ -535,6 +597,9 @@ pub fn run() {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 let _ = window.hide();
                 api.prevent_close();
+                if window.label() == "main" {
+                    set_dock_visible(window.app_handle(), false);
+                }
                 return;
             }
             // Only drive maximize/focus emission for the main window (the
@@ -575,6 +640,10 @@ pub fn run() {
             autostart_set,
             autostart_get_hidden,
             autostart_set_hidden,
+            tray_usage_get,
+            tray_usage_set,
+            tray_usage_mode_get,
+            tray_usage_mode_set,
             pet::desktop_pet_get,
             pet::desktop_pet_set_enabled,
             pet::desktop_pet_set_selected,
@@ -618,6 +687,7 @@ pub fn run() {
             #[cfg(target_os = "macos")]
             tauri::RunEvent::Reopen { has_visible_windows, .. } => {
                 if !has_visible_windows {
+                    set_dock_visible(app_handle, true);
                     if let Some(main) = app_handle.get_webview_window("main") {
                         let _ = main.show();
                         let _ = main.set_focus();

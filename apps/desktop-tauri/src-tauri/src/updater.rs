@@ -375,5 +375,11 @@ pub fn create(app: &AppHandle) {
     }
     if !is_dev() {
         spawn_update_cycle(app.clone());
+        // Electron parity: re-check every 6 hours while the app runs.
+        let periodic = app.clone();
+        std::thread::spawn(move || loop {
+            std::thread::sleep(std::time::Duration::from_secs(6 * 60 * 60));
+            spawn_update_cycle(periodic.clone());
+        });
     }
 }

@@ -36,6 +36,84 @@ const POPOVER_LABEL: &str = "tray-popover";
 /// Latest content height reported by the popover's renderer.
 static POPOVER_HEIGHT: Mutex<Option<u32>> = Mutex::new(None);
 
+/// The live tray handle, kept so the usage capsule (`set_title`) and the
+/// popover anchor (`rect()`) can reach it after `create` returns.
+pub struct TrayState(pub Mutex<Option<tauri::tray::TrayIcon>>);
+
+impl Default for TrayState {
+    fn default() -> Self {
+        Self(Mutex::new(None))
+    }
+}
+
+/// Electron parity for `shared/tray-usage.ts` — compact token/cost strings for
+/// the macOS menu-bar capsule.
+fn format_compact_tokens(tokens: f64) -> String {
+    let fmt = |v: f64, unit: &str| {
+        let s = format!("{v:.1}");
+        let s = s.strip_suffix(".0").unwrap_or(&s).to_string();
+        format!("{s}{unit}")
+    };
+    if tokens >= 1_000_000_000.0 {
+        fmt(tokens / 1_000_000_000.0, "B")
+    } else if tokens >= 1_000_000.0 {
+        fmt(tokens / 1_000_000.0, "M")
+    } else if tokens >= 1_000.0 {
+        fmt(tokens / 1_000.0, "K")
+    } else {
+        format!("{}", tokens.round() as u64)
+    }
+}
+
+fn format_tray_usage(today_tokens: f64, today_cost_usd: f64, mode: &str) -> String {
+    let token_text = format!("{} Token", format_compact_tokens(today_tokens));
+    let cost_text = if today_cost_usd > 0.0 && today_cost_usd.is_finite() {
+        if today_cost_usd < 0.01 {
+            "<$0.01".to_string()
+        } else {
+            format!("${today_cost_usd:.2}")
+        }
+    } else {
+        "$0.00".to_string()
+    };
+    match mode {
+        "tokens" => token_text,
+        "cost" => cost_text,
+        _ => format!("{token_text} · {cost_text}"),
+    }
+}
+
+/// Refresh the macOS menu-bar usage capsule from the sidecar's summary.
+/// No-op (and title cleared) elsewhere or when the pref is off. Called on
+/// sidecar boot, every sync, and whenever the prefs change.
+pub fn refresh_usage_title(app: &AppHandle) {
+    let prefs = app.state::<crate::prefs::PrefsState>().get();
+    let Some(tray) = app.state::<TrayState>().0.lock().unwrap().clone() else {
+        return;
+    };
+    if !prefs.show_tray_usage {
+        #[cfg(any(target_os = "macos", target_os = "windows"))]
+        let _ = tray.set_title(None::<String>);
+        return;
+    }
+    let sidecar = app.state::<crate::sidecar::SidecarState>();
+    let Ok((status, body)) =
+        crate::sidecar::http_call(&sidecar, "GET", "/functions/tud-usage-summary", None)
+    else {
+        return;
+    };
+    let Ok(data) = crate::sidecar::envelope_data(status, &body) else {
+        return;
+    };
+    let tokens = data.get("todayTokens").and_then(|v| v.as_f64()).unwrap_or(0.0);
+    let cost = data.get("todayCostUsd").and_then(|v| v.as_f64()).unwrap_or(0.0);
+    let title = format_tray_usage(tokens, cost, &prefs.tray_usage_mode);
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
+    let _ = tray.set_title(Some(title));
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    let _ = title;
+}
+
 /// Resolve the tray icon. Release builds read it from the bundled resource;
 /// dev falls back to the file on disk next to the crate. Try the resource
 /// first and fall back to the crate path so the icon loads in both modes.
@@ -104,6 +182,54 @@ fn get_or_create_popover(app: &AppHandle) -> Result<tauri::WebviewWindow, String
 /// Position the popover under the top-right corner of the primary monitor's
 /// work area.
 fn anchor_popover(app: &AppHandle) {
+    // Prefer anchoring under/over the real tray icon rect (Electron parity);
+    // fall back to the work-area top-right corner when unavailable.
+    if let Some(tray) = app.state::<TrayState>().0.lock().unwrap().clone() {
+        if let Ok(Some(rect)) = tray.rect() {
+            if let Some(monitor) = app.primary_monitor().ok().flatten() {
+                let scale = monitor.scale_factor();
+                let wa = monitor.work_area();
+                let (work_x, work_y) = (wa.position.x as f64 / scale, wa.position.y as f64 / scale);
+                let (work_w, work_h) = (wa.size.width as f64 / scale, wa.size.height as f64 / scale);
+                // Normalize the icon rect (physical or logical) to logical.
+                let (icon_cx, icon_bottom) = match (&rect.position, &rect.size) {
+                    (tauri::Position::Physical(p), tauri::Size::Physical(s)) => (
+                        (p.x as f64 + s.width as f64 / 2.0) / scale,
+                        (p.y as f64 + s.height as f64) / scale,
+                    ),
+                    (tauri::Position::Logical(p), tauri::Size::Logical(s)) => {
+                        (p.x + s.width / 2.0, p.y + s.height)
+                    }
+                    _ => {
+                        // Mixed variants never occur in practice; fall through
+                        // to the corner anchor below.
+                        0.0..=0.0;
+                        corner_anchor(app);
+                        return;
+                    }
+                };
+                let h = POPOVER_HEIGHT.lock().unwrap().unwrap_or(POPOVER_INITIAL_HEIGHT) as f64;
+                let mid_screen = work_y + work_h / 2.0;
+                let x = (icon_cx - POPOVER_WIDTH as f64 / 2.0)
+                    .clamp(work_x, work_x + work_w - POPOVER_WIDTH as f64);
+                let y = if icon_bottom < mid_screen {
+                    icon_bottom + POPOVER_MARGIN
+                } else {
+                    (icon_bottom - h - POPOVER_MARGIN).max(work_y)
+                };
+                if let Some(w) = app.get_webview_window(POPOVER_LABEL) {
+                    let _ = w.set_position(tauri::LogicalPosition::new(x, y));
+                    let _ = w.set_size(tauri::Size::Logical(tauri::LogicalSize::new(POPOVER_WIDTH as f64, h)));
+                }
+                return;
+            }
+        }
+    }
+    corner_anchor(app);
+}
+
+/// Fallback anchor: work-area top-right corner (the old behavior).
+fn corner_anchor(app: &AppHandle) {
     let Ok(Some(monitor)) = app.primary_monitor() else {
         return;
     };
@@ -235,6 +361,7 @@ pub fn create(app: &AppHandle) {
         .on_menu_event(|app, event: MenuEvent| {
             match event.id().as_ref() {
                 "tray-show" => {
+                    crate::set_dock_visible(app, true);
                     if let Some(main) = app.get_webview_window("main") {
                         let _ = main.show();
                         let _ = main.set_focus();
@@ -245,6 +372,7 @@ pub fn create(app: &AppHandle) {
                     sidecar::trigger_sync(&state);
                 }
                 "tray-settings" => {
+                    crate::set_dock_visible(app, true);
                     if let Some(main) = app.get_webview_window("main") {
                         let _ = main.show();
                         let _ = main.set_focus();
@@ -267,6 +395,14 @@ pub fn create(app: &AppHandle) {
             return;
         }
     };
+
+    // Keep a handle for the usage capsule + popover anchor before the event
+    // closure takes ownership of the instance.
+    {
+        let handle = tray.clone();
+        *app.state::<TrayState>().0.lock().unwrap() = Some(handle);
+    }
+    refresh_usage_title(app);
 
     // Left-click toggles the popover. The per-tray handler receives the
     // `TrayIcon`, from which we reach the `AppHandle` via `app_handle()`.

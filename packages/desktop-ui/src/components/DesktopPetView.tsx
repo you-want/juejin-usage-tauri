@@ -65,6 +65,14 @@ export function DesktopPetView({
 } = {}) {
   const [animation, setAnimation] = useState<PetAnimation>('idle');
   const [selectedPetId, setSelectedPetId] = useState('hawking');
+  const [celebration, setCelebration] = useState<{
+    addedTokens: number;
+    isDailyRecord: boolean;
+    activeStreakDays: number;
+  } | null>(null);
+  const syncFeedbackEnabledRef = useRef(false);
+  const syncFeedbackDurationRef = useRef(3);
+  const celebrationTimerRef = useRef<number | null>(null);
   const [scale, setScale] = useState(DISPLAY_SCALE);
   const [frameIntervalMs, setFrameIntervalMs] = useState(180);
   const [isTokenTooltipOpen, setIsTokenTooltipOpen] = useState(false);
@@ -123,16 +131,28 @@ export function DesktopPetView({
 
   useEffect(() => {
     let cancelled = false;
+    const applyPref = (pref: {
+      scale: number;
+      frameIntervalMs: number;
+      selectedPetId: string;
+      syncFeedbackEnabled?: boolean;
+      syncFeedbackDurationSec?: number;
+    }) => {
+      setScale(pref.scale);
+      setFrameIntervalMs(pref.frameIntervalMs);
+      setSelectedPetId(pref.selectedPetId);
+      syncFeedbackEnabledRef.current = pref.syncFeedbackEnabled === true;
+      syncFeedbackDurationRef.current = Math.min(
+        10,
+        Math.max(1, Math.round(pref.syncFeedbackDurationSec ?? 3)),
+      );
+    };
     void window.tud.getDesktopPet().then((pref) => {
       if (cancelled) return;
-      setScale(pref.scale);
-      setFrameIntervalMs(pref.frameIntervalMs);
-      setSelectedPetId(pref.selectedPetId);
+      applyPref(pref);
     });
     const unsubscribe = window.tud.onDesktopPetPreferences((pref) => {
-      setScale(pref.scale);
-      setFrameIntervalMs(pref.frameIntervalMs);
-      setSelectedPetId(pref.selectedPetId);
+      applyPref(pref);
     });
     return () => {
       cancelled = true;
@@ -141,6 +161,39 @@ export function DesktopPetView({
   }, []);
 
   useEffect(() => { alphaCanvas.current = null; }, [selectedPetId]);
+
+  // Sync celebration (Electron parity): when a sync adds tokens and the pref
+  // is on, auto-open the bubble with the delta for the configured duration.
+  useEffect(() => {
+    const unsubscribe = window.tud.onDataSynced?.((payload) => {
+      const feedback = payload as
+        | { addedTokens?: number; isDailyRecord?: boolean; activeStreakDays?: number }
+        | undefined;
+      const added = Number(feedback?.addedTokens);
+      if (!Number.isFinite(added) || added <= 0) return;
+      if (!syncFeedbackEnabledRef.current) return;
+      setCelebration({
+        addedTokens: added,
+        isDailyRecord: feedback?.isDailyRecord === true,
+        activeStreakDays: Math.max(0, Math.round(Number(feedback?.activeStreakDays) || 0)),
+      });
+      setIsTokenTooltipOpen(true);
+      if (celebrationTimerRef.current !== null) {
+        window.clearTimeout(celebrationTimerRef.current);
+      }
+      celebrationTimerRef.current = window.setTimeout(() => {
+        celebrationTimerRef.current = null;
+        setCelebration(null);
+        setIsTokenTooltipOpen(false);
+      }, syncFeedbackDurationRef.current * 1000);
+    });
+    return () => {
+      unsubscribe?.();
+      if (celebrationTimerRef.current !== null) {
+        window.clearTimeout(celebrationTimerRef.current);
+      }
+    };
+  }, []);
 
   // Load only the selected pet's atlas; unchosen spritesheets stay unloaded.
   // Locally installed pets resolve through the shell (loopback URL streamed by
@@ -177,10 +230,10 @@ export function DesktopPetView({
         .catch(() => { if (!cancelled) setSummaryError(true); });
     };
     load();
-    const unsubscribe = window.tud.onDataSynced(load);
+    const unsubscribe = window.tud.onDataSynced?.(load);
     return () => {
       cancelled = true;
-      unsubscribe();
+      unsubscribe?.();
     };
   }, [isTokenTooltipOpen, range]);
 
@@ -317,7 +370,23 @@ export function DesktopPetView({
           onMouseEnter={() => setMouseIgnored(false)}
           style={{ width: layout.popoverWidth, bottom: spriteHeight + BUBBLE_GAP_PX }}
         >
-          <div className="desktop-pet-bubble-range">{DASHBOARD_RANGE_LABELS[range]}</div>
+          {celebration ? (
+            <div className="desktop-pet-bubble-celebration">
+              <span className="desktop-pet-bubble-celebration-tokens">
+                +{formatTokens(celebration.addedTokens)}
+              </span>
+              {celebration.isDailyRecord ? (
+                <span className="desktop-pet-bubble-celebration-badge">今日新高 🎉</span>
+              ) : null}
+              {celebration.activeStreakDays > 1 ? (
+                <span className="desktop-pet-bubble-celebration-badge">
+                  连续 {celebration.activeStreakDays} 天
+                </span>
+              ) : null}
+            </div>
+          ) : (
+            <div className="desktop-pet-bubble-range">{DASHBOARD_RANGE_LABELS[range]}</div>
+          )}
           <PetStatRow
             dotClassName="desktop-pet-stat-dot--token"
             exactLabel={summary ? formatTokensExact(summary.totalTokens) : undefined}

@@ -334,6 +334,8 @@ fn read_stdout(
             if let Ok(n) = p.trim().parse::<u16>() {
                 *port.lock().unwrap() = Some(n);
                 eprintln!("[tud-desktop] sidecar bound to PORT={n}");
+                // First capsule refresh once the summary endpoint is up.
+                crate::tray::refresh_usage_title(&app);
                 // Verify the main webview (now the bundled dashboard, not the
                 // loopback sidecar) actually mounted: probe its URL, the
                 // injected `window.tud` bridge, and whether the dashboard
@@ -372,8 +374,24 @@ fn read_stdout(
                     }
                 });
             }
-        } else if line.trim() == "SYNCED" {
-            let _ = app.emit("tud:data-synced", ());
+        } else if let Some(rest) = line.strip_prefix("SYNCED") {
+            // `SYNCED` alone (no delta computed) or `SYNCED {json}` with the
+            // pet celebration payload (addedTokens / isDailyRecord /
+            // activeStreakDays) — mirrors Electron's `tud:data-synced` event.
+            let payload: serde_json::Value = {
+                let rest = rest.trim();
+                if rest.is_empty() {
+                    serde_json::json!({})
+                } else {
+                    serde_json::from_str(rest).unwrap_or_else(|_| serde_json::json!({}))
+                }
+            };
+            if payload.as_object().map(|o| !o.is_empty()).unwrap_or(false) {
+                eprintln!("[tud-desktop] SYNCED payload: {payload}");
+            }
+            let _ = app.emit("tud:data-synced", &payload);
+            // Refresh the macOS menu-bar usage capsule with the new totals.
+            crate::tray::refresh_usage_title(&app);
         } else if let Some(p) = line.strip_prefix("RUNTIME_NOTICE=") {
             // `CONFIG_RESET:<true|false>` — a corrupt config was recovered.
             // Forward to the webviews as `app:runtime-notice`; the renderer's

@@ -60,6 +60,8 @@ declare global {
         frameIntervalMs: number;
         autoMoveEnabled: boolean;
         autoMoveIntervalMinutes: number;
+        syncFeedbackEnabled?: boolean;
+        syncFeedbackDurationSec?: number;
       }>;
       setDesktopPetEnabled: (enabled: boolean) => Promise<boolean>;
       setSelectedDesktopPet: (selectedPetId: string) => Promise<{
@@ -70,6 +72,8 @@ declare global {
         frameIntervalMs: number;
         autoMoveEnabled: boolean;
         autoMoveIntervalMinutes: number;
+        syncFeedbackEnabled?: boolean;
+        syncFeedbackDurationSec?: number;
       }>;
       setDesktopPetPreferences: (changes: {
         scale?: number;
@@ -84,6 +88,8 @@ declare global {
         frameIntervalMs: number;
         autoMoveEnabled: boolean;
         autoMoveIntervalMinutes: number;
+        syncFeedbackEnabled?: boolean;
+        syncFeedbackDurationSec?: number;
       }>;
       setDesktopPetMouseIgnored: (ignored: boolean) => void;
       beginDesktopPetDrag: () => void;
@@ -141,7 +147,23 @@ declare global {
         frameIntervalMs: number;
         autoMoveEnabled: boolean;
         autoMoveIntervalMinutes: number;
+        syncFeedbackEnabled?: boolean;
+        syncFeedbackDurationSec?: number;
       }) => void) => () => void;
+      onDataSynced?: (
+        callback: (payload?: {
+          addedTokens?: number;
+          isDailyRecord?: boolean;
+          activeStreakDays?: number;
+        }) => void,
+      ) => () => void;
+      getShowTrayUsage?: () => Promise<boolean>;
+      setShowTrayUsage?: (enabled: boolean) => Promise<boolean>;
+      getTrayUsageMode?: () => Promise<'both' | 'tokens' | 'cost'>;
+      setTrayUsageMode?: (mode: 'both' | 'tokens' | 'cost') => Promise<string>;
+      subscriptionSnapshot?: (
+        channel: string,
+      ) => Promise<{ status: number; body: unknown }>;
       onMaximized: (callback: (isMaximized: boolean) => void) => () => void;
       api: {
         request: (

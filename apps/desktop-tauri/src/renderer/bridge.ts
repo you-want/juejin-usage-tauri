@@ -165,6 +165,17 @@ function createTudBridge() {
     getOpenAtLogin: (): Promise<boolean> => invoke("autostart_get"),
     setOpenAtLogin: (enabled: boolean): Promise<boolean> =>
       invoke("autostart_set", { enabled }),
+    getShowTrayUsage: (): Promise<boolean> => invoke("tray_usage_get"),
+    setShowTrayUsage: (enabled: boolean) => invoke("tray_usage_set", { enabled }),
+    getTrayUsageMode: (): Promise<"both" | "tokens" | "cost"> =>
+      invoke("tray_usage_mode_get"),
+    setTrayUsageMode: (mode: "both" | "tokens" | "cost") =>
+      invoke("tray_usage_mode_set", { mode }),
+    /** Loopback-proxied subscription snapshot (bypasses the API Origin gate). */
+    subscriptionSnapshot: (channel: string) =>
+      invoke<{ status: number; body: unknown }>("tud_api_request", {
+        req: { path: `/functions/tud-subscription/${channel}`, method: "GET" },
+      }),
     getLaunchHidden: (): Promise<boolean> => invoke("autostart_get_hidden"),
     setLaunchHidden: (hidden: boolean): Promise<boolean> =>
       invoke("autostart_set_hidden", { hidden }),
@@ -245,7 +256,13 @@ function createTudBridge() {
       },
     },
 
-    onDataSynced: (callback: () => void) =>
+    onDataSynced: (
+      callback: (payload?: {
+        addedTokens?: number;
+        isDailyRecord?: boolean;
+        activeStreakDays?: number;
+      }) => void,
+    ) =>
       listenRaw("tud:data-synced", callback),
 
     onOpenSettings: (
