@@ -39,6 +39,7 @@
     "resources": [
       "icons/juejinTemplate@2x.png",
       "node-app"
-    ]
+    ],
+    "createUpdaterArtifacts": true
   }
 }
