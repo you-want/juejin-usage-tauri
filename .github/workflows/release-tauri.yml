@@ -21,7 +21,7 @@ jobs:
           - os: macos-14          # Apple Silicon
             target: aarch64-apple-darwin
             platform: darwin-arm64
-          - os: macos-13          # Intel
+          - os: macos-15-intel   # GitHub 最后的 x86_64 镜像（支持至 2027-08）
             target: x86_64-apple-darwin
             platform: darwin-x64
           - os: windows-latest
