@@ -67,8 +67,10 @@ jobs:
         shell: bash
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        run: pnpm --filter @juejin-opensource/jusage-desktop-tauri tauri build --target ${{ matrix.target }}
+        run: |
+          # 诊断（不泄露内容）：确认密钥 secret 已配置
+          echo "signing key length: ${#TAURI_SIGNING_PRIVATE_KEY}"
+          pnpm --filter @juejin-opensource/jusage-desktop-tauri tauri build --target ${{ matrix.target }}
 
       - name: Collect artifacts + per-platform updater manifest
         shell: bash
