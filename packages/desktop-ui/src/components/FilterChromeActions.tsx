@@ -24,7 +24,7 @@ import { cn } from '../lib/utils';
 const primaryChromeBtn =
   'inline-flex h-7 shrink-0 items-center gap-1 rounded-full bg-[#1e80ff] px-2.5 text-[12px] font-medium text-white outline-none transition-colors hover:bg-[#1171ee] focus-visible:ring-2 focus-visible:ring-[#1e80ff]/40 disabled:pointer-events-none disabled:opacity-40 dark:bg-[#4b9cff] dark:hover:bg-[#3a8ff0]';
 const RANK_PAGE_URL = 'https://juejin.cn/aiusage/rank';
-const GITHUB_REPO_URL = 'https://github.com/juejin-cn/juejin-usage';
+const GITHUB_REPO_URL = 'https://github.com/K-H-N-L/juejin-usage';
 
 function openRankPage(): void {
   void window.tud.openExternal(RANK_PAGE_URL);

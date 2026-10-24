@@ -7,6 +7,8 @@ on:
 
 jobs:
   sync-release-meta:
+    # 仅官方仓库运行；社区 fork 没有 GITEE_TOKEN，也不应把 Release 同步到官方 Gitee
+    if: github.repository == 'juejin-cn/juejin-usage'
     runs-on: ubuntu-latest
     steps:
       - name: 同步 Gitee 发行版元数据（不传附件）

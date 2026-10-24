@@ -1,3 +1,7 @@
+> **📦 本仓库是 [juejin-cn/juejin-usage](https://github.com/juejin-cn/juejin-usage) 的社区 fork，独立维护 Tauri 版桌面客户端**（官方桌面端为 Electron）。
+> 开发与发版线：`feat/desktop-tauri-v2`（本仓库默认分支）；`main` 仅用于与上游保持同步。
+> Tauri 版问题反馈请到 [issues](https://github.com/K-H-N-L/juejin-usage/issues)；文档见 [apps/desktop-tauri/README.md](apps/desktop-tauri/README.md)。
+
 <p align="center">
   <img src="./assets/icon.png" alt="Juejin Usage logo" width="200">
 </p>
@@ -7,25 +11,25 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/juejin-cn/juejin-usage">
-    <img src="https://img.shields.io/github/stars/juejin-cn/juejin-usage?style=flat-square" alt="stars">
+  <a href="https://github.com/K-H-N-L/juejin-usage">
+    <img src="https://img.shields.io/github/stars/K-H-N-L/juejin-usage?style=flat-square" alt="stars">
   </a>
-  <a href="https://github.com/juejin-cn/juejin-usage/issues">
-    <img src="https://img.shields.io/github/issues/juejin-cn/juejin-usage?style=flat-square" alt="issues">
+  <a href="https://github.com/K-H-N-L/juejin-usage/issues">
+    <img src="https://img.shields.io/github/issues/K-H-N-L/juejin-usage?style=flat-square" alt="issues">
   </a>
-  <a href="https://github.com/juejin-cn/juejin-usage/releases">
-    <img src="https://img.shields.io/github/downloads/juejin-cn/juejin-usage/total?style=flat-square" alt="downloads">
+  <a href="https://github.com/K-H-N-L/juejin-usage/releases">
+    <img src="https://img.shields.io/github/downloads/K-H-N-L/juejin-usage/total?style=flat-square" alt="downloads">
   </a>
-  <a href="https://github.com/juejin-cn/juejin-usage/releases/latest">
-    <img src="https://img.shields.io/github/v/release/juejin-cn/juejin-usage?include_prereleases&style=flat-square" alt="release">
+  <a href="https://github.com/K-H-N-L/juejin-usage/releases/latest">
+    <img src="https://img.shields.io/github/v/release/K-H-N-L/juejin-usage?include_prereleases&style=flat-square" alt="release">
   </a>
-  <a href="https://github.com/juejin-cn/juejin-usage/commits/main">
-    <img src="https://img.shields.io/github/last-commit/juejin-cn/juejin-usage?style=flat-square" alt="last-commit">
+  <a href="https://github.com/K-H-N-L/juejin-usage/commits/main">
+    <img src="https://img.shields.io/github/last-commit/K-H-N-L/juejin-usage?style=flat-square" alt="last-commit">
   </a>
 </p>
 
 <p align="center">
-  <a href="https://github.com/juejin-cn/juejin-usage/releases">下载安装包</a>
+  <a href="https://github.com/K-H-N-L/juejin-usage/releases">下载安装包</a>
   ·
   <a href="https://juejin.cn/aiusage/rank">排行榜</a>
   ·
@@ -42,7 +46,7 @@ Juejin Usage 提供 macOS / Windows 桌面客户端，安装即用，无需额�
 
 ### 下载安装
 
-前往 [Releases](https://github.com/juejin-cn/juejin-usage/releases) 页面下载对应系统的安装包（macOS 按芯片选 `.dmg`，Windows 选 `.exe`），安装即用。
+前往 [Releases](https://github.com/K-H-N-L/juejin-usage/releases) 页面下载对应系统的安装包（macOS 按芯片选 `.dmg`，Windows 选 `.exe`），安装即用。
 
 > 💡 macOS 提示「已损坏」？在终端执行 `sudo xattr -dr com.apple.quarantine` 后把应用拖入终端窗口即可。
 
@@ -161,8 +165,8 @@ pnpm install
 
 感谢各位掘友们的贡献支持！🎉 提交 PR 即可上榜
 
-<a href="https://github.com/juejin-cn/juejin-usage/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=juejin-cn/juejin-usage&max=500&columns=20" alt="Juejin Usage contributors" />
+<a href="https://github.com/K-H-N-L/juejin-usage/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=K-H-N-L/juejin-usage&max=500&columns=20" alt="Juejin Usage contributors" />
 </a>
 
 ## 📚 参考项目

@@ -9,7 +9,7 @@ assignees: ''
 <!--
 提需求前请先搜一下 issue 和 Discussions，避免重复。
 如果你还不确定这个需求是否合理、或想先聊聊方案，建议先去 Discussions 开帖：
-https://github.com/juejin-cn/juejin-usage/discussions
+https://github.com/K-H-N-L/juejin-usage/discussions
 -->
 
 ### 🖥️ 涉及的端

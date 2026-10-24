@@ -1,6 +1,6 @@
 # Contributing Guide
 
-源码仓库：[juejin-cn/juejin-usage](https://github.com/juejin-cn/juejin-usage)。
+源码仓库：[juejin-cn/juejin-usage](https://github.com/K-H-N-L/juejin-usage)。
 
 ## 安装依赖的注意事项
 需要 Node.js >= 20。克隆后先在仓库根执行 `pnpm install`。
@@ -34,9 +34,9 @@ pnpm install
 | 场景 | 去处 |
 | --- | --- |
 | 装不上、面板打不开、`LOCAL_RUNTIME_NOT_READY` | 先看 [FAQ](./FAQ.md) |
-| 不确定是不是 Bug、想问用法、想先讨论方案 | [Discussions](https://github.com/juejin-cn/juejin-usage/discussions) |
-| 可复现的缺陷 | [🐞 Bug 报告](https://github.com/juejin-cn/juejin-usage/issues/new?template=bug-report.md) |
-| 新功能 / 改进建议 | [🆕 需求与改进](https://github.com/juejin-cn/juejin-usage/issues/new?template=feature-request.md) |
+| 不确定是不是 Bug、想问用法、想先讨论方案 | [Discussions](https://github.com/K-H-N-L/juejin-usage/discussions) |
+| 可复现的缺陷 | [🐞 Bug 报告](https://github.com/K-H-N-L/juejin-usage/issues/new?template=bug-report.md) |
+| 新功能 / 改进建议 | [🆕 需求与改进](https://github.com/K-H-N-L/juejin-usage/issues/new?template=feature-request.md) |
 
 Bug 报告务必写清**端、版本、操作系统、复现步骤**，缺这几项我们没法定位。日志在 `~/.ai-usage/logs/` 下（`daemon.log` / `sync.log` / `notify.log`）。
 
@@ -52,7 +52,7 @@ Bug 报告务必写清**端、版本、操作系统、复现步骤**，缺这几
 
 跨端改动用影响最大的一端，PR 正文写清范围（例如 `feat/web/share-card`，注明 Desktop renderer 同步改了）。
 
-Fork [juejin-cn/juejin-usage](https://github.com/juejin-cn/juejin-usage) → 按上面开分支 → 提交 Pull Request。
+Fork [juejin-cn/juejin-usage](https://github.com/K-H-N-L/juejin-usage) → 按上面开分支 → 提交 Pull Request。
 
 ## Commit 规范
 

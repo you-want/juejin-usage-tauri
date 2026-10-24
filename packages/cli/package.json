@@ -6,13 +6,13 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/juejin-cn/juejin-usage.git",
+    "url": "git+https://github.com/K-H-N-L/juejin-usage.git",
     "directory": "packages/cli"
   },
   "bugs": {
-    "url": "https://github.com/juejin-cn/juejin-usage/issues"
+    "url": "https://github.com/K-H-N-L/juejin-usage/issues"
   },
-  "homepage": "https://github.com/juejin-cn/juejin-usage#readme",
+  "homepage": "https://github.com/K-H-N-L/juejin-usage#readme",
   "keywords": [
     "ai",
     "token",

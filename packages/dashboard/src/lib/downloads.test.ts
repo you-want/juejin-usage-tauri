@@ -250,7 +250,7 @@ describe('release source selection', () => {
     });
     assert.equal(hasInstallerAssets(gitee.assets), false);
     assert.equal(selectReleaseSource(gitee, github).source, 'github');
-    assert.equal(fallbackReleasePage('github'), 'https://github.com/juejin-cn/juejin-usage/releases');
+    assert.equal(fallbackReleasePage('github'), 'https://github.com/K-H-N-L/juejin-usage/releases');
   });
 
   it('treats Gitee releases without draft as published', () => {

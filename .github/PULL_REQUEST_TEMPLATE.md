@@ -68,7 +68,7 @@
 
 ### ☑️ 自查清单
 
-- [ ] 分支命名符合 `<type>/<end>/<short-desc>`（见 [CONTRIBUTING.md](https://github.com/juejin-cn/juejin-usage/blob/main/CONTRIBUTING.md#分支规范)）
+- [ ] 分支命名符合 `<type>/<end>/<short-desc>`（见 [CONTRIBUTING.md](https://github.com/K-H-N-L/juejin-usage/blob/main/CONTRIBUTING.md#分支规范)）
 - [ ] 已在受影响的端本地自测通过
 - [ ] 若改动了面板 UI：已确认 `packages/dashboard/src` 与 `apps/desktop/src/renderer` 这两份同构但独立的代码是否都需要改
 - [ ] 已执行 `pnpm changeset`（纯文档 / CI 改动可跳过）
