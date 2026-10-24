@@ -74,7 +74,7 @@ if (process.platform !== 'win32') {
 // anyway.)
 const appDistDir = path.join(outDir, 'app', 'dist');
 const cliDistDir = path.dirname(cliDesktopHostDist);
-cpSync(cliDistDir, appDistDir, { recursive: true });
+cpSync(cliDistDir, appDistDir, { recursive: true, dereference: true });
 // The host only ever runs `node .../index.js`; rename desktop-host.js →
 // index.js so Rust's bundled-path lookup stays identical to the old sidecar.
 import { copyFileSync } from 'node:fs';
@@ -89,11 +89,11 @@ if (!existsSync(cliDashboardDist)) {
     'CLI dashboard dist missing — run `pnpm build:cli` (builds dashboard + copies it into cli/dist/dashboard) first',
   );
 }
-cpSync(cliDashboardDist, path.join(appDistDir, 'dashboard'), { recursive: true });
+cpSync(cliDashboardDist, path.join(appDistDir, 'dashboard'), { recursive: true, dereference: true });
 
 // node-app/app/node_modules/@juejin-opensource/jusage-core  (dist + pricing + pkg)
 const coreMod = path.join(outDir, 'app/node_modules/@juejin-opensource/jusage-core');
-cpSync(coreDist, path.join(coreMod, 'dist'), { recursive: true });
+cpSync(coreDist, path.join(coreMod, 'dist'), { recursive: true, dereference: true });
 cpSync(corePkg, path.join(coreMod, 'package.json'));
 // the core's `main`/`exports` point at ./dist; pricing.json ships in dist/.
 
@@ -116,11 +116,17 @@ const nmOut = path.join(outDir, 'app/node_modules');
 /** Forward-slash normalize so marker matching works on Windows paths too. */
 const norm = (p) => path.resolve(p).split(path.sep).join('/');
 
-/** Copy one package dir into nmOut unless it already IS that dir. */
+/**
+ * Copy one package dir into nmOut unless already staged this run.
+ * `dereference: true` is REQUIRED on Windows: pnpm's store entries are
+ * junctions, and copying a junction as a junction makes the destination's
+ * realpath equal the store source — a later stage of the same package then
+ * trips cpSync's same-realpath guard (ERR_FS_CP_EINVAL).
+ */
 function stageDir(srcPkgDir, outRelName) {
   const dest = path.join(nmOut, outRelName);
-  if (norm(srcPkgDir) === norm(dest)) return;
-  cpSync(srcPkgDir, dest, { recursive: true, force: true });
+  if (existsSync(dest)) return;
+  cpSync(srcPkgDir, dest, { recursive: true, force: true, dereference: true });
 }
 
 /** `".pnpm/<name>@<ver>"` entries for package `name`, newest first. */
@@ -175,6 +181,15 @@ for (const name of runtimeDeps) {
     if (i >= 0) {
       const pkgPath = normalized.slice(0, i + marker.length);
       stageDir(realpathSync(pkgPath), name);
+      // Stage the store entry's own nested deps too: they are the versions
+      // THIS consumer resolves (proper-lockfile@4.1.2 needs signal-exit@3 —
+      // the store also holds a hoisted-unrelated @4 that must not win).
+      const beforeMarker = normalized.slice(0, i);
+      const pnpmIdx = beforeMarker.lastIndexOf('/.pnpm/');
+      if (pnpmIdx >= 0) {
+        const entry = beforeMarker.slice(pnpmIdx + '/.pnpm/'.length);
+        if (entry && !entry.includes('/')) stageStoreEntryTree(entry);
+      }
       continue;
     }
   }
