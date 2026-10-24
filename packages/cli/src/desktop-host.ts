@@ -50,12 +50,14 @@ import {
   watchRuntimeSignals,
   writeSyncDone,
   BucketStore,
+  petsDir,
   type AggregateCache,
   type SyncResult,
   type TudConfig,
 } from '@juejin-opensource/jusage-core';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createDesktopPetsApi } from './desktop-pets-api.js';
 import { evictCliAutostart } from './evict-cli-autostart.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -257,6 +259,10 @@ export async function boot(): Promise<void> {
 
   const host = '127.0.0.1';
   const port = resolveDesktopHostPort();
+  // Desktop-shell pet catalog (local scan / community list / install /
+  // spritesheet serving). Sidecar-only routes; the shared local-api contract
+  // stays upstream-pure.
+  app.route('/functions/tud-desktop-pets', createDesktopPetsApi(petsDir(dir)));
   const httpServer = createHttpServer({ honoApp: app, staticDir: resolveDashboardDir(), host, port });
 
   // Bind; if the default port is taken, ask the OS for one.

@@ -76,6 +76,9 @@ export interface TudBridge {
   setDashboardRange(range: string): Promise<void>;
   onDashboardRange(cb: (range: string) => void): () => void;
 
+  /** Loopback atlas URL for a locally installed pet; null for built-ins. */
+  desktopPetSpritesheetUrl?(id: string): Promise<string | null>;
+
   setDesktopPetMouseIgnored(ignored: boolean): Promise<void>;
   beginDesktopPetDrag(): Promise<void>;
   endDesktopPetDrag(): Promise<void>;

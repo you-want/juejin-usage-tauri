@@ -595,9 +595,13 @@ pub fn desktop_pet_set_enabled(
 pub fn desktop_pet_set_selected(
     app: tauri::AppHandle,
     state: tauri::State<'_, PrefsState>,
+    sidecar: tauri::State<'_, crate::sidecar::SidecarState>,
     selected_pet_id: String,
 ) -> Result<DesktopPetPref, String> {
-    if !matches!(selected_pet_id.as_str(), "hawking" | "yoyo" | "click") {
+    // Built-ins plus any locally installed package (validated by the sidecar
+    // scanner); remote catalog entries must be installed before selection,
+    // exactly like Electron.
+    if !crate::pet_catalog::is_selectable_pet(&sidecar, &selected_pet_id) {
         return Err("unknown desktop pet".to_string());
     }
     let next = state.patch(|p| {

@@ -19,11 +19,21 @@ mod dashboard_range;
 mod deeplink;
 mod instance;
 mod pet;
+mod pet_catalog;
 mod prefs;
 mod sidecar;
 mod theme;
 mod tray;
 mod updater;
+
+/// The shared data directory's pets root (`~/.ai-usage/pets`), matching core
+/// `petsDir(DEFAULT_DATA_DIR)` that the sidecar scanner reads.
+pub fn pets_root() -> std::path::PathBuf {
+    let home = std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .unwrap_or_else(|_| ".".to_string());
+    std::path::PathBuf::from(home).join(".ai-usage").join("pets")
+}
 
 use crate::bridge::TUD_BRIDGE_INIT_SCRIPT;
 use crate::dashboard_range::DashboardRangeState;
@@ -568,6 +578,11 @@ pub fn run() {
             pet::desktop_pet_begin_drag,
             pet::desktop_pet_end_drag,
             pet::pet_show_context_menu,
+            pet_catalog::desktop_pet_refresh_catalog,
+            pet_catalog::desktop_pet_fetch_remote_catalog,
+            pet_catalog::desktop_pet_install_remote,
+            pet_catalog::open_desktop_pet_directory,
+            pet_catalog::desktop_pet_spritesheet_url,
             updater::auto_update_get_state,
             updater::auto_update_check,
             updater::auto_update_install,

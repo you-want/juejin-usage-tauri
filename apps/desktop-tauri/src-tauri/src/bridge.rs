@@ -173,6 +173,11 @@ pub const TUD_BRIDGE_INIT_SCRIPT: &str = r#"
     beginDesktopPetDrag: function () { return invoke("desktop_pet_begin_drag"); },
     endDesktopPetDrag: function () { return invoke("desktop_pet_end_drag"); },
     showPetContextMenu: function (x, y) { return invoke("pet_show_context_menu", { x: x, y: y }); },
+    refreshDesktopPetCatalog: function () { return invoke("desktop_pet_refresh_catalog"); },
+    fetchRemoteDesktopPetCatalog: function (force) { return invoke("desktop_pet_fetch_remote_catalog", { force: force === true }); },
+    installRemoteDesktopPet: function (id) { return invoke("desktop_pet_install_remote", { id: id }); },
+    openDesktopPetDirectory: function () { return invoke("open_desktop_pet_directory"); },
+    desktopPetSpritesheetUrl: function (id) { return invoke("desktop_pet_spritesheet_url", { id: id }); },
     onDesktopPetAnimation: function (cb) {
       return listenOnce("desktop-pet:animation", function (p) { return p === "idle" || p === "running-left" || p === "running-right"; }, function (p) { cb(p); });
     },

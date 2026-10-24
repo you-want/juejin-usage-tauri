@@ -191,6 +191,14 @@ function createTudBridge() {
     // native menu at the cursor.
     showPetContextMenu: (x: number, y: number) =>
       invoke("pet_show_context_menu", { x, y }),
+    refreshDesktopPetCatalog: () => invoke("desktop_pet_refresh_catalog"),
+    fetchRemoteDesktopPetCatalog: (force?: boolean) =>
+      invoke("desktop_pet_fetch_remote_catalog", { force: force === true }),
+    installRemoteDesktopPet: (id: string) =>
+      invoke("desktop_pet_install_remote", { id }),
+    openDesktopPetDirectory: () => invoke("open_desktop_pet_directory"),
+    desktopPetSpritesheetUrl: (id: string) =>
+      invoke<string | null>("desktop_pet_spritesheet_url", { id }),
     onDesktopPetAnimation: (callback: (animation: PetAnimation) => void) =>
       listenOnce(
         "desktop-pet:animation",

@@ -89,9 +89,10 @@
 | 右键菜单（显示/同步/设置(pet tab)/退出宠物） | ✅ | ✅ | ✅ | 渲染层上报坐标 + 原生菜单 `pet.rs:518-562` |
 | 偏好（scale 0.35-0.75 / 帧 120-320ms / autoMove / 庆祝开关时长） | ✅ | ✅ | ✅ | `prefs.rs` + clamp 一致 |
 | 同步庆祝气泡（token 增量 / 破纪录 / 连续天数） | ✅ | 断链 | 🟡 | 见 §3 SYNCED payload |
-| **本地宠物目录扫描**（`~/.ai-usage/pets/` + pet.json/spritesheet 校验 + invalidPets 报告） | `desktop-pet-scanner.ts` | 无（仅内置 3 只白名单） | ❌ | |
-| **远程社区宠物目录 + 安装**（Gitee/GitHub 列目录、staging 原子安装、per-id 锁、自动选中） | `desktop-pet-remote.ts` | 无 | ❌ | |
-| 本地宠物图集加载协议（`pet-asset://`） | ✅ | 无 | ❌ | Tauri 可用 `convertFileSrc` / 自定义协议等价实现 |
+| **本地宠物目录扫描**（`~/.ai-usage/pets/` + pet.json/spritesheet 校验 + invalidPets 报告） | `desktop-pet-scanner.ts` | ✅（2026-10-24，scanner 移植进 sidecar `/functions/tud-desktop-pets/catalog`） | ✅ | |
+| **远程社区宠物目录 + 安装**（Gitee/GitHub 列目录、staging 原子安装、per-id 锁、自动选中） | `desktop-pet-remote.ts` | ✅（2026-10-24，remote/install 移植进 sidecar；实测安装 rimuru 成功） | ✅ | |
+| 本地宠物图集加载协议（`pet-asset://`） | ✅ | ✅（等价方案：sidecar 回环 URL 流式返回 WebP，`desktop_pet_spritesheet_url` 命令） | ✅ | |
+| 选中宠物白名单 | 内置 | ✅ 放宽为「内置 ∪ 本地目录」（sidecar 校验） | ✅ | |
 | 选中宠物被删自动回落 hawking | ✅ | 无 | ❌ | 随目录扫描一并做 |
 | 快速开关串行化（防 loadURL/destroy 竞态） | ✅ | ✅（gen 计数） | ✅ | |
 

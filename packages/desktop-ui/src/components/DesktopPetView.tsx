@@ -10,6 +10,7 @@ import { useAnimatedNumber } from '../hooks/useAnimatedNumber';
 import { fetchDaily } from '../lib/api';
 import { formatTokens, formatTokensExact, formatUsd } from '../lib/format';
 import { getDesktopPet, loadPetSpritesheet } from '../pets';
+import { tud } from '../lib/tud-bridge';
 import {
   DASHBOARD_RANGE_DAYS,
   DASHBOARD_RANGE_LABELS,
@@ -142,12 +143,21 @@ export function DesktopPetView({
   useEffect(() => { alphaCanvas.current = null; }, [selectedPetId]);
 
   // Load only the selected pet's atlas; unchosen spritesheets stay unloaded.
+  // Locally installed pets resolve through the shell (loopback URL streamed by
+  // the Node sidecar); built-ins load from the bundled assets.
   useEffect(() => {
     let cancelled = false;
     setSpritesheetUrl(null);
-    void loadPetSpritesheet(selectedPetId).then((url) => {
-      if (!cancelled) setSpritesheetUrl(url);
-    });
+    void (async () => {
+      const override = await tud()?.desktopPetSpritesheetUrl?.(selectedPetId).catch(() => null);
+      if (cancelled) return;
+      if (override) {
+        setSpritesheetUrl(override);
+        return;
+      }
+      const bundled = await loadPetSpritesheet(selectedPetId);
+      if (!cancelled) setSpritesheetUrl(bundled);
+    })();
     return () => {
       cancelled = true;
     };

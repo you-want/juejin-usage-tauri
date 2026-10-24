@@ -90,6 +90,46 @@ declare global {
       endDesktopPetDrag: () => void;
       /** Tauri: right-click on the pet pops the native menu (Electron auto). */
       showPetContextMenu?: (x: number, y: number) => void;
+      /** Built-ins + local scan of `~/.ai-usage/pets/` (sidecar proxied). */
+      refreshDesktopPetCatalog: () => Promise<{
+        pets: Array<{
+          id: string;
+          displayName: string;
+          description: string;
+          source: 'builtin' | 'local' | 'remote';
+          previewUrl?: string;
+        }>;
+        invalidPets: Array<{ directory: string; reason: string }>;
+        selectedPetId: string;
+        remoteError?: string | null;
+      }>;
+      fetchRemoteDesktopPetCatalog: (force?: boolean) => Promise<{
+        pets: Array<{
+          id: string;
+          displayName: string;
+          description: string;
+          source: 'builtin' | 'local' | 'remote';
+          previewUrl?: string;
+        }>;
+        invalidPets: Array<{ directory: string; reason: string }>;
+        selectedPetId: string;
+        remoteError?: string | null;
+      }>;
+      installRemoteDesktopPet: (id: string) => Promise<{
+        pets: Array<{
+          id: string;
+          displayName: string;
+          description: string;
+          source: 'builtin' | 'local' | 'remote';
+          previewUrl?: string;
+        }>;
+        invalidPets: Array<{ directory: string; reason: string }>;
+        selectedPetId: string;
+        remoteError?: string | null;
+      }>;
+      openDesktopPetDirectory: () => Promise<void>;
+      /** Loopback URL for a local pet's atlas; null for built-ins. */
+      desktopPetSpritesheetUrl: (id: string) => Promise<string | null>;
       onDesktopPetAnimation: (
         callback: (animation: 'idle' | 'running-left' | 'running-right') => void,
       ) => () => void;

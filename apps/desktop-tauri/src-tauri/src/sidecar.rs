@@ -355,3 +355,70 @@ pub fn trigger_sync(state: &SidecarState) {
         let _ = stream.read(&mut _resp);
     });
 }
+
+/// Blocking GET/POST to the sidecar's local-api over raw loopback TCP
+/// (dependency-free, like `trigger_sync`). Returns `(status, body_text)`.
+/// Used by the pet-catalog proxy commands.
+pub fn http_call(
+    state: &SidecarState,
+    method: &str,
+    path: &str,
+    body: Option<&str>,
+) -> Result<(u16, String), String> {
+    use std::io::{Read, Write};
+    let port = state.port.lock().unwrap().unwrap_or(DEFAULT_DESKTOP_PORT);
+    let addr = std::net::SocketAddr::new(std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST), port);
+    let body_bytes: &[u8] = body.map(|b| b.as_bytes()).unwrap_or(&[]);
+    let mut stream = std::net::TcpStream::connect_timeout(&addr, std::time::Duration::from_secs(5))
+        .map_err(|e| format!("connect sidecar {addr}: {e}"))?;
+    let req = format!(
+        "{method} {path} HTTP/1.1\r\n\
+         Host: 127.0.0.1:{port}\r\n\
+         Content-Type: application/json\r\n\
+         Content-Length: {}\r\n\
+         Connection: close\r\n\r\n",
+        body_bytes.len(),
+    );
+    stream
+        .write_all(req.as_bytes())
+        .and_then(|_| stream.write_all(body_bytes))
+        .map_err(|e| format!("write sidecar request: {e}"))?;
+    let mut buf = Vec::new();
+    stream
+        .read_to_end(&mut buf)
+        .map_err(|e| format!("read sidecar response: {e}"))?;
+    let raw = String::from_utf8_lossy(&buf).into_owned();
+    let (head, body_text) = match raw.find("\r\n\r\n") {
+        Some(i) => (raw[..i].to_string(), raw[i + 4..].to_string()),
+        None => (raw.clone(), String::new()),
+    };
+    let status = head
+        .lines()
+        .next()
+        .and_then(|l| l.split_whitespace().nth(1))
+        .and_then(|s| s.parse::<u16>().ok())
+        .unwrap_or(0);
+    Ok((status, body_text))
+}
+
+/// Unwrap a sidecar `{success, message, data}` envelope; errors carry the
+/// server's message so the UI can surface it verbatim.
+pub fn envelope_data(status: u16, body: &str) -> Result<serde_json::Value, String> {
+    if status >= 400 {
+        return Err(format!("sidecar HTTP {status}"));
+    }
+    let parsed: serde_json::Value = if body.is_empty() {
+        serde_json::Value::Null
+    } else {
+        serde_json::from_str(body).map_err(|e| format!("parse sidecar response: {e}"))?
+    };
+    if parsed.get("success").and_then(|v| v.as_bool()) == Some(true) {
+        Ok(parsed.get("data").cloned().unwrap_or(serde_json::Value::Null))
+    } else {
+        Err(parsed
+            .get("message")
+            .and_then(|m| m.as_str())
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| "SIDECAR_REQUEST_FAILED".to_string()))
+    }
+}

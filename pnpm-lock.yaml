@@ -231,6 +231,9 @@ importers:
       '@juejin-opensource/jusage-core':
         specifier: workspace:*
         version: link:../core
+      hono:
+        specifier: ^4.7.5
+        version: 4.12.28
     devDependencies:
       '@juejin-opensource/jusage-dashboard':
         specifier: workspace:*
