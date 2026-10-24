@@ -141,6 +141,10 @@ pub fn apply(open_at_login: bool, launch_hidden: bool) -> Result<(), String> {
 }
 
 /// Whether the login item is currently registered (OS state, not the pref).
+/// Reserved for the settings「开机自启」toggle reading the real OS state
+/// (currently the toggle reports the pref; wiring kept for parity with
+/// Electron's getOpenAtLogin semantics).
+#[allow(dead_code)]
 pub fn is_enabled() -> bool {
     #[cfg(target_os = "macos")]
     {
