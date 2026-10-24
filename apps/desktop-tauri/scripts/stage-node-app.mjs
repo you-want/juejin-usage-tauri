@@ -121,7 +121,9 @@ const nmOut = path.join(outDir, 'app/node_modules');
  */
 function stageFromStore(storeEntry, outName) {
   const src = path.join(repoRoot, 'node_modules/.pnpm', storeEntry, 'node_modules', outName);
-  cpSync(src, path.join(nmOut, outName), { recursive: true });
+  const dest = path.join(nmOut, outName);
+  if (path.resolve(src) === path.resolve(dest)) return;
+  cpSync(src, dest, { recursive: true });
 }
 
 /** ".pnpm/<name>@<ver>[/...]" entries whose package name === `name`. */
@@ -171,7 +173,10 @@ for (const name of runtimeDeps) {
   }
   for (const entry of entries) {
     const pkgDir = path.join(repoRoot, 'node_modules/.pnpm', entry, 'node_modules', name);
-    cpSync(pkgDir, path.join(nmOut, name), { recursive: true, force: true });
+    const pkgDest = path.join(nmOut, name);
+    if (path.resolve(pkgDir) !== path.resolve(pkgDest)) {
+      cpSync(pkgDir, pkgDest, { recursive: true, force: true });
+    }
     // Carry nested deps of this store entry too (proper-lockfile@4.1.2 nests
     // signal-exit@3/graceful-fs/retry inside its own node_modules).
     const nested = path.join(repoRoot, 'node_modules/.pnpm', entry, 'node_modules');
@@ -181,11 +186,17 @@ for (const name of runtimeDeps) {
         // scoped nested dep
         const scope = path.join(nested, nestedName);
         for (const inner of readdirSync(scope)) {
-          cpSync(path.join(scope, inner), path.join(nmOut, nestedName, inner), { recursive: true, force: true });
+          const s = path.join(scope, inner);
+          const d = path.join(nmOut, nestedName, inner);
+          if (path.resolve(s) === path.resolve(d)) continue;
+          cpSync(s, d, { recursive: true, force: true });
         }
         continue;
       }
-      cpSync(path.join(nested, nestedName), path.join(nmOut, nestedName), { recursive: true, force: true });
+      const s = path.join(nested, nestedName);
+      const d = path.join(nmOut, nestedName);
+      if (path.resolve(s) === path.resolve(d)) continue;
+      cpSync(s, d, { recursive: true, force: true });
     }
   }
 }
