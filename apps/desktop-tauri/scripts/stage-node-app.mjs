@@ -113,91 +113,81 @@ const runtimeDeps = [...new Set([...coreDeps, ...transitiveDeps])];
 const coreDir = path.join(repoRoot, 'packages/core');
 const nmOut = path.join(outDir, 'app/node_modules');
 
-/**
- * Stage the exact store copy of `storeEntry` (".pnpm/<name>@<ver>") plus its
- * own nested deps — mirrors what core resolves at runtime under pnpm's
- * isolated layout, so a hoisted duplicate (signal-exit@4 vs proper-lockfile's
- * @3) can never shadow the wrong version into the bundle.
- */
-function stageFromStore(storeEntry, outName) {
-  const src = path.join(repoRoot, 'node_modules/.pnpm', storeEntry, 'node_modules', outName);
-  const dest = path.join(nmOut, outName);
-  if (path.resolve(src) === path.resolve(dest)) return;
-  cpSync(src, dest, { recursive: true });
+/** Forward-slash normalize so marker matching works on Windows paths too. */
+const norm = (p) => path.resolve(p).split(path.sep).join('/');
+
+/** Copy one package dir into nmOut unless it already IS that dir. */
+function stageDir(srcPkgDir, outRelName) {
+  const dest = path.join(nmOut, outRelName);
+  if (norm(srcPkgDir) === norm(dest)) return;
+  cpSync(srcPkgDir, dest, { recursive: true, force: true });
 }
 
-/** ".pnpm/<name>@<ver>[/...]" entries whose package name === `name`. */
+/** `".pnpm/<name>@<ver>"` entries for package `name`, newest first. */
 function storeEntriesFor(name) {
   const dir = path.join(repoRoot, 'node_modules/.pnpm');
   if (!existsSync(dir)) return [];
   return readdirSync(dir)
-    .filter((entry) => entry === `${name}@${entry.slice(name.length + 1)}` || entry.startsWith(`${name}@`))
+    .filter((entry) => entry.startsWith(`${name}@`))
     .filter((entry) => !entry.endsWith('-peer'))
     .sort(compareVersionsDesc);
 }
 
-for (const name of runtimeDeps) {
-  if (coreDeps.includes(name)) {
-    // Direct dep of core: ask core's own resolution which store copy it uses.
-    let resolved = null;
-    try {
-      resolved = execFileSync(
-        process.execPath,
-        [
-          '-e',
-          'console.log(require.resolve(process.argv[1], { paths: [process.argv[2]] }))',
-          name,
-          coreDir,
-        ],
-        { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] },
-      ).trim();
-    } catch {
-      // fall through to the store scan below
-    }
-    if (resolved) {
-      const marker = `/node_modules/${name}`;
-      const i = resolved.lastIndexOf(marker);
-      if (i >= 0) {
-        cpSync(realpathSync(resolved.slice(0, i + marker.length)), path.join(nmOut, name), { recursive: true });
-        continue;
+/** Stage every package inside one store entry's node_modules tree. */
+function stageStoreEntryTree(entry) {
+  const nmRoot = path.join(repoRoot, 'node_modules/.pnpm', entry, 'node_modules');
+  for (const item of readdirSync(nmRoot)) {
+    if (item.startsWith('.')) continue;
+    if (item.startsWith('@')) {
+      for (const inner of readdirSync(path.join(nmRoot, item))) {
+        stageDir(path.join(nmRoot, item, inner), path.join(item, inner));
       }
+    } else {
+      stageDir(path.join(nmRoot, item), item);
+    }
+  }
+}
+
+
+/** Stage every package inside one store entry's node_modules tree. */
+
+for (const name of runtimeDeps) {
+  // Direct dep of core: ask core's own resolution for the exact store copy.
+  let resolved = null;
+  try {
+    resolved = execFileSync(
+      process.execPath,
+      [
+        '-e',
+        'console.log(require.resolve(process.argv[1], { paths: [process.argv[2]] }))',
+        name,
+        coreDir,
+      ],
+      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] },
+    ).trim();
+  } catch {
+    // transitive deps land here → store scan below
+  }
+  if (resolved) {
+    const marker = `/node_modules/${name}`;
+    const normalized = norm(resolved);
+    const i = normalized.lastIndexOf(marker);
+    if (i >= 0) {
+      const pkgPath = normalized.slice(0, i + marker.length);
+      stageDir(realpathSync(pkgPath), name);
+      continue;
     }
   }
 
-  // Transitive dep (or resolution failed): copy EVERY store version that the
-  // resolved dependency tree can reach — simplest correct rule: all versions
-  // of that name in the store (small: 1-2 each), preserving nested layouts.
+  // Transitive dep: stage the full node_modules tree of every store entry for
+  // that name — carries nested deps (proper-lockfile nests signal-exit@3)
+  // with the versions core actually resolves at runtime.
   const entries = storeEntriesFor(name);
   if (entries.length === 0) {
     throw new Error(`missing runtime dep for sidecar bundle: ${name}`);
   }
   for (const entry of entries) {
-    const pkgDir = path.join(repoRoot, 'node_modules/.pnpm', entry, 'node_modules', name);
-    const pkgDest = path.join(nmOut, name);
-    if (path.resolve(pkgDir) !== path.resolve(pkgDest)) {
-      cpSync(pkgDir, pkgDest, { recursive: true, force: true });
-    }
-    // Carry nested deps of this store entry too (proper-lockfile@4.1.2 nests
-    // signal-exit@3/graceful-fs/retry inside its own node_modules).
-    const nested = path.join(repoRoot, 'node_modules/.pnpm', entry, 'node_modules');
-    for (const nestedName of readdirSync(nested)) {
-      if (nestedName === name || nestedName.startsWith('.')) continue;
-      if (nestedName.startsWith('@')) {
-        // scoped nested dep
-        const scope = path.join(nested, nestedName);
-        for (const inner of readdirSync(scope)) {
-          const s = path.join(scope, inner);
-          const d = path.join(nmOut, nestedName, inner);
-          if (path.resolve(s) === path.resolve(d)) continue;
-          cpSync(s, d, { recursive: true, force: true });
-        }
-        continue;
-      }
-      const s = path.join(nested, nestedName);
-      const d = path.join(nmOut, nestedName);
-      if (path.resolve(s) === path.resolve(d)) continue;
-      cpSync(s, d, { recursive: true, force: true });
-    }
+    stageStoreEntryTree(entry);
   }
 }
 
@@ -205,6 +195,8 @@ console.log(`[stage-node-app] staged Tauri desktop-host runtime → ${path.relat
 console.log(`[stage-node-app]   node runtime: ${nodeBin} (host arch)`);
 console.log(`[stage-node-app]   desktop-host: ${cliDesktopHostDist} (→ app/dist/index.js)`);
 console.log(`[stage-node-app]   deps:         ${runtimeDeps.map(([n]) => n).join(', ')}`);
+
+/** Semver-ish descending sort: higher version first (best effort). */
 
 /** Semver-ish descending sort: higher version first (best effort). */
 function compareVersionsDesc(a, b) {
