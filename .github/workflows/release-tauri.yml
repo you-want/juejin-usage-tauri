@@ -47,7 +47,11 @@ jobs:
           workspaces: apps/desktop-tauri/src-tauri
 
       - name: Install deps
-        run: pnpm install --frozen-lockfile
+        env:
+          # Tauri 发版不构建 Electron 应用：跳过 electron 二进制下载
+          # （apps/desktop/.npmrc 的 npmmirror 镜像对海外 runner 不稳定）
+          ELECTRON_SKIP_BINARY_DOWNLOAD: 1
+        run: pnpm install --frozen-lockfile || (sleep 20 && pnpm install --frozen-lockfile)
 
       - name: Build core + cli
         run: pnpm run build:cli
