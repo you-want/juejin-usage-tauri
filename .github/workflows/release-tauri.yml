@@ -79,10 +79,15 @@ jobs:
           find "$BUNDLE/macos" -name '*.dmg' -exec cp {} dist-upload/ \; 2>/dev/null || true
           find "$BUNDLE/macos" -name '*.app.tar.gz*' -exec cp {} dist-upload/ \; 2>/dev/null || true
           find "$BUNDLE/nsis" \( -name '*.exe' -o -name '*.zip' -o -name '*.sig' \) -exec cp {} dist-upload/ \; 2>/dev/null || true
-          # CLI 生成的 latest.json（单平台）重命名为 latest.<platform>.json 供合并
-          for f in "$BUNDLE"/latest.json; do
-            [ -f "$f" ] && cp "$f" "dist-upload/latest.${{ matrix.platform }}.json"
-          done
+          # CLI 生成的 latest.json（单平台，位于各平台 bundle 子目录）重命名为
+          # latest.<platform>.json 供合并
+          FOUND=$(find "$BUNDLE" -name latest.json -not -path '*/node-app/*' | head -1)
+          if [ -n "$FOUND" ]; then
+            cp "$FOUND" "dist-upload/latest.${{ matrix.platform }}.json"
+          else
+            echo "::warning::no latest.json under $BUNDLE"
+            find "$BUNDLE" -maxdepth 2 -type d || true
+          fi
           ls -la dist-upload
 
       - uses: actions/upload-artifact@v4
@@ -106,7 +111,7 @@ jobs:
         run: |
           node -e '
           const fs = require("fs");
-          const parts = fs.readdirSync("artifacts").filter(f => /^latest\..+\.json$/.test(f));
+          const parts = fs.readdirSync("artifacts").filter(f => /^latest\.(?!json$).+\.json$/.test(f));
           if (parts.length === 0) { console.error("no per-platform latest.json found"); process.exit(1); }
           const merged = { version: "", pub_date: "", platforms: {} };
           for (const part of parts) {
