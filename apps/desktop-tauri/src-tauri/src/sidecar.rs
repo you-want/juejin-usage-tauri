@@ -94,12 +94,27 @@ fn app_sibling_runtime(rel: &str) -> Option<std::path::PathBuf> {
 
 /// Resolve the compiled sidecar entry to run.
 ///
-/// Priority: the `TUD_SIDECAR_SCRIPT` env (dev override), then the app-sibling
-/// `node-app/app/dist/index.js` (see `node_bin`), then the bundled resource
-/// copy, then a repo-relative fallback for dev.
+/// Priority: the `TUD_SIDECAR_SCRIPT` env (override), then — in dev — the
+/// repo's live CLI build (`packages/cli/dist/desktop-host.js`) so `tauri dev`
+/// always runs current code, then the app-sibling `node-app/app/dist/index.js`
+/// (see `node_bin`), then the bundled resource copy, then the repo-relative
+/// fallback.
+///
+/// The dev-first order matters: `tauri dev`'s exe dir IS `target/debug`, which
+/// can also hold a stale `node-app/` staging from an earlier
+/// `pnpm build:desktop:tauri`. Without the dev branch that staging silently
+/// hijacks dev runs (observed: subscription routes missing after an upstream
+/// merge because the staged sidecar was weeks old).
 fn sidecar_script(app: &AppHandle) -> Option<String> {
     if let Ok(custom) = std::env::var("TUD_SIDECAR_SCRIPT") {
         return Some(custom);
+    }
+    // Dev: prefer the repo's live CLI build over any stale staging.
+    if cfg!(dev) {
+        let repo_host = repo_cli_entry()?;
+        if std::path::Path::new(&repo_host).exists() {
+            return Some(repo_host);
+        }
     }
     if let Some(candidate) = app_sibling_runtime("node-app/app/dist/index.js") {
         if candidate.exists() {
@@ -111,9 +126,13 @@ fn sidecar_script(app: &AppHandle) -> Option<String> {
             return Some(bundled.to_string_lossy().into_owned());
         }
     }
-    // Dev fallback: locate the compiled CLI desktop-host entry relative to the
-    // cargo crate dir. CARGO_MANIFEST_DIR = <repo>/apps/desktop-tauri/src-tauri,
-    // so go up three to the workspace root, then into the CLI's dist.
+    // Dev fallback (repo CLI entry missing): let the spawn fail loudly below.
+    repo_cli_entry()
+}
+
+/// `<repo>/packages/cli/dist/desktop-host.js`, resolved from the cargo crate
+/// dir (CARGO_MANIFEST_DIR = <repo>/apps/desktop-tauri/src-tauri).
+fn repo_cli_entry() -> Option<String> {
     let crate_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     let repo_root = crate_dir
         .parent() // apps/desktop-tauri

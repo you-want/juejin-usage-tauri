@@ -2,7 +2,39 @@ import type { SubscriptionReadOptions, SubscriptionSnapshotByChannel } from '@ju
 import { isCliBackend } from './api';
 import { createSubscriptionClient } from './subscription-request';
 
-const read = createSubscriptionClient(isCliBackend());
+/**
+ * Desktop shells (Tauri main window) load the dashboard from a non-HTTP
+ * origin (`tauri://localhost`), so a bare relative fetch can never reach the
+ * sidecar's local-api. Route through the `window.tud` bridge when present;
+ * plain `fetch` otherwise (CLI panel / web are same-origin or proxied).
+ */
+function bridgeAwareFetcher(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+  const bridgeRequest = (
+    (window as Window & {
+      tud?: {
+        api?: {
+          request?: (
+            path: string,
+            init?: { method?: string },
+          ) => Promise<{ status: number; body: unknown }>;
+        };
+      };
+    }).tud?.api?.request
+  );
+  if (typeof bridgeRequest !== 'function' || typeof input !== 'string') {
+    return fetch(input, init);
+  }
+  return bridgeRequest(input, { method: init?.method ?? 'GET' }).then(
+    ({ status, body }) =>
+      ({
+        ok: status >= 200 && status < 300,
+        status,
+        json: async () => body,
+      }) as unknown as Response,
+  );
+}
+
+const read = createSubscriptionClient(isCliBackend(), bridgeAwareFetcher as typeof fetch);
 
 export const subscriptionApi = {
   getCodexSubscription: (options?: SubscriptionReadOptions): Promise<SubscriptionSnapshotByChannel['codex']> => read('codex', options),

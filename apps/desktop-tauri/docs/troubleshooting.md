@@ -80,6 +80,24 @@
 
 ---
 
+## 案例 3：dev 跑的是旧代码——`target/debug/node-app/` staging 劫持 sidecar（2026-10-24）
+
+### 症状签名
+
+- 明明重新构建过（`build:packages` / 合并上游后），应用里却缺新功能/新端点——例如本案例：`curl http://127.0.0.1:8462/functions/tud-subscription/claude` 返回 404，而 `packages/core/dist` 里明明有该路由
+- `lsof -ti :8462` 看到的 sidecar 进程路径是 `src-tauri/target/debug/node-app/node/node ... node-app/app/dist/index.js`（staged 副本），而不是 dev 应用的 `packages/cli/dist/desktop-host.js`
+
+### 根因
+
+`tauri dev` 的可执行文件目录就是 `target/debug`。曾经跑过 `pnpm build:desktop:tauri` 的话，`stage-node-app.mjs` 会在那里留下 `node-app/` staging；`sidecar.rs` 原解析顺序把「exe 同级 staging」排在 dev 兜底（repo 的 `packages/cli/dist`）**之前**，于是 dev 一直跑着几周前的旧 staging。
+
+### 解法与预防
+
+- 已修：`sidecar.rs` 在 `cfg!(dev)` 时**优先**使用 repo 的 `packages/cli/dist/desktop-host.js`，staging 仅 release 生效（2026-10-24）。
+- 手动清理：`rm -rf apps/desktop-tauri/src-tauri/target/debug/node-app`；怀疑 sidecar 跑旧代码时先 `lsof -ti :8462` 看进程路径。
+
+---
+
 ## 排查工具箱
 
 | 工具 | 用法 |
