@@ -61,9 +61,12 @@ if (!existsSync(path.join(coreDist, 'index.js'))) {
 // (c) wipe + recreate the staging dir (a stale tree must not leak into the bundle).
 rmSync(outDir, { recursive: true, force: true });
 
-// node-app/node
-cpSync(nodeBin, path.join(outDir, 'node', 'node'));
-chmodSync(path.join(outDir, 'node', 'node'), 0o755);
+// node-app/node（Windows 必须带 .exe 后缀，sidecar.rs 按平台名解析）
+const nodeRel = process.platform === 'win32' ? ['node', 'node.exe'] : ['node', 'node'];
+cpSync(nodeBin, path.join(outDir, ...nodeRel));
+if (process.platform !== 'win32') {
+  chmodSync(path.join(outDir, ...nodeRel), 0o755);
+}
 
 // node-app/app/dist  (the whole compiled CLI dist/ — desktop-host.js,
 // evict-cli-autostart.js + their transitive imports like service-linux.js /

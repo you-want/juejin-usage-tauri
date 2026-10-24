@@ -119,7 +119,7 @@ fn global_cursor() -> Option<(f64, f64)> {
         if unsafe { GetCursorPos(&mut p) } == 0 {
             return None;
         }
-        let scale = PRIMARY_SCALE.get().map(|s| s.load(std::sync::atomic::Ordering::Relaxed)).unwrap_or(1.0);
+        let scale = PRIMARY_SCALE.get().copied().unwrap_or(1.0f64);
         Some((p.x as f64 / scale, p.y as f64 / scale))
     }
 
@@ -130,10 +130,10 @@ fn global_cursor() -> Option<(f64, f64)> {
 }
 
 /// Primary-monitor scale captured at setup (the drag poll runs off-thread;
-/// a Win32 monitor query from there is not worth the unsafe surface).
+/// a Win32 monitor query from there is not worth the unsafe surface). Written
+/// once, read-only afterwards — `OnceLock<f64>` (AtomicF64 is not on stable).
 #[cfg(target_os = "windows")]
-pub static PRIMARY_SCALE: std::sync::OnceLock<std::sync::atomic::AtomicF64> =
-    std::sync::OnceLock::new();
+pub static PRIMARY_SCALE: std::sync::OnceLock<f64> = std::sync::OnceLock::new();
 
 /// Logical work-area of the monitor the pet window currently sits on.
 fn monitor_work_area(w: &WebviewWindow) -> Option<(f64, f64, f64, f64)> {

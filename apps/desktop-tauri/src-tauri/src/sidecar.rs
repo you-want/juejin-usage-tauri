@@ -70,16 +70,22 @@ impl Default for SidecarState {
 /// it resolves to a directory that lacks `Resources/node-app`, while a
 /// *staged* sibling copy may well exist. Checking the sibling first keeps both
 /// layouts working with one path.
+/// Bundled node binary name — Windows executables need the `.exe` suffix.
+#[cfg(target_os = "windows")]
+const NODE_BIN_REL: &str = "node-app/node/node.exe";
+#[cfg(not(target_os = "windows"))]
+const NODE_BIN_REL: &str = "node-app/node/node";
+
 fn node_bin(app: &AppHandle) -> Option<String> {
     if let Ok(custom) = std::env::var("TUD_NODE_BIN") {
         return Some(custom);
     }
-    if let Some(candidate) = app_sibling_runtime("node-app/node/node") {
+    if let Some(candidate) = app_sibling_runtime(NODE_BIN_REL) {
         if candidate.exists() {
             return Some(candidate.to_string_lossy().into_owned());
         }
     }
-    if let Ok(bundled) = app.path().resolve("node-app/node/node", BaseDirectory::Resource) {
+    if let Ok(bundled) = app.path().resolve(NODE_BIN_REL, BaseDirectory::Resource) {
         if bundled.exists() {
             return Some(bundled.to_string_lossy().into_owned());
         }

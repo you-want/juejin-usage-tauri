@@ -569,7 +569,7 @@ pub fn run() {
             #[cfg(target_os = "windows")]
             if let Ok(Some(monitor)) = app.primary_monitor() {
                 if let Ok(scale) = monitor.scale_factor() {
-                    let _ = pet::PRIMARY_SCALE.set(std::sync::atomic::AtomicF64::new(scale));
+                    let _ = pet::PRIMARY_SCALE.set(scale);
                 }
             }
 
