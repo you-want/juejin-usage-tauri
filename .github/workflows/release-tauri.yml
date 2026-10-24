@@ -71,6 +71,12 @@ jobs:
           fi
           echo "TUD_NODE_BIN=$PWD/$ART/$EXE" >> "$GITHUB_ENV"
 
+      - name: Stage node runtime + cli dist + dashboard into node-app/
+        shell: bash
+        env:
+          TUD_NODE_BIN: ${{ env.TUD_NODE_BIN }}
+        run: pnpm stage:desktop:tauri
+
       - name: Build Tauri bundle (signed)
         shell: bash
         env:
