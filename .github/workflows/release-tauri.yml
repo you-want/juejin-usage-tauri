@@ -36,7 +36,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -45,6 +45,9 @@ jobs:
       - uses: swatinem/rust-cache@v2
         with:
           workspaces: apps/desktop-tauri/src-tauri
+
+      - name: Toolchain sanity
+        run: node --version && pnpm --version
 
       - name: Install deps
         env:
