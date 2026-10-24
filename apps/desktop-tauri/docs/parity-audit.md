@@ -57,7 +57,7 @@
 | 主窗后台同步后自动刷新 | ✅ | ✅（2026-10-24 修复） | ✅ | 此前 dashboard dist 无人桥接 `onDataSynced` → DOM 事件，主窗同步后不刷新；注入桥现已转发 `tud:data-synced` |
 | data-synced → 宠物庆祝 payload | `local-api-ipc.ts` 附 addedTokens/isDailyRecord/streakDays | `SYNCED` 裸标记 | 🟡 | `desktop-host.ts:88`；宠物气泡庆祝链路断 |
 | macOS Dock accessory 切换（关窗藏 Dock / 显示恢复） | ✅ `app.dock.hide/show` + 竞态防护 | 未实现 | ❌ | 需验证 Tauri `set_activation_policy` 等价能力 |
-| macOS activate（点击 Dock 图标）不误建窗 | ✅ | 未见处理 | ❌ | |
+| macOS activate（点击 Dock 图标）不误建窗 | ✅ | ✅（2026-10-24，RunEvent::Reopen → 无可见窗时显示主窗） | ✅ | |
 
 ### 已知环境问题：WKWebView 拒绝加载回环 HTTP（2026-10-24 定案）
 
@@ -114,13 +114,13 @@
 | 功能点 | Electron | Tauri | 状态 | 说明 |
 |---|---|---|---|---|
 | 开机自启注册（打包后） | `app.setLoginItemSettings` | tauri-plugin-autostart | ✅ | |
-| **launch-hidden 参数接线**（登录项带 `--hidden` 静默启动） | ✅ | ❌ `let _ = launch_hidden;` 未接线 | ❌ | `lib.rs:366`；插件 init 未传 args |
+| **launch-hidden 参数接线**（登录项带 `--hidden` 静默启动） | ✅ | ✅（2026-10-24，弃用 autostart 插件改自写登录项：macOS LaunchAgent / Win 注册表 / Linux .desktop，参数随偏好；含单测） | ✅ | |
 | 自启首次默认开启 | ✅ | 未见等价 | ❌ | 小项随设置面板补 |
-| App 单实例锁 | `requestSingleInstanceLock` 全平台 | flock **仅 Unix；Windows no-op** | 🟡 | `instance.rs:100-105` |
+| App 单实例锁 | `requestSingleInstanceLock` 全平台 | 🟡 macOS 由 LaunchServices 天然单实例（Opened/Reopen 达成聚焦与转发语义）；Unix flock 兜底；**Windows 仍无守卫** | 🟡 | |
 | 第二实例 → 通知首实例聚焦/转发深链 | ✅ second-instance | ❌ 直接退出 | ❌ | 需用 tauri 单实例插件的事件转发 |
-| **deep link OS 级注册与接收**（`juejin-usage://`，macOS open-url / Win 协议分发） | ✅ | ❌ 无 scheme 注册、无接收钩子 | ❌ | 解析/应用/结果上报管线已就绪，仅剩冷启动 argv 一条触发路径（`deeplink.rs:13-20` 自标 release-time） |
+| **deep link OS 级注册与接收**（`juejin-usage://`，macOS open-url / Win 协议分发） | ✅ | 🟡 macOS 已接：`src-tauri/Info.plist` 注册 scheme + `RunEvent::Opened` 应用（运行中 OS 激活首实例）；dev 非 bundled 无法路由，待首个 release 构建实测。Windows 注册表写入待接、二实例转发仍缺 | 🟡 | |
 | 主题三态 + 持久化 + 广播 | ✅ | ✅ | ✅ | `theme.rs` |
-| **跟随 OS 外观**（system 模式实时 resolved） | ✅ nativeTheme 监听 | ❌ system 恒 resolved light | ❌ | `theme.rs:25-47` |
+| **跟随 OS 外观**（system 模式实时 resolved） | ✅ nativeTheme 监听 | ✅（2026-10-24，ThemeChanged 事件 + 启动探测；实测切换深浅色即时跟随并广播） | ✅ | |
 
 ## 8. 发版 / CI / 版本管理（社区版上线必备）
 
@@ -167,10 +167,10 @@
 4. ~~sidecar 崩溃自愈~~ ✅ 2026-10-24 完成。**P0 阶段全部收官**。
 
 **P1 —— OS 集成收尾**
-5. tauri-plugin-deep-link：scheme 注册 + macOS open-url + Windows 二实例转发。
-6. 单实例：Windows 守卫 + 第二实例聚焦/深链转发。
-7. launch-hidden 登录项参数接线。
-8. 主题跟随 OS 外观。
+5. ~~deep link~~ 🟡 macOS 侧完成（Info.plist + Opened）；Windows 注册表与二实例转发移 P2。
+6. ~~单实例~~ 🟡 macOS 达成；Windows 守卫移 P2。
+7. ~~launch-hidden~~ ✅ 2026-10-24 完成。
+8. ~~主题跟随 OS~~ ✅ 2026-10-24 完成（实测）。
 9. SYNCED 附宠物庆祝 payload；popover 按主题背景色。
 
 **P2 —— 体验打磨**

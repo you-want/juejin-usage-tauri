@@ -13,6 +13,7 @@
 
 use tauri::{AppHandle, Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder, Window};
 
+mod autostart;
 mod bridge;
 mod clipboard;
 mod dashboard_range;
@@ -357,30 +358,22 @@ fn dashboard_range_set(
     next
 }
 
-// ---- autostart (P2) ---------------------------------------------------------
-// Real behavior: the OS login-item is managed by `tauri-plugin-autostart`
-// (its `AutoLaunchManager` is `manage`d by the plugin at init); the prefs
-// (open_at_login / launch_hidden) persist to `desktop-prefs.json`. This mirrors
-// Electron's `autostart.ts` — the stored pref and the OS registration move
-// together so a relaunch restores the last choice.
-
-use tauri_plugin_autostart::ManagerExt;
+// ---- autostart --------------------------------------------------------------
+// Login-item management lives in `autostart.rs` (replaces tauri-plugin-
+// autostart so the `--hidden` arg follows the launchHidden preference — the
+// plugin fixes its args at init). The prefs (open_at_login / launch_hidden)
+// persist to `desktop-prefs.json`; the OS registration moves with them so a
+// relaunch restores the last choice (mirrors Electron's `autostart.ts`).
 
 /// Apply the OS login item to match `open_at_login` (+ `launch_hidden` arg).
 fn apply_os_autostart(
-    app: &AppHandle,
+    _app: &AppHandle,
     open_at_login: bool,
     launch_hidden: bool,
 ) {
-    let autostart = app.autolaunch();
-    // Pass `--hidden` when we should launch silent; Tauri forwards it so a
-    // tray-only start can be detected on next launch (P2 launchHidden).
-    if open_at_login {
-        let _ = autostart.enable();
-    } else {
-        let _ = autostart.disable();
+    if let Err(err) = autostart::apply(open_at_login, launch_hidden) {
+        eprintln!("[tud-desktop] autostart apply failed: {err}");
     }
-    let _ = launch_hidden; // arg wiring lands with P3 launch-hidden detection
 }
 
 #[tauri::command]
@@ -429,12 +422,8 @@ fn autostart_set_hidden(
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let app = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        .plugin(tauri_plugin_autostart::init(
-            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
-            None,
-        ))
         // P4: auto-update + process control (restart after install). The
         // updater reads its endpoint/pubkey from `plugins.updater` in
         // `tauri.conf.json`; process provides `request_restart`.
@@ -522,9 +511,25 @@ pub fn run() {
                 }
             }
 
+            // Resolve `system` theme mode against the actual OS appearance once
+            // the main window exists (later changes arrive via ThemeChanged).
+            if let Some(main) = app.get_webview_window("main") {
+                if let Ok(os_theme) = main.theme() {
+                    theme::on_os_theme(app.handle(), os_theme);
+                }
+            }
+
             Ok(())
         })
         .on_window_event(|window, event| {
+            // OS appearance changed → re-resolve `system` mode and broadcast.
+            // Only the main window drives it (all windows share the OS theme).
+            if let tauri::WindowEvent::ThemeChanged(theme) = event {
+                if window.label() == "main" {
+                    theme::on_os_theme(window.app_handle(), *theme);
+                }
+                return;
+            }
             // P0: closing the last window keeps the app alive (tray-resident
             // model). P2 wires the real close-to-tray + quit behavior.
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
@@ -589,8 +594,39 @@ pub fn run() {
             updater::auto_update_ack_completed,
             deeplink::deeplink_apply
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application");
+    app.run(|app_handle, event| {
+        match event {
+            // macOS: `juejin-usage://` delivered by LaunchServices while the
+            // app is running (scheme registered via `src-tauri/Info.plist`).
+            // The OS activates THIS instance instead of spawning a second one,
+            // which is also the macOS half of the single-instance story.
+            #[cfg(target_os = "macos")]
+            tauri::RunEvent::Opened { urls } => {
+                for url in &urls {
+                    if url.scheme() == "juejin-usage" {
+                        eprintln!("[tud-desktop] open-url deep link: {url}");
+                        let sidecar = app_handle.state::<crate::sidecar::SidecarState>();
+                        crate::deeplink::apply(app_handle, &sidecar, &url.to_string());
+                    }
+                }
+            }
+            // macOS: Dock icon click / app re-launch → show the main window
+            // (Electron `activate` parity; the hidden login launch stays
+            // tray-only until the user explicitly opens the window).
+            #[cfg(target_os = "macos")]
+            tauri::RunEvent::Reopen { has_visible_windows, .. } => {
+                if !has_visible_windows {
+                    if let Some(main) = app_handle.get_webview_window("main") {
+                        let _ = main.show();
+                        let _ = main.set_focus();
+                    }
+                }
+            }
+            _ => {}
+        }
+    });
 }
 
 #[cfg(test)]

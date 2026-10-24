@@ -236,7 +236,7 @@ fn apply_via_sidecar(port: u16, body: &str) -> DeeplinkResult {
 /// Core apply path shared by the command and the cold-start drain: parse the
 /// link, write the association through the sidecar local-api (waiting for the
 /// port if it's not up yet), and report on `app:juejin-link-result`.
-fn apply(app: &AppHandle, sidecar: &SidecarState, raw_url: &str) -> DeeplinkResult {
+pub(crate) fn apply(app: &AppHandle, sidecar: &SidecarState, raw_url: &str) -> DeeplinkResult {
     // Invalid links never reach the sidecar.
     let Some(payload) = parse_deep_link(raw_url) else {
         let result = DeeplinkResult {
