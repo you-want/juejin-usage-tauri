@@ -471,3 +471,49 @@ test('claudeDesktopProjectsDirs finds claude-code-sessions projects', async () =
     assert.equal(result.buckets[0]?.collector, 'claude-desktop');
   });
 });
+
+test('parseClaudeIncremental does not lose a message written across two scans', async () => {
+  await withTempClaudeHome(async (home) => {
+    const projects = join(home, '.claude', 'projects', '-Users-me-app');
+    await mkdir(projects, { recursive: true });
+    const filePath = join(projects, 'session.jsonl');
+
+    const firstLine = JSON.stringify({
+      type: 'assistant',
+      timestamp: '2026-05-02T09:24:36.557Z',
+      requestId: 'req_a',
+      message: {
+        id: 'msg_a',
+        model: 'claude-sonnet-4-6',
+        usage: { input_tokens: 10, output_tokens: 2 },
+      },
+    });
+    const secondLine = JSON.stringify({
+      type: 'assistant',
+      timestamp: '2026-05-02T09:25:00.000Z',
+      requestId: 'req_b',
+      message: {
+        id: 'msg_b',
+        model: 'claude-sonnet-4-6',
+        usage: { input_tokens: 70, output_tokens: 8 },
+      },
+    });
+
+    const cut = secondLine.indexOf('"usage"') - 5;
+    await writeFile(filePath, `${firstLine}\n${secondLine.slice(0, cut)}`, 'utf8');
+
+    resetProjectNameCache();
+    const first = await parseClaudeIncremental({}, '2026-01-01T00:00:00.000Z');
+    assert.equal(first.result.eventsParsed, 1);
+    assert.equal(first.result.buckets[0]?.input_tokens, 10);
+
+    await writeFile(filePath, `${firstLine}\n${secondLine}\n`, 'utf8');
+    const second = await parseClaudeIncremental(first.cursors, '2026-01-01T00:00:00.000Z');
+    assert.equal(second.result.eventsParsed, 1);
+    assert.equal(second.result.buckets[0]?.input_tokens, 70);
+    assert.equal(second.result.buckets[0]?.output_tokens, 8);
+
+    const third = await parseClaudeIncremental(second.cursors, '2026-01-01T00:00:00.000Z');
+    assert.equal(third.result.eventsParsed, 0);
+  });
+});

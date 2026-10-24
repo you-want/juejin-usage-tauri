@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { ChevronDown } from '@gravity-ui/icons';
 import { Button } from '@heroui/react';
-import openAIIcon from '@lobehub/icons-static-svg/icons/openai.svg';
 import { ProviderIcon } from '@/components/ProviderIcon';
 import {
   SUPPORTED_TOOLS,
@@ -10,25 +9,15 @@ import {
 } from '@/lib/about';
 import { cn } from '@/lib/utils';
 
-const COLOR_BADGE_CLASSES: Record<string, string> = {
-  cline: 'bg-red-500',
-  'command-code': 'bg-cyan-500',
-  cursor: 'bg-black',
-  droid: 'bg-blue-500',
-  'every-code': 'bg-emerald-600',
-  goose: 'bg-amber-500',
-  grok: 'bg-violet-600',
-  hermes: 'bg-amber-500',
-  kimi: 'bg-black',
-  'kilo-cli': 'bg-violet-500',
-  kilocode: 'bg-violet-500',
-  mimo: 'bg-rose-400',
-  omp: 'bg-violet-500',
-  opencode: 'bg-blue-600',
-  pi: 'bg-orange-500',
-  roocode: 'bg-green-500',
-  zcode: 'bg-indigo-500',
-  zed: 'bg-orange-500',
+/**
+ * Marks whose official color is the glyph itself, not a flat tile.
+ * Hex values follow the brand mark (DeepSeek #4D6BFE, Xiaomi #FF6900,
+ * Zed brand blue #1348DC). Full-color SVGs keep their own artwork.
+ */
+const BRAND_GLYPH_COLOR: Record<string, string> = {
+  dsh: '#4D6BFE',
+  mimo: '#FF6900',
+  zed: '#1348DC',
 };
 
 export function SupportedToolsGrid({
@@ -154,34 +143,9 @@ function MarqueeChunk({ items }: { items: readonly SupportedToolLine[] }) {
 }
 
 function SupportedToolIcon({ source }: { source: string }) {
-  if (source === 'codex') {
-    return (
-      <span className="flex size-6 shrink-0 items-center justify-center rounded-md bg-emerald-600">
-        <img
-          alt=""
-          aria-hidden
-          className="size-[15px] invert"
-          src={openAIIcon}
-        />
-      </span>
-    );
-  }
-
-  const badgeClass = COLOR_BADGE_CLASSES[source];
-
-  if (badgeClass) {
-    return (
-      <span
-        className={`flex size-6 shrink-0 items-center justify-center rounded-md ${badgeClass}`}
-      >
-        <ProviderIcon
-          color="#fff"
-          isSelected
-          provider={source}
-          size={15}
-        />
-      </span>
-    );
+  const glyph = BRAND_GLYPH_COLOR[source];
+  if (glyph) {
+    return <ProviderIcon color={glyph} provider={source} size={18} />;
   }
 
   return <ProviderIcon provider={source} size={18} />;

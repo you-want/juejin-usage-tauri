@@ -291,12 +291,24 @@ function buildApp(state: {
   });
 }
 
+/**
+ * `pnpm dev:desktop:mock` sets VITE_DESKTOP_MOCK=true. In mock mode the main
+ * process must not touch the real machine: no ~/.ai-usage reads, no CLI
+ * eviction, no hook install, no sync.
+ */
+export function isDesktopMockMode(): boolean {
+  return process.env.VITE_DESKTOP_MOCK === 'true';
+}
+
+const MOCK_RUNTIME_DISABLED = 'local runtime disabled in desktop mock mode';
+
 /** Start Core runtime against the shared ~/.ai-usage data dir. */
 export async function startLocalRuntime(): Promise<{
   dataDir: string;
   role: 'owner';
   recoveredFromCorrupt?: CorruptConfigRecovery;
 }> {
+  if (isDesktopMockMode()) throw new Error(MOCK_RUNTIME_DISABLED);
   if (ensureInFlight) return ensureInFlight;
   if (runtime) {
     return {
@@ -508,6 +520,7 @@ export function setLocalRuntimeQuitting(value: boolean): void {
 
 /** Resume liveness heartbeat + restart loop after a pause or failed first start. */
 export function resumeLocalRuntimeWatchdog(): void {
+  if (isDesktopMockMode()) return;
   quitting = false;
   startRuntimeWatchdog();
 }
@@ -535,6 +548,7 @@ export async function recoverLocalRuntime(): Promise<{
   role: 'owner';
   recoveredFromCorrupt?: CorruptConfigRecovery;
 }> {
+  if (isDesktopMockMode()) throw new Error(MOCK_RUNTIME_DISABLED);
   if (quitting) {
     if (runtime) {
       return { dataDir: runtime.dir, role: runtime.role };
@@ -678,6 +692,12 @@ export async function localApiRequest(
   path: string,
   init?: { method?: string; body?: string; headers?: Record<string, string> },
 ): Promise<{ status: number; body: unknown }> {
+  if (isDesktopMockMode()) {
+    return {
+      status: 503,
+      body: { success: false, message: 'LOCAL_RUNTIME_MOCK_MODE', data: null },
+    };
+  }
   if (!runtime && !quitting) {
     const ready = await Promise.race([
       recoverLocalRuntime()

@@ -25,6 +25,7 @@ export const SUPPORTED_TOOLS: readonly SupportedToolLine[] = [
   },
   { name: 'Gemini', source: 'gemini', variants: ['CLI'] },
   { name: 'OpenCode', source: 'opencode' },
+  { name: 'DevEco Code', source: 'deveco' },
   { name: 'Copilot', source: 'copilot', variants: ['CLI'] },
   {
     name: 'Antigravity',
@@ -36,8 +37,9 @@ export const SUPPORTED_TOOLS: readonly SupportedToolLine[] = [
   { name: 'Hermes', source: 'hermes' },
   { name: 'ZCode', source: 'zcode' },
   { name: 'DeepSeek Harness', source: 'dsh' },
+  { name: 'KinetAios', source: 'kinetaios' },
   { name: 'pi', source: 'pi' },
-  { name: 'Kimi', source: 'kimi', variants: ['Code', 'Legacy'] },
+  { name: 'Kimi', source: 'kimi', variants: ['Desktop', 'Code', 'Legacy'] },
   { name: 'Roo Code', source: 'roocode' },
   { name: 'Droid', source: 'droid' },
   { name: 'Kiro', source: 'kiro', variants: ['CLI'] },
@@ -56,6 +58,8 @@ export const SUPPORTED_TOOLS: readonly SupportedToolLine[] = [
   { name: 'Zed', source: 'zed' },
   { name: 'Warp', source: 'warp' },
   { name: 'Command Code', source: 'command-code' },
+  { name: 'MiniMax Code', source: 'minimax-code' },
+  { name: 'WPS Comate', source: 'wps-comate' },
 ] as const;
 
 export function formatSupportedTool(line: SupportedToolLine): string {

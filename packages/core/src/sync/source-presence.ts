@@ -1,10 +1,14 @@
-import { existsSync } from 'node:fs';
+import { existsSync, readdirSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
 import { resolveAntigravityBrainDirs } from '../parsers/antigravity.js';
 import { resolveAmpThreadsDir } from '../parsers/amp.js';
-import { resolveCodebuddyHome } from '../parsers/codebuddy.js';
+import { clineSessionDataDir, findClineExtensionDirs } from '../parsers/cline.js';
+import {
+  resolveCodebuddyExtensionRoots,
+  resolveCodebuddyHome,
+} from '../parsers/codebuddy.js';
 import { droidSessionsDirs } from '../parsers/droid.js';
 import { everyCodeHome } from '../parsers/every-code.js';
 import { gooseDbPath } from '../parsers/goose.js';
@@ -21,14 +25,20 @@ import { qwenTmpDir } from '../parsers/qwen.js';
 import { resolveWorkbuddyHome } from '../parsers/workbuddy.js';
 import { zcodeDbPath } from '../parsers/zcode.js';
 import { dshHome } from '../parsers/dsh.js';
+import { kinetaiosDbPath } from '../parsers/kinetaios.js';
 import { zedDbPath } from '../parsers/zed.js';
 import { warpDbPaths } from '../parsers/warp.js';
+import { miniMaxCodeDataPaths } from '../parsers/minimax-code.js';
+import { wpsComateSessionsDir } from '../parsers/wps-comate.js';
+import { teleagentLogRoots } from '../parsers/teleagent.js';
 import {
   codexHomeCandidates,
   commandCodeProjectsDirs,
   copilotSessionStateDir,
   cursorStateVscdbPath,
   geminiTmpDir,
+  kimiDesktopCodeHome,
+  devecoDbPath,
   opencodeDbPath,
   opencodeMessagesDir,
   qoderCliProjectsDirs,
@@ -85,6 +95,8 @@ export function isSyncSourcePresent(source: string): boolean {
       return anyExists(
         codexHomeCandidates().flatMap((home) => [home, join(home, 'sessions')]),
       );
+    case 'minimax-code':
+      return anyExists(miniMaxCodeDataPaths());
     case 'cursor':
       return anyExists([cursorStateVscdbPath()]);
     case 'qoder':
@@ -97,6 +109,8 @@ export function isSyncSourcePresent(source: string): boolean {
       return anyExists(traeAgentDbEntries().map((e) => e.dbPath));
     case 'gemini':
       return anyExists([geminiTmpDir()]);
+    case 'deveco':
+      return anyExists([devecoDbPath()]);
     case 'opencode':
       return anyExists([opencodeDbPath(), opencodeMessagesDir()]);
     case 'copilot':
@@ -113,6 +127,8 @@ export function isSyncSourcePresent(source: string): boolean {
       return anyExists([zcodeDbPath()]);
     case 'dsh':
       return anyExists([dshHome(), join(dshHome(), 'sessions')]);
+    case 'kinetaios':
+      return anyExists([kinetaiosDbPath()]);
     case 'pi':
       return anyExists([piSessionsDir()]);
     case 'kimi': {
@@ -122,6 +138,7 @@ export function isSyncSourcePresent(source: string): boolean {
         process.env.KIMI_HOME,
         join(home, '.kimi-code'),
         join(home, '.kimi'),
+        kimiDesktopCodeHome(),
       ]);
     }
     case 'roocode':
@@ -135,20 +152,27 @@ export function isSyncSourcePresent(source: string): boolean {
     case 'kiro':
       return anyExists([kiroCliSessionsDir(), kiroCliDbPath()]);
     case 'cline':
-      return anyExists(
-        vscodeGlobalStorageRoots().map((r) =>
-          join(r, 'saoudrizwan.claude-dev'),
-        ),
-      );
+      return anyExists([...findClineExtensionDirs(), clineSessionDataDir()]);
     case 'amp':
       return anyExists([resolveAmpThreadsDir()]);
     case 'qwen':
       return anyExists([qwenTmpDir()]);
-    case 'codebuddy':
-      return anyExists([
-        resolveCodebuddyHome(),
-        join(resolveCodebuddyHome(), 'projects'),
-      ]);
+    case 'codebuddy': {
+      // ~/.codebuddy alone proves nothing: the desktop app keeps its config
+      // there while usage lives under the extension data dir. Gate on the
+      // actual data dirs so an installed-but-unreadable setup reports
+      // "not installed" instead of "installed with zero usage".
+      const hasExtensionData = resolveCodebuddyExtensionRoots().some((root) => {
+        if (!existsSync(root)) return false;
+        try {
+          return readdirSync(root).length > 0;
+        } catch {
+          // Unreadable / not a directory counts as absent.
+          return false;
+        }
+      });
+      return hasExtensionData || anyExists([join(resolveCodebuddyHome(), 'projects')]);
+    }
     case 'workbuddy':
       // Domestic and international editions use separate homes; either is enough.
       return anyExists([
@@ -185,6 +209,10 @@ export function isSyncSourcePresent(source: string): boolean {
       return anyExists([zedDbPath()]);
     case 'warp':
       return anyExists(warpDbPaths());
+    case 'wps-comate':
+      return anyExists([wpsComateSessionsDir()]);
+    case 'teleagent':
+      return anyExists(teleagentLogRoots());
     default:
       return true;
   }

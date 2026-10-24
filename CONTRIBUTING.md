@@ -83,6 +83,10 @@ PR 会自动带出模板，按模板填完即可。几个容易踩的点：
 
 PR 推上来后 CI（`.github/workflows/ci.yml`）会在 Ubuntu + Node 22 上跑同一套命令：`pnpm build` → 桌面端 `typecheck` → 四个包的测试。CI 红了先看是哪个包哪一步挂的，本地用上面对应的 `--filter` 命令复现。
 
+## 贡献用量卡片
+
+卡片维护在 [`cards/`](./cards/README.md)，每款独立包含 SVG 模板和元信息。新增样式后运行 `node scripts/build-usage-cards.mjs`，将资源与生成清单一起提交；面板和图片渲染使用同一份清单。
+
 ## 按端启动
 
 数据目录：`~/.ai-usage/`。同一时刻不要同时开 Desktop 和 CLI（Desktop 会抢 runtime 并停掉 CLI 服务）。
@@ -112,6 +116,8 @@ pnpm dev:cli          # CLI API :8452 + Vite HMR :5194（开发请打开 5194）
 ```
 
 改 UI 后若用 `start:cli`，需再跑一次 `pnpm build:cli`。
+
+CLI 首页订阅卡片直接读取本机供应商登录状态，无需运行本项目 Desktop；供应商自身的本地服务依赖仍然有效。Node 20 下读取 Cursor / VS Code 数据库需在 PATH 中安装 `sqlite3`。订阅接口只供回环地址面板使用，线上 Web 和通过 `--host` 暴露的远程面板不提供此能力。
 
 ### Web
 

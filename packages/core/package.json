@@ -1,6 +1,6 @@
 {
   "name": "@juejin-opensource/jusage-core",
-  "version": "0.1.11",
+  "version": "0.1.15",
   "description": "AI Agent Token 用量采集与本地 API 核心库（parsers / sync / hooks / pricing / upload）",
   "type": "module",
   "license": "MIT",
@@ -46,6 +46,43 @@
     "./project-label": {
       "types": "./dist/project-label.d.ts",
       "import": "./dist/project-label.js"
+    },
+    "./local-metrics": {
+      "types": "./dist/local-metrics.d.ts",
+      "import": "./dist/local-metrics.js"
+    },
+    "./reconcile-skip": {
+      "types": "./dist/reconcile-skip.d.ts",
+      "import": "./dist/reconcile-skip.js"
+    },
+    "./usage-cards": {
+      "types": "./dist/usage-cards.d.ts",
+      "import": "./dist/usage-cards.js"
+    },
+    "./subscription": {
+      "types": "./dist/subscription/index.d.ts",
+      "import": "./dist/subscription/index.js",
+      "default": "./dist/subscription/index.js"
+    },
+    "./subscription/read": {
+      "types": "./dist/subscription/read.d.ts",
+      "import": "./dist/subscription/read.js",
+      "default": "./dist/subscription/read.js"
+    },
+    "./subscription/transport": {
+      "types": "./dist/subscription/transport.d.ts",
+      "import": "./dist/subscription/transport.js",
+      "default": "./dist/subscription/transport.js"
+    },
+    "./subscription/shared/*": {
+      "types": "./dist/subscription/shared/*.d.ts",
+      "import": "./dist/subscription/shared/*.js",
+      "default": "./dist/subscription/shared/*.js"
+    },
+    "./subscription/readers/*": {
+      "types": "./dist/subscription/readers/*.d.ts",
+      "import": "./dist/subscription/readers/*.js",
+      "default": "./dist/subscription/readers/*.js"
     }
   },
   "files": [
@@ -55,15 +92,17 @@
     "access": "public"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json && node -e \"require('node:fs').copyFileSync('src/pricing/pricing.json','dist/pricing/pricing.json')\"",
+    "build": "node ../../scripts/build-usage-cards.mjs && tsc -p tsconfig.json && node -e \"require('node:fs').copyFileSync('src/pricing/pricing.json','dist/pricing/pricing.json')\"",
     "dev": "tsc -p tsconfig.json --watch",
     "sync:pricing": "node scripts/sync-pricing.mjs",
     "test": "pnpm test:compile && node --test dist-test/test/*.test.js",
     "test:compile": "tsc -p tsconfig.test.json && node -e \"require('node:fs').copyFileSync('src/pricing/pricing.json','dist-test/src/pricing/pricing.json')\""
   },
   "dependencies": {
+    "fzstd": "^0.1.1",
     "hono": "^4.7.5",
-    "proper-lockfile": "^4.1.2"
+    "proper-lockfile": "^4.1.2",
+    "yaml": "^2.9.1"
   },
   "devDependencies": {
     "@types/node": "^22.13.10",

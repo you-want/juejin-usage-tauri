@@ -1,13 +1,13 @@
 > **📦 本仓库是 [juejin-cn/juejin-usage](https://github.com/juejin-cn/juejin-usage) 的社区 fork，独立维护 Tauri 版桌面客户端**（官方桌面端为 Electron）。
 > 开发与发版线：`feat/desktop-tauri-v2`（本仓库默认分支）；`main` 仅用于与上游保持同步。
-> Tauri 版问题反馈请到 [issues](https://github.com/K-H-N-L/juejin-usage/issues)；文档见 [apps/desktop-tauri/README.md](apps/desktop-tauri/README.md)。
+> Tauri 版问题反馈请到 [issues](https://github.com/K-H-N-L/juejin-usage/issues)，下载见 [Releases](https://github.com/K-H-N-L/juejin-usage/releases)；文档见 [apps/desktop-tauri/README.md](apps/desktop-tauri/README.md)。
 
 <p align="center">
   <img src="./assets/icon.png" alt="Juejin Usage logo" width="200">
 </p>
 
 <p align="center">
-  Token 用量明细追踪工具，本地记录、云端同步，<br>还有线上排行榜看看谁用得最多。
+  Token 用量明细追踪工具，本地记录、云端同步，<br>还能看订阅剩余额度，以及线上排行榜看谁用得多。
 </p>
 
 <p align="center">
@@ -29,7 +29,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/K-H-N-L/juejin-usage/releases">下载安装包</a>
+  <a href="https://juejin.cn/aiusage/download">下载</a>
   ·
   <a href="https://juejin.cn/aiusage/rank">排行榜</a>
   ·
@@ -46,17 +46,20 @@ Juejin Usage 提供 macOS / Windows 桌面客户端，安装即用，无需额�
 
 ### 下载安装
 
-前往 [Releases](https://github.com/K-H-N-L/juejin-usage/releases) 页面下载对应系统的安装包（macOS 按芯片选 `.dmg`，Windows 选 `.exe`），安装即用。
+前往 [下载页](https://juejin.cn/aiusage/download) 按当前系统获取安装包（国内优先走 Gitee）。也可以到 [Releases](https://github.com/juejin-cn/juejin-usage/releases) 自行选择：macOS 按芯片选 `.dmg`，Windows 选 `.exe`。
+
+**Tauri 社区版**（本仓库维护）从 [K-H-N-L Releases](https://github.com/K-H-N-L/juejin-usage/releases) 获取。
 
 > 💡 macOS 提示「已损坏」？在终端执行 `sudo xattr -dr com.apple.quarantine` 后把应用拖入终端窗口即可。
 
 ### 首次启动
 
 1. 打开 **Juejin Usage** 应用
-2. 首次运行会自动尝试注册 Claude / Codex Hook 并同步本地用量
-3. 面板将自动弹出，展示用量趋势、模型分布等数据
+2. 首次运行会采集本机已经产生的 AI 编码工具用量
+3. 面板展示费用、Token、请求数和用量趋势；已登录且支持的渠道还会显示订阅剩余额度
+4. macOS 可从菜单栏查看额度和今日用量，Windows 从托盘进入
 
-如未检测到 Claude / Codex 等 Agent 工具，请确认已安装并使用过至少一次。
+如面板没有用量，请确认对应工具已安装并实际使用过至少一次。
 
 ### 桌面宠物（可选）
 

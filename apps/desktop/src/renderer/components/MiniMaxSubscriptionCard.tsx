@@ -1,8 +1,7 @@
+import { subscriptionApi } from '../lib/subscription-api';
+import { miniMaxProgressMetrics } from '../lib/subscription-progress';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import {
-  miniMaxRemainingPercent,
-  type MiniMaxSubscriptionSnapshot,
-} from '../../shared/minimax-subscription';
+import type { MiniMaxSubscriptionSnapshot } from '../../shared/minimax-subscription';
 import { SubscriptionUsageCard } from './SubscriptionUsageCard';
 import { SubscriptionBrandIcon } from './SubscriptionBrandIcon';
 
@@ -16,17 +15,18 @@ const INITIAL_SNAPSHOT: MiniMaxSubscriptionSnapshot = {
   message: null,
 };
 
-/** Compact local MiniMax Code Coding Plan allowance summary for the macOS tray. */
+/** Compact local MiniMax Code Coding Plan allowance summary for macOS desktop surfaces. */
 export function MiniMaxSubscriptionCard() {
   const [snapshot, setSnapshot] = useState<MiniMaxSubscriptionSnapshot>(INITIAL_SNAPSHOT);
   const [loading, setLoading] = useState(true);
   const requestInFlight = useRef(false);
 
-  const reload = useCallback(async () => {
+  const reload = useCallback(async (forceRefresh = false) => {
     if (requestInFlight.current) return;
     requestInFlight.current = true;
+    setLoading(true);
     try {
-      setSnapshot(await window.tud.getMiniMaxSubscription());
+      setSnapshot(await subscriptionApi.getMiniMaxSubscription({ forceRefresh }));
     } catch {
       setSnapshot({ ...INITIAL_SNAPSHOT, message: '暂时无法读取 MiniMax Code 订阅信息' });
     } finally {
@@ -52,15 +52,15 @@ export function MiniMaxSubscriptionCard() {
     <SubscriptionUsageCard
       data={{
         icon: <SubscriptionBrandIcon brand="minimax" />,
-        metrics: snapshot.limits.map((limit, index) => ({
-          color: index === 0 && snapshot.limits.length > 1 ? '#ff6a00' : '#2b7eff',
-          label: limit.label,
-          remainingPercent: miniMaxRemainingPercent(limit.usedPercent),
-        })),
+        metrics: miniMaxProgressMetrics(snapshot),
+        metricLimit: null,
+        expandMetrics: true,
+        planLabel: snapshot.planLabel,
         stale: snapshot.stale,
         title,
       }}
       loading={loading}
+      onRefresh={() => void reload(true)}
     />
   );
 }

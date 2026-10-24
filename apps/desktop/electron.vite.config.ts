@@ -1,4 +1,4 @@
-import { defineConfig, externalizeDepsPlugin } from 'electron-vite';
+import { defineConfig } from 'electron-vite';
 import react from '@vitejs/plugin-react';
 import { tanstackRouter } from '@tanstack/router-plugin/vite';
 import tailwindcss from '@tailwindcss/vite';
@@ -34,27 +34,26 @@ const sharedRenderPlugins = () => [
  *
  * jusage-core / hono 为纯 ESM（exports 仅有 import），Electron main 产物是 CJS，
  * 不能 require 它们 — 打进 main bundle，避免 ERR_PACKAGE_PATH_NOT_EXPORTED。
+ * asar 只含 out/**，yaml 等同理须 exclude 出 externalizeDeps。
  */
 export default defineConfig({
   main: {
-    plugins: [
-      externalizeDepsPlugin({
+    build: {
+      outDir: 'out/main',
+      externalizeDeps: {
         exclude: [
           '@juejin-opensource/jusage-core',
           'electron-updater',
           'hono',
+          'yaml',
         ],
-      }),
-    ],
-    build: {
-      outDir: 'out/main',
+      },
       rollupOptions: {
         input: { index: resolve(__dirname, 'src/main/index.ts') },
       },
     },
   },
   preload: {
-    plugins: [externalizeDepsPlugin()],
     build: {
       outDir: 'out/preload',
       rollupOptions: {

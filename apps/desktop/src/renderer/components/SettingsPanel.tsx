@@ -20,9 +20,11 @@ import {
 import {
   getLatestUpdateVersion,
   getUpdateToolbarAction,
+  PORTABLE_RELEASES_URL,
   updateStatusMessage,
   type AutoUpdateState,
 } from '../../shared/auto-update';
+import { resolveAutoUpdateStateForUi } from '@/lib/mock-portable-update';
 import { isTrayUsageMode, type TrayUsageMode } from '../../shared/tray-usage';
 import {
   fetchConfig,
@@ -41,6 +43,8 @@ import { DataCalibrateSection } from '@/components/DataCalibrateSection';
 import { JuejinLoginConsentModal } from '@/components/JuejinLoginConsentModal';
 import { PetSelectPreview } from '@/components/PetSelectPreview';
 import { StatusBanner } from '@/components/StatusBanner';
+import { useSubscriptionChannelVisibility } from '@/hooks/useSubscriptionChannelVisibility';
+import { SUBSCRIPTION_CHANNELS } from '../../shared/subscription-channels';
 
 import {
   OPEN_SETTINGS_EVENT,
@@ -54,6 +58,7 @@ type DesktopSettingsTabId = SettingsTabId;
 const TAB_ITEMS: { id: DesktopSettingsTabId; label: string }[] = [
   { id: 'pet', label: '桌面宠物' },
   { id: 'sync', label: '云端同步' },
+  { id: 'subscription', label: '订阅' },
   { id: 'app', label: '应用' },
   { id: 'about', label: '关于' },
 ];
@@ -265,6 +270,9 @@ export function SettingsPanel({
         </Tabs.Panel>
         <Tabs.Panel className={SETTINGS_SCROLL_PANEL} id="app">
           {tab === 'app' && <AppSettingsPanel />}
+        </Tabs.Panel>
+        <Tabs.Panel className={SETTINGS_SCROLL_PANEL} id="subscription">
+          {tab === 'subscription' && <SubscriptionChannelSettings />}
         </Tabs.Panel>
         <Tabs.Panel className={SETTINGS_SCROLL_PANEL} id="about">
           {tab === 'about' && <AboutContent />}
@@ -1060,6 +1068,52 @@ function CliSyncSettings({
   );
 }
 
+/** Toggle which auto-detected subscription channels may appear on the dashboard. */
+function SubscriptionChannelSettings() {
+  const { isEnabled, setChannelEnabled, setAllEnabled } =
+    useSubscriptionChannelVisibility();
+
+  return (
+    <div className="flex flex-col gap-5">
+      <div className="flex flex-col gap-1.5">
+        <p className="text-sm font-medium text-foreground">订阅额度卡片</p>
+        <Description>
+          控制用量页展示哪些订阅渠道。默认全部开启；本机未登录或未识别到额度时仍会自动隐藏。
+        </Description>
+      </div>
+
+      <div className="flex flex-wrap gap-2">
+        <Button size="sm" variant="secondary" onPress={() => setAllEnabled(true)}>
+          全部开启
+        </Button>
+        <Button size="sm" variant="tertiary" onPress={() => setAllEnabled(false)}>
+          全部关闭
+        </Button>
+      </div>
+
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+        {SUBSCRIPTION_CHANNELS.map((channel) => (
+          <Checkbox
+            id={`subscription-channel-${channel.id}`}
+            isSelected={isEnabled(channel.id)}
+            key={channel.id}
+            onChange={(checked) => {
+              setChannelEnabled(channel.id, checked);
+            }}
+          >
+            <Checkbox.Content>
+              <Checkbox.Control>
+                <Checkbox.Indicator />
+              </Checkbox.Control>
+              {channel.label}
+            </Checkbox.Content>
+          </Checkbox>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 /** 自动更新 + 开机自启 + 设备信息。 */
 function AppSettingsPanel() {
   const cliMode = isCliBackend();
@@ -1375,7 +1429,7 @@ function AutoUpdateSettings() {
     const unsubscribe = window.tud.onAutoUpdateStateChanged((next) => {
       receivedEvent = true;
       if (!cancelled) {
-        setState(next);
+        setState(resolveAutoUpdateStateForUi(next));
         if (next.status !== 'error') setActionError(null);
       }
     });
@@ -1383,7 +1437,7 @@ function AutoUpdateSettings() {
       .getAutoUpdateState()
       .then((next) => {
         if (!cancelled && !receivedEvent) {
-          setState(next);
+          setState(resolveAutoUpdateStateForUi(next));
         }
       })
       .catch((reason) => {
@@ -1402,7 +1456,7 @@ function AutoUpdateSettings() {
   const check = async () => {
     setActionError(null);
     try {
-      setState(await window.tud.checkForUpdates());
+      setState(resolveAutoUpdateStateForUi(await window.tud.checkForUpdates()));
     } catch (reason) {
       setActionError(
         reason instanceof Error ? reason.message : '检查更新失败',
@@ -1421,6 +1475,20 @@ function AutoUpdateSettings() {
       );
     } finally {
       setInstallPending(false);
+    }
+  };
+
+  const openPortableReleases = async () => {
+    setActionError(null);
+    try {
+      const result = await window.tud.openExternal(PORTABLE_RELEASES_URL);
+      if (!result.ok) {
+        setActionError(result.message ?? '无法打开 Gitee 发行版页面');
+      }
+    } catch (reason) {
+      setActionError(
+        reason instanceof Error ? reason.message : '无法打开 Gitee 发行版页面',
+      );
     }
   };
 
@@ -1461,6 +1529,7 @@ function AutoUpdateSettings() {
                 isDisabled={installPending || updateAction.request === null}
                 onPress={() => {
                   if (updateAction.request === 'install') void install();
+                  if (updateAction.request === 'open-releases') void openPortableReleases();
                 }}
                 size="sm"
                 variant="primary"
@@ -1490,7 +1559,23 @@ function AutoUpdateSettings() {
           </Alert>
         )}
 
-        {message && <p className="text-xs text-muted">{message}</p>}
+        {message && status === 'available' ? (
+          <p className="text-xs text-muted">
+            发现新版本，请到{' '}
+            <button
+              className="text-[#1e80ff] underline-offset-2 hover:underline"
+              onClick={() => {
+                void openPortableReleases();
+              }}
+              type="button"
+            >
+              Gitee 发行版
+            </button>
+            {' '}下载便携版
+          </p>
+        ) : message ? (
+          <p className="text-xs text-muted">{message}</p>
+        ) : null}
       </Card.Content>
     </Card>
   );

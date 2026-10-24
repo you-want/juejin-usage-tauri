@@ -1,3 +1,4 @@
+import { subscriptionDetails, subscriptionPoolKey } from '../lib/subscription-details';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   workBuddyRemainingPercent,
@@ -20,10 +21,10 @@ const INITIAL_SNAPSHOT: WorkBuddySubscriptionSnapshot = {
 interface WorkBuddySubscriptionCardProps {
   region: WorkBuddyRegion;
   title: string;
-  fetcher: () => Promise<WorkBuddySubscriptionSnapshot>;
+  fetcher: (options?: { forceRefresh?: boolean }) => Promise<WorkBuddySubscriptionSnapshot>;
 }
 
-/** Compact WorkBuddy account resource summary for the macOS tray. */
+/** Compact WorkBuddy account resource summary for macOS desktop surfaces. */
 export function WorkBuddySubscriptionCard({ region, title, fetcher }: WorkBuddySubscriptionCardProps) {
   const [snapshot, setSnapshot] = useState<WorkBuddySubscriptionSnapshot>({
     ...INITIAL_SNAPSHOT,
@@ -32,11 +33,12 @@ export function WorkBuddySubscriptionCard({ region, title, fetcher }: WorkBuddyS
   const [loading, setLoading] = useState(true);
   const requestInFlight = useRef(false);
 
-  const reload = useCallback(async () => {
+  const reload = useCallback(async (forceRefresh = false) => {
     if (requestInFlight.current) return;
     requestInFlight.current = true;
+    setLoading(true);
     try {
-      setSnapshot(await fetcher());
+      setSnapshot(await fetcher({ forceRefresh }));
     } catch {
       setSnapshot({ ...INITIAL_SNAPSHOT, region, message: '暂时无法读取 WorkBuddy 订阅信息' });
     } finally {
@@ -55,16 +57,21 @@ export function WorkBuddySubscriptionCard({ region, title, fetcher }: WorkBuddyS
   return (
     <SubscriptionUsageCard
       data={{
-        icon: <SubscriptionBrandIcon brand="codebuddy" />,
+        details: subscriptionDetails(snapshot, 'WorkBuddy 账号资源', '到期时间'),
+        icon: <SubscriptionBrandIcon brand="workbuddy" />,
         metrics: snapshot.limits.slice(0, 2).map((limit, index) => ({
           color: index === 0 && snapshot.limits.length > 1 ? '#7dcf00' : '#2b7eff',
+          poolKey: subscriptionPoolKey('WorkBuddy 账号资源', limit),
           label: workBuddyLabel(region, limit.label),
           remainingPercent: workBuddyRemainingPercent(limit.usedPercent),
+          resetsAt: limit.resetsAt,
         })),
+        planLabel: snapshot.planLabel,
         stale: snapshot.stale,
         title,
       }}
       loading={loading}
+      onRefresh={() => void reload(true)}
     />
   );
 }

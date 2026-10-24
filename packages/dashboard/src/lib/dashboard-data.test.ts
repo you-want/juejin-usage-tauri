@@ -356,6 +356,81 @@ test('daily rows keep uncached input when cache reads dwarf fresh input', () => 
   assert.equal(view.summary.cachedInputTokens, 20_000);
 });
 
+test('localMetrics requestCount is additive and does not wipe cache columns', () => {
+  const today = localDateNow();
+  const dataset = datasetWithDays([
+    {
+      date: today,
+      tokens: 20_024,
+      costUsd: 0.5,
+      models: { 'claude-sonnet-4-6': 20_024 },
+      inputTokens: 4,
+      outputTokens: 20,
+      cachedInputTokens: 20_000,
+      cacheCreationInputTokens: 300,
+      localMetrics: {
+        version: 1,
+        uncachedInputTokens: 4,
+        cacheReadTokens: 20_000,
+        cacheWriteTokens: 300,
+        outputTokens: 20,
+        reasoningOutputTokens: 0,
+        requestCount: 3,
+        knownRequestCount: 3,
+        cacheHitRate: 20_000 / 20_304,
+        missingReasons: [],
+      },
+    },
+  ]);
+
+  const view = buildDashboardDataFromDataset(dataset, 1);
+  assert.equal(view.summary.inputTokens, 4);
+  assert.equal(view.summary.cachedInputTokens, 20_000);
+  assert.equal(view.summary.cacheCreationInputTokens, 300);
+  assert.equal(view.summary.requestCount, 3);
+  assert.equal(view.summary.knownRequestCount, 3);
+  const denom =
+    view.summary.inputTokens +
+    view.summary.cachedInputTokens +
+    view.summary.cacheCreationInputTokens;
+  assert.equal(view.summary.cachedInputTokens / denom, 20_000 / 20_304);
+});
+
+test('incomplete localMetrics requestCount stays null without changing tokens', () => {
+  const today = localDateNow();
+  const dataset = datasetWithDays([
+    {
+      date: today,
+      tokens: 105,
+      costUsd: 0.1,
+      models: {},
+      inputTokens: 70,
+      outputTokens: 20,
+      cachedInputTokens: 10,
+      cacheCreationInputTokens: 5,
+      localMetrics: {
+        version: 1,
+        uncachedInputTokens: 70,
+        cacheReadTokens: null,
+        cacheWriteTokens: null,
+        outputTokens: 20,
+        reasoningOutputTokens: 0,
+        requestCount: null,
+        knownRequestCount: 1,
+        cacheHitRate: null,
+        missingReasons: ['legacy_data'],
+      },
+    },
+  ]);
+
+  const view = buildDashboardDataFromDataset(dataset, 1);
+  assert.equal(view.summary.requestCount, null);
+  assert.equal(view.summary.knownRequestCount, 1);
+  assert.equal(view.summary.cachedInputTokens, 10);
+  assert.equal(view.summary.cacheCreationInputTokens, 5);
+  assert.equal(view.summary.inputTokens, 70);
+});
+
 test('buildFilledHourlyForDate does not clamp cache reads to uncached input', () => {
   const rows = buildFilledHourlyForDate(
     [

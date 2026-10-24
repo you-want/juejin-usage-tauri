@@ -24,6 +24,7 @@ import {
   countTraeRows,
   countGeminiRows,
   countOpencodeRows,
+  countDevecoRows,
   countCopilotRows,
   countAntigravityRows,
   countOpenclawRows,
@@ -31,6 +32,7 @@ import {
   countHermesRows,
   countZcodeRows,
   countDshRows,
+  countKinetaiosRows,
   countPiRows,
   countKimiRows,
   countRoocodeRows,
@@ -50,6 +52,7 @@ import {
   countGooseRows,
   countZedRows,
   countWarpRows,
+  countWpsComateRows,
   syncAll,
   collectWrittenBuckets,
   type SyncResult,
@@ -166,9 +169,10 @@ export function buildSyncStatus(
         countTraeRows(rows),
       ),
       gemini: poll('gemini', 'Gemini CLI 读取 ~/.gemini/tmp 会话，定时轮询同步', countGeminiRows(rows)),
+      deveco: poll('deveco', 'DevEco Code 读取 deveco.db，定时轮询同步', countDevecoRows(rows)),
       opencode: poll(
         'opencode',
-        'OpenCode 读取 opencode.db / storage/message，定时轮询同步',
+        'OpenCode 读取 opencode.db 的 session_message / message，或 storage/message，定时轮询同步',
         countOpencodeRows(rows),
       ),
       copilot: poll(
@@ -194,6 +198,7 @@ export function buildSyncStatus(
       hermes: poll('hermes', 'Hermes 读取 ~/.hermes/**/state.db，定时轮询同步', countHermesRows(rows)),
       zcode: poll('zcode', 'ZCode 读取 ~/.zcode/cli/db/db.sqlite，定时轮询同步', countZcodeRows(rows)),
       dsh: poll('dsh', 'DeepSeek Harness 读取 ~/.dsh/sessions/**/session.jsonl.zstd，定时轮询同步', countDshRows(rows)),
+      kinetaios: poll('kinetaios', 'KinetAios 读取其数据目录 history.db 的 cost_log（真实 USD），定时轮询同步', countKinetaiosRows(rows)),
       pi: poll('pi', 'pi 读取 ~/.pi/agent/sessions，定时轮询同步', countPiRows(rows)),
       kimi: poll('kimi', 'Kimi / Kimi Code 读取 wire.jsonl，定时轮询同步', countKimiRows(rows)),
       roocode: poll(
@@ -205,7 +210,7 @@ export function buildSyncStatus(
       kiro: poll('kiro', 'Kiro CLI 读取 sessions/cli 与 kiro-cli SQLite，定时轮询同步', countKiroRows(rows)),
       cline: poll(
         'cline',
-        'Cline 读取 VS Code globalStorage tasks/ui_messages.json，定时轮询同步',
+        'Cline 读取 SDK sessions/messages.json 与 VS Code globalStorage ui_messages.json，定时轮询同步',
         countClineRows(rows),
       ),
       amp: poll('amp', 'Amp 读取 ~/.local/share/amp/threads T-*.json，定时轮询同步', countAmpRows(rows)),
@@ -268,6 +273,11 @@ export function buildSyncStatus(
         'warp',
         'Warp 读取 warp.sqlite agent_conversations 累计 token 差分，定时轮询同步',
         countWarpRows(rows),
+      ),
+      'wps-comate': poll(
+        'wps-comate',
+        'WPS Comate 读取 ~/.wpscomate/agent/task-sessions JSONL，定时轮询同步',
+        countWpsComateRows(rows),
       ),
     },
     juejinEnabled: config.juejin.enabled,
@@ -413,7 +423,7 @@ export async function createAggregateCache(
   if (cache.sealedDayCount() === 0 && rows.length > 0) {
     await cache.rebuildFromRows(rows);
   } else {
-    await cache.onBucketsChanged(rows, []);
+    await cache.onBucketsChanged(rows, [], true);
   }
   return cache;
 }
@@ -429,13 +439,16 @@ export function createApplyAfterSync(deps: {
 ) => Promise<void> {
   return async (results, opts) => {
     const written = collectWrittenBuckets(results);
+    const store = deps.getBucketStore();
+    const cache = deps.getAggregateCache();
     if (written.length > 0) {
-      const store = deps.getBucketStore();
       store.apply(written);
-      const cache = deps.getAggregateCache();
-      if (cache) {
-        await cache.onBucketsChanged(store.getRows(), written);
-      }
+    }
+    // History (`date < today`) is read only from the sealed cache. Yesterday is
+    // still "today" until midnight, so an empty poll after the day rolls never
+    // reaches onBucketsChanged and the panel shows that day as 0 until restart.
+    if (cache && (written.length > 0 || cache.needsCalendarSeal())) {
+      await cache.onBucketsChanged(store.getRows(), written);
     }
     // Skip Renderer poke when sync wrote nothing (unless forceNotify for round end).
     if (opts?.quiet) return;

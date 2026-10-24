@@ -1,3 +1,4 @@
+import { createSubscriptionApi } from './subscription-api.js';
 import { Hono } from 'hono';
 import type { Context } from 'hono';
 import { cors } from 'hono/cors';
@@ -94,6 +95,32 @@ function isValidApiUrl(url: string): boolean {
     return parsed.protocol === 'http:' || parsed.protocol === 'https:';
   } catch {
     return false;
+  }
+}
+
+interface JuejinProfile {
+  userName: string;
+  avatarLarge: string;
+}
+
+async function fetchJuejinProfile(userId: string): Promise<JuejinProfile | null> {
+  try {
+    const url = new URL('https://api.juejin.cn/user_api/v1/user/get');
+    url.searchParams.set('user_id', userId);
+    const response = await fetch(url, { signal: AbortSignal.timeout(2_000) });
+    if (!response.ok) return null;
+    const body = await response.json() as {
+      err_no?: unknown;
+      data?: { user_id?: unknown; user_name?: unknown; avatar_large?: unknown };
+    } | null;
+    const data = body?.err_no === 0 ? body.data : null;
+    if (!data || String(data.user_id ?? '') !== userId) return null;
+    const userName = typeof data.user_name === 'string' ? data.user_name.trim() : '';
+    const avatarLarge = typeof data.avatar_large === 'string' ? data.avatar_large.trim() : '';
+    if (!userName || !isValidApiUrl(avatarLarge)) return null;
+    return { userName, avatarLarge };
+  } catch {
+    return null;
   }
 }
 
@@ -249,8 +276,40 @@ function mapUpstreamError(
 
 export function createLocalApiApp(deps: LocalApiDeps): Hono {
   const app = new Hono();
+  // GET-only display overlay. Login already persisted name/avatar; refresh runs in
+  // the background so config reads never wait on the network or write disk.
+  let profileCache: {
+    userId: string;
+    expiresAt: number;
+    value: JuejinProfile | null;
+  } | null = null;
+
+  function readConfigView(): TudConfigView {
+    const view = toConfigView(deps.getConfig());
+    const userId = view.juejin.originUserId;
+    if (!view.juejin.userId || !userId || !looksLikePlainJuejinUserId(userId)) return view;
+
+    if (
+      !profileCache || profileCache.userId !== userId || profileCache.expiresAt <= Date.now()
+    ) {
+      const entry = {
+        userId,
+        expiresAt: Date.now() + 5 * 60_000,
+        value: profileCache?.userId === userId ? profileCache.value : null,
+      };
+      profileCache = entry;
+      void fetchJuejinProfile(userId).then((profile) => {
+        // Drop after logout / account switch / a newer refresh replaced the entry.
+        if (profileCache === entry && profile) entry.value = profile;
+      });
+    }
+
+    if (profileCache.value) Object.assign(view.juejin, profileCache.value);
+    return view;
+  }
 
   app.use('*', cors());
+  app.route('/functions/tud-subscription', createSubscriptionApi());
 
   app.get('/health', (c) => c.json({ ok: true }));
 
@@ -489,8 +548,8 @@ export function createLocalApiApp(deps: LocalApiDeps): Hono {
     return c.json(ok(await getSyncStatusPayload(deps.dataDir, config, rows, hooks)));
   });
 
-  app.get('/functions/tud-config', async (c) => {
-    return c.json(ok(toConfigView(deps.getConfig())));
+  app.get('/functions/tud-config', (c) => {
+    return c.json(ok(readConfigView()));
   });
 
   app.put('/functions/tud-config', async (c) => {
@@ -551,6 +610,12 @@ export function createLocalApiApp(deps: LocalApiDeps): Hono {
     // provide an onConfigChange callback.
     activeConfig.juejin = config.juejin;
     deps.onConfigChange?.(activeConfig);
+    if (body.juejin && (
+      body.juejin.token !== undefined || body.juejin.originUserId !== undefined ||
+      body.juejin.userName !== undefined || body.juejin.avatarLarge !== undefined
+    )) {
+      profileCache = null;
+    }
 
     const nextApiUrl = normalizeApiUrl(config.juejin.apiUrl ?? '');
     const nextToken = config.juejin.token?.trim() || null;

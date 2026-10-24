@@ -1,5 +1,7 @@
+import { subscriptionApi } from '../lib/subscription-api';
+import { geminiProgressMetrics } from '../lib/subscription-progress';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { antigravityRemainingPercent, type AntigravitySubscriptionSnapshot } from '../../shared/antigravity-subscription';
+import type { AntigravitySubscriptionSnapshot } from '../../shared/antigravity-subscription';
 import { SubscriptionUsageCard } from './SubscriptionUsageCard';
 import { SubscriptionBrandIcon } from './SubscriptionBrandIcon';
 
@@ -12,10 +14,11 @@ export function AntigravitySubscriptionCard() {
   const [snapshot, setSnapshot] = useState<AntigravitySubscriptionSnapshot>(INITIAL_SNAPSHOT);
   const [loading, setLoading] = useState(true);
   const requestInFlight = useRef(false);
-  const reload = useCallback(async () => {
+  const reload = useCallback(async (forceRefresh = false) => {
     if (requestInFlight.current) return;
     requestInFlight.current = true;
-    try { setSnapshot(await window.tud.getAntigravitySubscription()); }
+    setLoading(true);
+    try { setSnapshot(await subscriptionApi.getAntigravitySubscription({ forceRefresh })); }
     catch { setSnapshot({ ...INITIAL_SNAPSHOT, message: '暂时无法读取 Antigravity 订阅信息' }); }
     finally { requestInFlight.current = false; setLoading(false); }
   }, []);
@@ -27,16 +30,11 @@ export function AntigravitySubscriptionCard() {
   }, [reload]);
   return <SubscriptionUsageCard data={{
     icon: <SubscriptionBrandIcon brand="antigravity" />,
-    metrics: snapshot.limits.map((limit, index) => ({
-      color: index === 0 && snapshot.limits.length > 1 ? '#7dcf00' : '#2b7eff',
-      label: geminiModelLabel(limit.label),
-      remainingPercent: antigravityRemainingPercent(limit.usedPercent),
-    })),
+    metrics: geminiProgressMetrics(snapshot),
+    metricLimit: 3,
+    expandMetrics: true,
+    planLabel: snapshot.planLabel,
     stale: snapshot.stale,
     title: 'Gemini',
-  }} loading={loading} />;
-}
-
-function geminiModelLabel(label: string): string {
-  return label.replace(/^gemini\s+/i, '') || label;
+  }} onRefresh={() => void reload(true)} loading={loading} />;
 }

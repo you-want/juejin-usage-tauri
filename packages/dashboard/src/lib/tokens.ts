@@ -10,6 +10,7 @@ export const SOURCE_COLORS: Record<string, string> = {
   trae: 'var(--source-trae)',
   gemini: 'var(--source-gemini)',
   opencode: 'var(--source-opencode)',
+  deveco: 'var(--source-deveco)',
   copilot: 'var(--source-copilot)',
   antigravity: 'var(--source-antigravity)',
   openclaw: 'var(--source-openclaw)',
@@ -17,6 +18,7 @@ export const SOURCE_COLORS: Record<string, string> = {
   hermes: 'var(--source-hermes)',
   zcode: 'var(--source-zcode)',
   dsh: 'var(--source-dsh)',
+  kinetaios: 'var(--source-kinetaios)',
   pi: 'var(--source-pi)',
   kimi: 'var(--source-kimi)',
   roocode: 'var(--source-roocode)',
@@ -38,6 +40,9 @@ export const SOURCE_COLORS: Record<string, string> = {
   warp: 'var(--source-warp)',
   qwenwork: 'var(--source-qwenwork)',
   'command-code': 'var(--source-command-code)',
+  'minimax-code': 'var(--source-minimax-code)',
+  'wps-comate': 'var(--source-wps-comate)',
+  teleagent: 'var(--source-teleagent)',
 };
 
 const SOURCE_LABELS: Record<string, string> = {
@@ -48,6 +53,7 @@ const SOURCE_LABELS: Record<string, string> = {
   trae: 'Trae',
   gemini: 'Gemini',
   opencode: 'OpenCode',
+  deveco: 'DevEco Code',
   copilot: 'Copilot',
   antigravity: 'Antigravity',
   openclaw: 'OpenClaw',
@@ -55,6 +61,7 @@ const SOURCE_LABELS: Record<string, string> = {
   hermes: 'Hermes',
   zcode: 'ZCode',
   dsh: 'DeepSeek Harness',
+  kinetaios: 'KinetAios',
   pi: 'pi',
   kimi: 'Kimi',
   roocode: 'Roo Code',
@@ -76,6 +83,9 @@ const SOURCE_LABELS: Record<string, string> = {
   warp: 'Warp',
   qwenwork: 'QwenWork',
   'command-code': 'Command Code',
+  'minimax-code': 'MiniMax Code',
+  'wps-comate': 'WPS Comate',
+  teleagent: 'TeleAgent',
 };
 
 /** Local `claude` ↔ Server ingest `claude-code` (and similar aliases). */
@@ -87,6 +97,7 @@ function canonicalSource(source: string): string {
   if (key === 'qoder' || key.startsWith('qoder')) return 'qoder';
   if (key === 'trae' || key.startsWith('trae')) return 'trae';
   if (key === 'gemini-cli' || key.startsWith('gemini')) return 'gemini';
+  if (key === 'deveco' || key.startsWith('deveco-')) return 'deveco';
   if (key === 'open-code' || key.startsWith('opencode')) return 'opencode';
   if (key === 'github-copilot' || key === 'copilot-cli' || key.startsWith('copilot')) {
     return 'copilot';
@@ -104,6 +115,9 @@ function canonicalSource(source: string): string {
     key.startsWith('dsh-')
   ) {
     return 'dsh';
+  }
+  if (key === 'kinetaios' || key.startsWith('kinetaios-')) {
+    return 'kinetaios';
   }
   if (key === 'pi-coding-agent' || key.startsWith('pi')) return 'pi';
   if (key.startsWith('kimi')) return 'kimi';
@@ -126,6 +140,9 @@ function canonicalSource(source: string): string {
   if (key.startsWith('zed')) return 'zed';
   if (key.startsWith('warp')) return 'warp';
   if (key.startsWith('command-code') || key.startsWith('commandcode')) return 'command-code';
+  if (key.startsWith('minimax-code') || key === 'mcode') return 'minimax-code';
+  if (key.startsWith('wps-comate') || key.startsWith('wpscomate')) return 'wps-comate';
+  if (key.startsWith('teleagent')) return 'teleagent';
   return key;
 }
 

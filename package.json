@@ -29,6 +29,7 @@
     "dev:dashboard": "pnpm --filter @juejin-opensource/jusage-dashboard dev",
     "start:dashboard": "pnpm --filter @juejin-opensource/jusage-dashboard preview",
     "dev:desktop": "pnpm --filter \"@juejin-opensource/jusage-desktop^...\" build && pnpm --filter @juejin-opensource/jusage-desktop dev",
+    "dev:desktop:mock": "pnpm --filter \"@juejin-opensource/jusage-desktop^...\" build && cross-env VITE_DESKTOP_MOCK=true pnpm --filter @juejin-opensource/jusage-desktop dev",
     "build:desktop": "pnpm --filter @juejin-opensource/jusage-desktop... build",
     "build:desktop:mac": "pnpm --filter \"@juejin-opensource/jusage-desktop^...\" build && pnpm --filter @juejin-opensource/jusage-desktop build:mac",
     "build:desktop:mac:arm": "pnpm --filter \"@juejin-opensource/jusage-desktop^...\" build && pnpm --filter @juejin-opensource/jusage-desktop build:mac:arm",
@@ -41,7 +42,9 @@
     "stage:desktop:tauri": "pnpm --filter @juejin-opensource/jusage-dashboard build:tauri && node apps/desktop-tauri/scripts/stage-node-app.mjs",
     "changeset": "changeset",
     "version-packages": "changeset version",
-    "release": "pnpm build:cli && changeset publish"
+    "release": "pnpm build:cli && changeset publish",
+    "cards:build": "node scripts/build-usage-cards.mjs",
+    "cards:watch": "node scripts/watch-usage-cards.mjs"
   },
   "engines": {
     "node": ">=20"

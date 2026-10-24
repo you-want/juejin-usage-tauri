@@ -1,5 +1,60 @@
 # @juejin-opensource/jusage-core
 
+## 0.1.15
+
+### Patch Changes
+
+- 新增 DevEco Code 用量采集：读取本地 `deveco.db` 并独立统计 token。
+- 线上用量面板支持生成可嵌入博客 / GitHub README 的 SVG 用量卡片，可切换样式、复制链接并管理公开展示标识。
+- CLI Web 首页可展示本机各渠道订阅套餐与剩余额度，无需启动桌面端。
+- 同步进度文件 `cursors.json` 改为原子写入，避免中途退出后进度丢失、需要重扫历史。
+- 修复 Codex 累计快照漏算缓存输入差值导致费用偏高；修复 OpenCode / DevEco Code 先写 token、后补时间戳时可能漏记用量。
+- 内置定价表同步 models.dev：补充 Gemini 4 Argon、Muse Wonder 1.0、MiniMax-M3.1-Flash、DeepSeek V4.1 Flash 1017，并为 GLM-4.5V / 4.6V 补齐缓存读取价。
+
+## 0.1.14
+
+### Patch Changes
+
+- 新增 TeleAgent（中国电信星辰超级智能体）用量采集：按模型与 token 统计，半小时分桶计入面板。
+- 新增 KinetAios 用量采集：读取本地 `history.db` 的 `cost_log`，token 与真实美元成本计入面板与排行榜。
+- 支持 Kimi 桌面版用量采集与项目归属，可与 Kimi Code 并存并增量去重。
+- 修复电脑不关机跨过零点后，昨天及连续多天没有新用量的日期在本地面板显示为 0：空同步也会补上这些日期，不必重启。
+- 数据校对会展示被跳过事件的 event_id 与归属原因；按上海时区校准时不再误删跨日本地行。
+- 内置定价表补充 GPT-6.1 Sol、Claude Haiku / Sonnet 5.5、Mistral Large 4 等，并更新一批现有模型价格。
+
+## 0.1.13
+
+### Patch Changes
+
+- 新增 MiniMax Code 用量采集：读取本机 MiniMax Code 会话，按项目目录归属；可用 `jusage sync --source=minimax-code`（别名 `mcode` / `minimax`）。
+- 新增 WPS 灵犀（WPS Comate）用量采集：读取 `~/.wpscomate` 会话日志，按工作目录归属项目。
+- Command Code 用量现在会随云端同步上报；升级后首次校对可补报近 90 天存量。
+- 修复 OpenCode 2.0 及之后新产生的用量没有进入统计：下次同步补齐尚未记过的模型调用与上下文压缩，已统计历史不重复计算。
+- 修复 CodeBuddy 用量偏低：多轮工具调用按整轮累计 token，不再只计最后一轮。
+- 修复同一时段多项目用量上报到云端时只记一部分：每次同步上报该时段全部项目合计；升级后首次同步会自动全量比对纠正少报。
+- 修复应用休眠或停用多天后，已有用量日期不出现在本地面板：启动时补齐缺失的历史缓存日期。
+- Cursor 用量 CSV 下载超时则跳过本轮采集，避免中断整轮同步；未登录时停止拉取账号账单，已采集历史保留。
+- 收紧桌面进程匹配，避免启动时误杀 Cursor / VS Code 等带仓库名的 IDE 插件进程。
+- 设置中的关联账号头像、昵称改为后台刷新，不再长期停留在过期资料。
+- 内置定价表补充 Claude Opus 5.5、GPT-6 Sol/Luna、小米 Mimo v2.6，并更新通义千问国内区价格。
+
+## 0.1.12
+
+### Patch Changes
+
+- 支持读取 CodeBuddy 桌面应用与 VSCode / Cursor 插件的用量数据，并按项目目录归属；补充腾讯 hy4-preview 定价与 codebuddy「auto」模型别名。
+- Codex 会话迁入数据库后删除的历史文件用量，改为按线程账本累计总量补齐；历史文件仍在时按文件拆分，账本只补差额。
+- 修复 Desktop 同步 DSH 时 `tud-sync-worker` 100% CPU 永久卡死：多帧 zstd 改用纯 JS 解码器。首次同步大体积会话可能多花约十秒，日常增量不受影响。
+- 修复新版 Cline 用量无法采集：新增读取 `~/.cline/data/sessions` SDK 会话，同时保留旧版 VS Code globalStorage 逻辑。
+- 修复 Hermes Agent 用量被记到「会话开始那天」：改为按最后一次活动时间归集。已写入历史不会自动重排；扩大时间范围触发全量重扫时日分布可能变化。
+- 修复新版 ZCode 不再记录 token：兼容 `providerId`，并优先读取 `model_usage` 表（修正缓存 token 双倍计入）；旧版仍回退 message 表。
+- 修复 zcode「总 Token」少算 reasoning：面板按五项明细求和，并自愈存量 zcode 桶。
+- 修复同步撞上日志写入中途时，半截记录被跳过后永久丢失：游标停在最后一条完整记录。
+- 概览卡副文案展示请求数与缓存命中率；请求数优先用本地请求证据，其余渠道回退 conversation 计数。
+- 数据校对失败时，报错带上失败日期、本地事件数与服务端窗口。
+- 修复 Windows 上 Claude Code `notify.cmd: command not found`；旧 hook 下次启动时自动更正。
+- 内置定价表同步 models.dev 官方渠道价格，含 Grok 4.7 与近期 GLM 模型。
+
 ## 0.1.11
 
 ### Patch Changes

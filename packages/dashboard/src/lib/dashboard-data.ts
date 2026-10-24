@@ -17,6 +17,8 @@ import {
   DASHBOARD_HOURS,
   DASHBOARD_WEEKDAYS,
   HEATMAP_LOOKBACK_DAYS,
+  mergeRequestCount,
+  mergeKnownRequestCount,
   type DashboardDailyUsageRow,
   type DashboardDistributionRow,
   type DashboardDistributions,
@@ -51,6 +53,7 @@ const SOURCE_LABELS: Record<string, string> = {
   trae: 'trae',
   gemini: 'gemini',
   opencode: 'opencode',
+  deveco: 'deveco',
   copilot: 'copilot',
   antigravity: 'antigravity',
   openclaw: 'openclaw',
@@ -217,6 +220,8 @@ export function buildFilledHourlyForDate(
     inputTokens: number;
     outputTokens: number;
     cachedInputTokens: number;
+    requestCount?: number | null;
+    knownRequestCount?: number;
   };
   const byHour = new Map<number, HourAgg>();
   for (const row of apiRows) {
@@ -235,6 +240,16 @@ export function buildFilledHourlyForDate(
     existing.inputTokens += row.inputTokens;
     existing.outputTokens += row.outputTokens;
     existing.cachedInputTokens += row.cachedInputTokens;
+    if (row.localMetrics) {
+      existing.requestCount = mergeRequestCount(
+        existing.requestCount,
+        row.localMetrics.requestCount,
+      );
+      existing.knownRequestCount = mergeKnownRequestCount(
+        existing.knownRequestCount,
+        row.localMetrics.knownRequestCount,
+      );
+    }
     byHour.set(hour, existing);
   }
   const day = weekdayForDate(targetDate || date);
@@ -260,6 +275,10 @@ export function buildFilledHourlyForDate(
       totalTokens: api.tokens > 0 ? api.tokens : inputTokens + outputTokens + cachedInputTokens,
       costUsd: api.costUsd,
       durationMinutes: 0,
+      ...(api.requestCount !== undefined ? { requestCount: api.requestCount } : {}),
+      ...(api.knownRequestCount !== undefined
+        ? { knownRequestCount: api.knownRequestCount }
+        : {}),
     };
   });
 }
@@ -513,6 +532,12 @@ function normalizeDailyRow(
     totalTokens: row.tokens,
     costUsd: roundCurrency(row.costUsd),
     durationMinutes,
+    ...(row.localMetrics
+      ? {
+          requestCount: row.localMetrics.requestCount,
+          knownRequestCount: row.localMetrics.knownRequestCount,
+        }
+      : {}),
   };
 }
 
@@ -559,6 +584,11 @@ function aggregateDailyRows(
       totalCostUsd: current.totalCostUsd + row.costUsd,
       totalDurationMinutes:
         current.totalDurationMinutes + row.durationMinutes,
+      requestCount: mergeRequestCount(current.requestCount, row.requestCount),
+      knownRequestCount: mergeKnownRequestCount(
+        current.knownRequestCount,
+        row.knownRequestCount,
+      ),
     }),
     {
       inputTokens: 0,
@@ -649,6 +679,12 @@ function sumHourlyMetrics(
         totalTokens: row.tokens,
         costUsd: row.costUsd,
         durationMinutes: 0,
+        ...(row.localMetrics
+          ? {
+              requestCount: row.localMetrics.requestCount,
+              knownRequestCount: row.localMetrics.knownRequestCount,
+            }
+          : {}),
       })),
   );
 }

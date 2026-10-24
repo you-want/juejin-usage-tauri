@@ -3,14 +3,16 @@ import { addLocalDays } from '@juejin-opensource/jusage-core/timezone';
 import { chartColor } from './chart-data.ts';
 import type { DailyUsageRow, HourlyUsageRow, ModelBreakdownRow } from './api.ts';
 import { buildFilledHourlyForDate } from './dashboard-data.ts';
-import type {
-  DashboardDailyUsageRow,
-  DashboardDistributionRow,
-  DashboardHourlyUsageRow,
-  DashboardMetricTrends,
-  DashboardProjectUsageRow,
-  DashboardToolUsageRow,
-  DashboardUsageSummary,
+import {
+  mergeRequestCount,
+  mergeKnownRequestCount,
+  type DashboardDailyUsageRow,
+  type DashboardDistributionRow,
+  type DashboardHourlyUsageRow,
+  type DashboardMetricTrends,
+  type DashboardProjectUsageRow,
+  type DashboardToolUsageRow,
+  type DashboardUsageSummary,
 } from './dashboard-mock-data.ts';
 import { localDateNow } from './stats-timezone.ts';
 import { sourceLabel } from './tokens.ts';
@@ -264,6 +266,11 @@ export function summarizeTrendRows(opts: {
       totalCostUsd: summary.totalCostUsd + row.costUsd,
       totalDurationMinutes:
         summary.totalDurationMinutes + row.durationMinutes,
+      requestCount: mergeRequestCount(summary.requestCount, row.requestCount),
+      knownRequestCount: mergeKnownRequestCount(
+        summary.knownRequestCount,
+        row.knownRequestCount,
+      ),
     }),
     {
       inputTokens: 0,
@@ -525,6 +532,8 @@ function scaleDailyTrendRow(
       totalTokens: 0,
       costUsd: 0,
       durationMinutes: 0,
+      ...(row.requestCount !== undefined ? { requestCount: 0 } : {}),
+      ...(row.knownRequestCount !== undefined ? { knownRequestCount: 0 } : {}),
     };
   }
 
@@ -540,6 +549,9 @@ function scaleDailyTrendRow(
     totalTokens: Math.round(row.totalTokens * share),
     costUsd: row.costUsd * share,
     durationMinutes: Math.round(row.durationMinutes * share),
+    // Request counts are discrete — cannot scale by token share.
+    ...(row.requestCount !== undefined ? { requestCount: null } : {}),
+    ...(row.knownRequestCount !== undefined ? { knownRequestCount: 0 } : {}),
   };
 }
 
@@ -557,6 +569,8 @@ function scaleHourlyTrendRow(
       totalTokens: 0,
       costUsd: 0,
       durationMinutes: 0,
+      ...(row.requestCount !== undefined ? { requestCount: 0 } : {}),
+      ...(row.knownRequestCount !== undefined ? { knownRequestCount: 0 } : {}),
     };
   }
 
@@ -570,5 +584,7 @@ function scaleHourlyTrendRow(
     totalTokens: Math.round(row.totalTokens * share),
     costUsd: row.costUsd * share,
     durationMinutes: Math.round(row.durationMinutes * share),
+    ...(row.requestCount !== undefined ? { requestCount: null } : {}),
+    ...(row.knownRequestCount !== undefined ? { knownRequestCount: 0 } : {}),
   };
 }

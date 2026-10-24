@@ -7,6 +7,7 @@ import {
   aggregateModelBreakdown,
   aggregateUsageSummary,
 } from '../src/aggregate.js';
+import { localEvidence } from '../src/local-metrics.js';
 import { roundCostUsd } from '../src/pricing/index.js';
 import { dailyModelKey, parseDailyModelKey } from '../src/daily-model-key.js';
 import {
@@ -159,6 +160,34 @@ test('aggregateDaily returns real input/output/cached token breakdown', () => {
   assert.equal(result.days[0]?.cacheCreationInputTokens, 5);
 });
 
+test('aggregateDaily keeps cache columns when local_metrics request evidence is present', () => {
+  const hour = new Date().toISOString();
+  const result = aggregateDaily(
+    [
+      {
+        hour_start: hour,
+        source: 'claude',
+        model: 'opus',
+        project: 'p',
+        input_tokens: 70,
+        output_tokens: 20,
+        cached_input_tokens: 10,
+        cache_creation_input_tokens: 5,
+        reasoning_output_tokens: 0,
+        total_tokens: 105,
+        conversation_count: 1,
+        local_metrics: localEvidence(2),
+      },
+    ],
+    30,
+    '1970-01-01T00:00:00.000Z',
+  );
+  assert.equal(result.days[0]?.cachedInputTokens, 10);
+  assert.equal(result.days[0]?.cacheCreationInputTokens, 5);
+  assert.equal(result.days[0]?.inputTokens, 70);
+  assert.equal(result.days[0]?.localMetrics?.requestCount, 2);
+});
+
 test('aggregateDaily merges URI-encoded cwd with folder name', () => {
   const result = aggregateDaily(
     [
@@ -224,7 +253,9 @@ test('aggregateHourly buckets by Asia/Shanghai hour and omits empty hours', () =
 
   assert.equal(result.timeZone, DEFAULT_STATS_TIMEZONE);
   assert.equal(result.hours.length, 2);
-  assert.deepEqual(result.hours[0], {
+  const { localMetrics, ...hour0 } = result.hours[0]!;
+  assert.equal(localMetrics?.requestCount, null);
+  assert.deepEqual(hour0, {
     date: '2026-07-25',
     hour: 1,
     source: 'codex',

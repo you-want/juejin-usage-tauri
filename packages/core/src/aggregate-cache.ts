@@ -1,3 +1,8 @@
+import {
+  emptyLocalMetrics,
+  mergeLocalMetrics,
+  type LocalUsageMetrics,
+} from './local-metrics.js';
 import { existsSync } from 'node:fs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
@@ -13,7 +18,6 @@ import { normalizeProjectName } from './project-label.js';
 import { roundCostUsd } from './pricing/index.js';
 import {
   DEFAULT_STATS_TIMEZONE,
-  addLocalDays,
   localDateAndHour,
   localDateDaysAgo,
   localDateNow,
@@ -30,12 +34,16 @@ import type {
   UsageSummary,
 } from './types.js';
 
-/** Bump when sealed daily `tokens` becomes input+output (was five-bucket sum). */
-const CACHE_VERSION = 6;
+/**
+ * v7: sealed daily/summary rows gain optional localMetrics + daily.sources.
+ * Bump required so pre-v7 seals (missing fields) are not read as requestCount=0.
+ */
+const CACHE_VERSION = 7;
 /** Epoch lower bound so single-day aggregates are not clipped by statsSince. */
 const EPOCH_SINCE = '1970-01-01T00:00:00.000Z';
 
 export interface SealedModelRow {
+  localMetrics?: LocalUsageMetrics;
   model: string;
   source: string;
   tokens: number;
@@ -43,6 +51,7 @@ export interface SealedModelRow {
 }
 
 export interface SealedProjectRow {
+  localMetrics?: LocalUsageMetrics;
   project: string;
   tokens: number;
   costUsd: number;
@@ -73,6 +82,8 @@ function pct(part: number, total: number): number {
 
 function emptySummary(statsSince: string): UsageSummary {
   return {
+    localMetrics: emptyLocalMetrics(),
+    todayLocalMetrics: emptyLocalMetrics(),
     totalTokens: 0,
     totalCostUsd: 0,
     todayTokens: 0,
@@ -113,26 +124,34 @@ function buildSealedDay(
       date,
       tokens: 0,
       costUsd: 0,
+      localMetrics: emptyLocalMetrics(),
       models: {},
       projects: [],
     },
     hourly: hourly.hours,
-    models: breakdown.models.map(({ model, source, tokens, costUsd }) => ({
-      model,
-      source,
-      tokens,
-      costUsd,
-    })),
-    projects: breakdown.projects.map((p) => ({
-      project: p.project,
-      tokens: p.tokens,
-      costUsd: p.costUsd,
-      models: p.models.map(({ model, source, tokens, costUsd }) => ({
+    models: breakdown.models.map(
+      ({ model, source, tokens, costUsd, localMetrics }) => ({
         model,
         source,
         tokens,
         costUsd,
-      })),
+        localMetrics,
+      }),
+    ),
+    projects: breakdown.projects.map((p) => ({
+      project: p.project,
+      tokens: p.tokens,
+      costUsd: p.costUsd,
+      localMetrics: p.localMetrics,
+      models: p.models.map(
+        ({ model, source, tokens, costUsd, localMetrics }) => ({
+          model,
+          source,
+          tokens,
+          costUsd,
+          localMetrics,
+        }),
+      ),
     })),
   };
 }
@@ -147,9 +166,14 @@ function mergeModelRows(parts: SealedModelRow[]): ModelBreakdownRow[] {
       source: row.source,
       tokens: 0,
       costUsd: 0,
+      localMetrics: emptyLocalMetrics(),
     };
     existing.tokens += row.tokens;
     existing.costUsd += row.costUsd;
+    existing.localMetrics = mergeLocalMetrics([
+      existing.localMetrics ?? emptyLocalMetrics(),
+      row.localMetrics ?? emptyLocalMetrics(),
+    ]);
     byKey.set(key, existing);
     totalTokens += row.tokens;
   }
@@ -159,6 +183,7 @@ function mergeModelRows(parts: SealedModelRow[]): ModelBreakdownRow[] {
       source: v.source,
       tokens: v.tokens,
       costUsd: roundCostUsd(v.costUsd),
+      localMetrics: v.localMetrics,
       pct: pct(v.tokens, totalTokens),
     }))
     .sort((a, b) => b.tokens - a.tokens);
@@ -169,6 +194,7 @@ function mergeProjectRows(parts: SealedProjectRow[]): ProjectBreakdownRow[] {
     string,
     {
       project: string;
+      localMetrics: LocalUsageMetrics;
       tokens: number;
       costUsd: number;
       models: Map<string, SealedModelRow>;
@@ -177,16 +203,19 @@ function mergeProjectRows(parts: SealedProjectRow[]): ProjectBreakdownRow[] {
   let totalTokens = 0;
   for (const row of parts) {
     const projectName = normalizeProjectName(row.project);
-    const project =
-      byProject.get(projectName) ??
-      {
-        project: projectName,
-        tokens: 0,
-        costUsd: 0,
-        models: new Map(),
-      };
+    const project = byProject.get(projectName) ?? {
+      project: projectName,
+      localMetrics: emptyLocalMetrics(),
+      tokens: 0,
+      costUsd: 0,
+      models: new Map(),
+    };
     project.tokens += row.tokens;
     project.costUsd += row.costUsd;
+    project.localMetrics = mergeLocalMetrics([
+      project.localMetrics ?? emptyLocalMetrics(),
+      row.localMetrics ?? emptyLocalMetrics(),
+    ]);
     for (const m of row.models) {
       const key = `${m.source}\0${m.model}`;
       const existing = project.models.get(key) ?? {
@@ -194,9 +223,14 @@ function mergeProjectRows(parts: SealedProjectRow[]): ProjectBreakdownRow[] {
         source: m.source,
         tokens: 0,
         costUsd: 0,
+        localMetrics: emptyLocalMetrics(),
       };
       existing.tokens += m.tokens;
       existing.costUsd += m.costUsd;
+      existing.localMetrics = mergeLocalMetrics([
+        existing.localMetrics ?? emptyLocalMetrics(),
+        m.localMetrics ?? emptyLocalMetrics(),
+      ]);
       project.models.set(key, existing);
     }
     byProject.set(projectName, project);
@@ -207,6 +241,7 @@ function mergeProjectRows(parts: SealedProjectRow[]): ProjectBreakdownRow[] {
       project: v.project,
       tokens: v.tokens,
       costUsd: roundCostUsd(v.costUsd),
+      localMetrics: v.localMetrics,
       pct: pct(v.tokens, totalTokens),
       models: Array.from(v.models.values())
         .map((m) => ({
@@ -214,6 +249,7 @@ function mergeProjectRows(parts: SealedProjectRow[]): ProjectBreakdownRow[] {
           source: m.source,
           tokens: m.tokens,
           costUsd: roundCostUsd(m.costUsd),
+          localMetrics: m.localMetrics,
           pct: pct(m.tokens, v.tokens),
         }))
         .sort((a, b) => b.tokens - a.tokens),
@@ -302,11 +338,12 @@ export class AggregateCache {
 
   /**
    * After BucketStore.apply / reload: reseal touched historical dates and
-   * roll yesterday into sealed when the calendar day advances.
+   * seal any missing historical dates when the calendar day advances.
    */
   async onBucketsChanged(
     allRows: QueueBucket[],
     touchedBuckets: QueueBucket[] = [],
+    reconcileHistory = false,
   ): Promise<void> {
     await this.ensureLoaded();
     const today = localDateNow(this.timeZone);
@@ -317,19 +354,18 @@ export class AggregateCache {
       return;
     }
 
-    // Cross-midnight: seal yesterday if still missing.
-    if (this.sealedAsOf && this.sealedAsOf < today) {
-      const yesterday = addLocalDays(today, -1);
-      if (!this.days.has(yesterday)) {
-        const entry = buildSealedDay(allRows, yesterday, this.timeZone);
-        if (entry) {
-          this.days.set(yesterday, entry);
-          this.dirty = true;
-        }
+    // Startup also repairs gaps left by older versions. A sleeping app can
+    // resume several days later, so sealing only yesterday misses earlier days.
+    if (reconcileHistory || (this.sealedAsOf && this.sealedAsOf < today)) {
+      for (const date of touchedLocalDates(allRows, this.timeZone)) {
+        if (date >= today || this.days.has(date)) continue;
+        const entry = buildSealedDay(allRows, date, this.timeZone);
+        if (!entry) continue;
+        this.days.set(date, entry);
+        this.dirty = true;
       }
-      this.sealedAsOf = today;
-      this.dirty = true;
-    } else if (!this.sealedAsOf) {
+    }
+    if (this.sealedAsOf !== today) {
       this.sealedAsOf = today;
       this.dirty = true;
     }
@@ -462,6 +498,7 @@ export class AggregateCache {
           source: m.source,
           tokens: m.tokens,
           costUsd: m.costUsd,
+          localMetrics: m.localMetrics,
         });
       }
       for (const p of todayBreakdown.projects) {
@@ -469,12 +506,16 @@ export class AggregateCache {
           project: p.project,
           tokens: p.tokens,
           costUsd: p.costUsd,
-          models: p.models.map(({ model, source, tokens, costUsd }) => ({
-            model,
-            source,
-            tokens,
-            costUsd,
-          })),
+          localMetrics: p.localMetrics,
+          models: p.models.map(
+            ({ model, source, tokens, costUsd, localMetrics }) => ({
+              model,
+              source,
+              tokens,
+              costUsd,
+              localMetrics,
+            }),
+          ),
         });
       }
     }
@@ -503,7 +544,15 @@ export class AggregateCache {
 
     const bySourceMap = new Map<
       string,
-      { tokens: number; costUsd: number; models: Map<string, { tokens: number; costUsd: number }> }
+      {
+        tokens: number;
+        costUsd: number;
+        localMetrics: LocalUsageMetrics;
+        models: Map<
+          string,
+          { tokens: number; costUsd: number; localMetrics: LocalUsageMetrics }
+        >;
+      }
     >();
     let totalTokens = 0;
     let totalCostUsd = 0;
@@ -513,18 +562,32 @@ export class AggregateCache {
       totalTokens += entry.daily.tokens;
       totalCostUsd += entry.daily.costUsd;
       for (const m of entry.models) {
-        const src =
-          bySourceMap.get(m.source) ??
-          {
-            tokens: 0,
-            costUsd: 0,
-            models: new Map<string, { tokens: number; costUsd: number }>(),
-          };
+        const src = bySourceMap.get(m.source) ?? {
+          tokens: 0,
+          costUsd: 0,
+          localMetrics: emptyLocalMetrics(),
+          models: new Map<
+            string,
+            { tokens: number; costUsd: number; localMetrics: LocalUsageMetrics }
+          >(),
+        };
         src.tokens += m.tokens;
         src.costUsd += m.costUsd;
-        const model = src.models.get(m.model) ?? { tokens: 0, costUsd: 0 };
+        src.localMetrics = mergeLocalMetrics([
+          src.localMetrics ?? emptyLocalMetrics(),
+          m.localMetrics ?? emptyLocalMetrics(),
+        ]);
+        const model = src.models.get(m.model) ?? {
+          tokens: 0,
+          costUsd: 0,
+          localMetrics: emptyLocalMetrics(),
+        };
         model.tokens += m.tokens;
         model.costUsd += m.costUsd;
+        model.localMetrics = mergeLocalMetrics([
+          model.localMetrics ?? emptyLocalMetrics(),
+          m.localMetrics ?? emptyLocalMetrics(),
+        ]);
         src.models.set(m.model, model);
         bySourceMap.set(m.source, src);
       }
@@ -538,19 +601,33 @@ export class AggregateCache {
     totalTokens += todaySummary.totalTokens;
     totalCostUsd += todaySummary.totalCostUsd;
     for (const src of todaySummary.bySource) {
-      const existing =
-        bySourceMap.get(src.source) ??
-        {
-          tokens: 0,
-          costUsd: 0,
-          models: new Map<string, { tokens: number; costUsd: number }>(),
-        };
+      const existing = bySourceMap.get(src.source) ?? {
+        tokens: 0,
+        costUsd: 0,
+        localMetrics: emptyLocalMetrics(),
+        models: new Map<
+          string,
+          { tokens: number; costUsd: number; localMetrics: LocalUsageMetrics }
+        >(),
+      };
       existing.tokens += src.tokens;
       existing.costUsd += src.costUsd;
+      existing.localMetrics = mergeLocalMetrics([
+        existing.localMetrics ?? emptyLocalMetrics(),
+        src.localMetrics ?? emptyLocalMetrics(),
+      ]);
       for (const m of src.models) {
-        const model = existing.models.get(m.model) ?? { tokens: 0, costUsd: 0 };
+        const model = existing.models.get(m.model) ?? {
+          tokens: 0,
+          costUsd: 0,
+          localMetrics: emptyLocalMetrics(),
+        };
         model.tokens += m.tokens;
         model.costUsd += m.costUsd;
+        model.localMetrics = mergeLocalMetrics([
+          model.localMetrics ?? emptyLocalMetrics(),
+          m.localMetrics ?? emptyLocalMetrics(),
+        ]);
         existing.models.set(m.model, model);
       }
       bySourceMap.set(src.source, existing);
@@ -565,12 +642,14 @@ export class AggregateCache {
         source,
         tokens: v.tokens,
         costUsd: roundCostUsd(v.costUsd),
+        localMetrics: v.localMetrics,
         pct: pct(v.tokens, totalTokens),
         models: Array.from(v.models.entries())
           .map(([model, m]) => ({
             model,
             tokens: m.tokens,
             costUsd: roundCostUsd(m.costUsd),
+            localMetrics: m.localMetrics,
             pct: pct(m.tokens, v.tokens),
           }))
           .sort((a, b) => b.tokens - a.tokens),
@@ -578,6 +657,13 @@ export class AggregateCache {
       .sort((a, b) => b.tokens - a.tokens);
 
     return {
+      localMetrics: mergeLocalMetrics([
+        ...Array.from(this.days)
+          .filter(([date]) => date >= statsDate && date < today)
+          .map(([, entry]) => entry.daily.localMetrics ?? emptyLocalMetrics()),
+        todaySummary.localMetrics ?? emptyLocalMetrics(),
+      ]),
+      todayLocalMetrics: todaySummary.todayLocalMetrics,
       totalTokens,
       totalCostUsd: roundCostUsd(totalCostUsd),
       todayTokens: todaySummary.todayTokens,
@@ -590,6 +676,16 @@ export class AggregateCache {
   /** Test seam: sealed day count. */
   sealedDayCount(): number {
     return this.days.size;
+  }
+
+  /**
+   * Closed days are not sealed for the current calendar day yet.
+   * A process that stays up across midnight must seal even when sync wrote nothing;
+   * otherwise yesterday stays out of the sealed cache and reads as 0.
+   */
+  needsCalendarSeal(): boolean {
+    if (!this.loaded) return true;
+    return this.sealedAsOf !== localDateNow(this.timeZone);
   }
 
   /**

@@ -15,7 +15,7 @@ test('maps a weekly Grok billing response with microsecond dates', () => {
     },
   }), {
     planLabel: 'SuperGrok',
-    limits: [{ id: 'weekly', label: '7d', usedPercent: 27.5, resetsAt: 1_788_825_600 }],
+    limits: [{ id: 'weekly', label: '7d', usedPercent: 27.5, startsAt: 1_788_220_800, resetsAt: 1_788_825_600 }],
   });
 });
 
@@ -47,6 +47,7 @@ test('derives monthly utilization from credits when percent is absent', () => {
     id: 'billing',
     label: '周期',
     usedPercent: 25,
+    startsAt: 1_788_220_800,
     resetsAt: 1_790_812_800,
   }]);
 });

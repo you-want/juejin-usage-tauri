@@ -10,6 +10,7 @@ const SOURCE_TO_INTEGRATION: Record<string, string> = {
   qoder: 'qoder',
   trae: 'trae',
   gemini: 'gemini',
+  deveco: 'deveco',
   opencode: 'opencode',
   copilot: 'copilot',
   antigravity: 'antigravity',
@@ -18,6 +19,7 @@ const SOURCE_TO_INTEGRATION: Record<string, string> = {
   hermes: 'hermes',
   zcode: 'zcode',
   dsh: 'dsh',
+  kinetaios: 'kinetaios',
   pi: 'pi',
   kimi: 'kimi',
   roocode: 'roocode',
@@ -38,6 +40,10 @@ const SOURCE_TO_INTEGRATION: Record<string, string> = {
   zed: 'zed',
   warp: 'warp',
   qwenwork: 'qwenwork',
+  'command-code': 'command-code',
+  'minimax-code': 'minimax-code',
+  'wps-comate': 'wps-comate',
+  teleagent: 'teleagent',
 };
 
 /** Fallback when QueueBucket/IngestBucket has no collector set (legacy rows). */
@@ -49,6 +55,7 @@ const INTEGRATION_TO_COLLECTOR: Record<string, string> = {
   trae: 'trae-ide',
   gemini: 'gemini-cli',
   opencode: 'opencode',
+  deveco: 'deveco-code',
   copilot: 'copilot-cli',
   antigravity: 'antigravity-app',
   openclaw: 'openclaw',
@@ -56,6 +63,7 @@ const INTEGRATION_TO_COLLECTOR: Record<string, string> = {
   hermes: 'hermes',
   zcode: 'zcode',
   dsh: 'dsh',
+  kinetaios: 'kinetaios',
   pi: 'pi',
   kimi: 'kimi-code',
   roocode: 'roo-code',
@@ -77,6 +85,10 @@ const INTEGRATION_TO_COLLECTOR: Record<string, string> = {
   zed: 'zed',
   warp: 'warp',
   qwenwork: 'qwenwork',
+  'command-code': 'command-code',
+  'minimax-code': 'minimax-code',
+  'wps-comate': 'wps-comate',
+  teleagent: 'teleagent',
 };
 
 const NAMESPACE_DNS = '6ba7b810-9dad-11d1-80b4-00c04fd430c8';

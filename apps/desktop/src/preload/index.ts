@@ -36,6 +36,7 @@ import {
 import type { CodexSubscriptionSnapshot } from '../shared/codex-subscription';
 import type { ClaudeSubscriptionSnapshot } from '../shared/claude-subscription';
 import type { CursorSubscriptionSnapshot } from '../shared/cursor-subscription';
+import type { CopilotSubscriptionSnapshot } from '../shared/copilot-subscription';
 import type { GrokSubscriptionSnapshot } from '../shared/grok-subscription';
 import type { KimiSubscriptionSnapshot } from '../shared/kimi-subscription';
 import type { ZcodeSubscriptionSnapshot } from '../shared/zcode-subscription';
@@ -79,6 +80,7 @@ const SHARE_CARD_COPY_IMAGE_CHANNEL = 'share-card:copy-image';
 const CODEX_SUBSCRIPTION_GET_CHANNEL = 'codex-subscription:get';
 const CLAUDE_SUBSCRIPTION_GET_CHANNEL = 'claude-subscription:get';
 const CURSOR_SUBSCRIPTION_GET_CHANNEL = 'cursor-subscription:get';
+const COPILOT_SUBSCRIPTION_GET_CHANNEL = 'copilot-subscription:get';
 const GROK_SUBSCRIPTION_GET_CHANNEL = 'grok-subscription:get';
 const KIMI_SUBSCRIPTION_GET_CHANNEL = 'kimi-subscription:get';
 const ZCODE_SUBSCRIPTION_GET_CHANNEL = 'zcode-subscription:get';
@@ -130,8 +132,8 @@ const tudApi = {
   copyImageToClipboard: (dataUrl: string): Promise<boolean> =>
     ipcRenderer.invoke(SHARE_CARD_COPY_IMAGE_CHANNEL, dataUrl),
 
-  getCodexSubscription: (): Promise<CodexSubscriptionSnapshot> =>
-    ipcRenderer.invoke(CODEX_SUBSCRIPTION_GET_CHANNEL),
+  getCodexSubscription: (options?: { forceRefresh?: boolean }): Promise<CodexSubscriptionSnapshot> =>
+    ipcRenderer.invoke(CODEX_SUBSCRIPTION_GET_CHANNEL, options),
 
   getClaudeSubscription: (options?: {
     allowCredentialAccess?: boolean;
@@ -139,23 +141,26 @@ const tudApi = {
   }): Promise<ClaudeSubscriptionSnapshot> =>
     ipcRenderer.invoke(CLAUDE_SUBSCRIPTION_GET_CHANNEL, options),
 
-  getCursorSubscription: (): Promise<CursorSubscriptionSnapshot> =>
-    ipcRenderer.invoke(CURSOR_SUBSCRIPTION_GET_CHANNEL),
+  getCursorSubscription: (options?: { forceRefresh?: boolean }): Promise<CursorSubscriptionSnapshot> =>
+    ipcRenderer.invoke(CURSOR_SUBSCRIPTION_GET_CHANNEL, options),
 
-  getGrokSubscription: (): Promise<GrokSubscriptionSnapshot> =>
-    ipcRenderer.invoke(GROK_SUBSCRIPTION_GET_CHANNEL),
+  getCopilotSubscription: (options?: { forceRefresh?: boolean }): Promise<CopilotSubscriptionSnapshot> =>
+    ipcRenderer.invoke(COPILOT_SUBSCRIPTION_GET_CHANNEL, options),
 
-  getKimiSubscription: (): Promise<KimiSubscriptionSnapshot> =>
-    ipcRenderer.invoke(KIMI_SUBSCRIPTION_GET_CHANNEL),
+  getGrokSubscription: (options?: { forceRefresh?: boolean }): Promise<GrokSubscriptionSnapshot> =>
+    ipcRenderer.invoke(GROK_SUBSCRIPTION_GET_CHANNEL, options),
 
-  getZcodeSubscription: (): Promise<ZcodeSubscriptionSnapshot> =>
-    ipcRenderer.invoke(ZCODE_SUBSCRIPTION_GET_CHANNEL),
+  getKimiSubscription: (options?: { forceRefresh?: boolean }): Promise<KimiSubscriptionSnapshot[]> =>
+    ipcRenderer.invoke(KIMI_SUBSCRIPTION_GET_CHANNEL, options),
 
-  getAntigravitySubscription: (): Promise<AntigravitySubscriptionSnapshot> =>
-    ipcRenderer.invoke(ANTIGRAVITY_SUBSCRIPTION_GET_CHANNEL),
+  getZcodeSubscription: (options?: { forceRefresh?: boolean }): Promise<ZcodeSubscriptionSnapshot> =>
+    ipcRenderer.invoke(ZCODE_SUBSCRIPTION_GET_CHANNEL, options),
 
-  getQoderSubscription: (): Promise<QoderSubscriptionSnapshot> =>
-    ipcRenderer.invoke(QODER_SUBSCRIPTION_GET_CHANNEL),
+  getAntigravitySubscription: (options?: { forceRefresh?: boolean }): Promise<AntigravitySubscriptionSnapshot> =>
+    ipcRenderer.invoke(ANTIGRAVITY_SUBSCRIPTION_GET_CHANNEL, options),
+
+  getQoderSubscription: (options?: { forceRefresh?: boolean }): Promise<QoderSubscriptionSnapshot> =>
+    ipcRenderer.invoke(QODER_SUBSCRIPTION_GET_CHANNEL, options),
 
   getMiniMaxSubscription: (options?: { forceRefresh?: boolean }): Promise<MiniMaxSubscriptionSnapshot> =>
     ipcRenderer.invoke(MINIMAX_SUBSCRIPTION_GET_CHANNEL, options),

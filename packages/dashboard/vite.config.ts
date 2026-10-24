@@ -95,6 +95,12 @@ export default defineConfig(({ mode }) => {
     resolve: {
       alias: {
         '@': path.resolve(rootDir, './src'),
+        // cards:build / cards:watch write src; point dashboard at src so local
+        // catalog + preview update without a full jusage-core tsc.
+        '@juejin-opensource/jusage-core/usage-cards': path.resolve(
+          rootDir,
+          '../core/src/usage-cards.ts',
+        ),
       },
     },
     server: {

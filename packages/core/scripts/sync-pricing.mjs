@@ -23,7 +23,7 @@ const MODELS_DEV_URL = 'https://models.dev/api.json';
 // Official-channel providers kept in the bundle. Everything else in models.dev
 // (third-party / community / AWS / regional relays) is excluded.
 const SCOPED_PROVIDERS = new Set([
-  'anthropic', 'openai', 'google', 'google-vertex', 'google-vertex-anthropic',
+  'anthropic', 'openai', 'google',
   'xai', 'deepseek', 'alibaba', 'alibaba-cn', 'moonshotai', 'moonshotai-cn',
   'minimax', 'minimax-cn', 'xiaomi', 'mistral', 'zai', 'zhipuai', 'volcengine',
   'stepfun', 'meta',
@@ -76,6 +76,7 @@ function isOfficialKey(key) {
   const parts = key.split('/');
   const provider = parts[0];
   const model = parts[parts.length - 1].toLowerCase();
+  if (provider === 'google-vertex' || provider === 'google-vertex-anthropic') return false;
   if (provider === 'cursor') return true; // Cursor's own bundled-model pricing
   for (const [family, re] of FAMILY_PATTERNS) {
     if (re.test(model)) {
@@ -87,7 +88,7 @@ function isOfficialKey(key) {
 
 // Match the bundle's scoping note: exclude audio / video / image / embedding /
 // tts / stt / realtime / transcription / moderation models.
-const EXCLUDE_FAMILY = /embedding|rerank|moderation|tts|stt|audio|speech|video|realtime|live|transcription|midi/i;
+const EXCLUDE_FAMILY = /embedding|rerank|moderation|tts|stt|audio|speech|video|realtime|live|transcription|midi|voxtral/i;
 const EXCLUDE_ID = /embedding|rerank|moderation|tts|stt|lyria|-image\b|image-|-live\b|live-|realtime|transcription|speech|robotics|midi/i;
 
 function isTextModel(model) {

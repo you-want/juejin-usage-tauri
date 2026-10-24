@@ -1,5 +1,48 @@
 # @juejin-opensource/jusage
 
+## 0.1.15
+
+### Patch Changes
+
+- CLI Web 首页可展示本机各渠道订阅套餐与剩余额度，并可按渠道刷新；Qoder Add-on 额度统一显示剩余百分比。
+- 新增 DevEco Code 用量采集；内置面板支持 SVG 用量卡片嵌入能力。
+- 同步进度改为原子写入；修复 Codex 缓存输入差值与 OpenCode / DevEco 时间戳漏记。
+- Updated dependencies
+  - @juejin-opensource/jusage-core@0.1.15
+
+## 0.1.14
+
+### Patch Changes
+
+- 新增 TeleAgent、KinetAios 用量采集与面板展示；支持 Kimi 桌面版用量。
+- 修复跨零点后空闲日期在本地面板显示为 0；数据校对会展示被跳过的事件。
+- 内置面板：Kimi 图标适配浅色主题；Codex 改用官方彩色图标。
+- Updated dependencies
+  - @juejin-opensource/jusage-core@0.1.14
+
+## 0.1.13
+
+### Patch Changes
+
+- 新增 MiniMax Code、WPS 灵犀（WPS Comate）用量采集与面板展示；Command Code 用量会随云端同步上报。
+- 修复 OpenCode 2.0 新用量未统计、CodeBuddy 多轮工具调用只计最后一轮、以及休眠后缺失日期不显示。
+- 修复同一时段多项目用量上报到云端时只记一部分；升级后首次同步会自动全量比对纠正少报。
+- 内置面板：WorkBuddy 改用官方品牌图标；关联账号头像、昵称后台刷新。
+- Cursor 用量 CSV 超时跳过本轮、未登录时停止拉账单；启动时不再误杀带仓库名的 IDE 插件进程。
+- Updated dependencies
+  - @juejin-opensource/jusage-core@0.1.13
+
+## 0.1.12
+
+### Patch Changes
+
+- 概览卡副文案展示请求数与缓存命中率。
+- 支持 CodeBuddy 扩展 / 新版 Cline；修复 DSH 同步卡死、Hermes 用量日期、ZCode 解析与 reasoning 合计、Codex 账本补齐、JSONL 半截行丢失。
+- 修复 Windows 上 Claude Code `notify.cmd: command not found`；旧 hook 下次启动时自动更正。
+- CLI 启动和状态输出不再显示完整云端上报 Token。
+- Updated dependencies
+  - @juejin-opensource/jusage-core@0.1.12
+
 ## 0.1.11
 
 ### Patch Changes

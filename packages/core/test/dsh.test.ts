@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import * as zlib from 'node:zlib';
@@ -14,15 +14,43 @@ function zstdJsonl(lines: unknown[]): Buffer {
   return zlib.zstdCompressSync(Buffer.from(lines.map((l) => JSON.stringify(l)).join('\n') + '\n'));
 }
 
-/** 多帧压缩（每行一个独立 zstd 帧拼接），模拟 DSH 流式追加写入的真实文件。 */
-function zstdJsonlMultiFrame(lines: unknown[]): Buffer {
+/** 多帧压缩（每行一个独立 zstd 帧拼接）。 */
+function zstdJsonlMultiFrameSync(lines: unknown[]): Buffer {
   return Buffer.concat(
     lines.map((l) => zlib.zstdCompressSync(Buffer.from(JSON.stringify(l) + '\n'))),
   );
 }
 
+// zstd 流式压缩 API 仅 Node >= 22.15 提供。
+const createZstdCompress = (
+  zlib as typeof zlib & { createZstdCompress?: typeof zlib.createZstdCompress }
+).createZstdCompress;
+
+/**
+ * 模拟 DSH 流式追加写入的真实文件：每行经流式压缩器独立成一帧，
+ * 帧头不含 content-size（#187 触发原生崩溃的正是这种帧型）。
+ * 无流式 API 的运行时（Node < 22.15）退回 content-size 帧。
+ */
+async function zstdJsonlMultiFrame(lines: unknown[]): Promise<Buffer> {
+  if (!createZstdCompress) return zstdJsonlMultiFrameSync(lines);
+  const frames = await Promise.all(
+    lines.map(
+      (l) =>
+        new Promise<Buffer>((resolve, reject) => {
+          const chunks: Buffer[] = [];
+          const stream = createZstdCompress();
+          stream.on('data', (c: Buffer) => chunks.push(c));
+          stream.on('end', () => resolve(Buffer.concat(chunks)));
+          stream.on('error', reject);
+          stream.end(Buffer.from(JSON.stringify(l) + '\n'));
+        }),
+    ),
+  );
+  return Buffer.concat(frames);
+}
+
 /** 构造一个 DSH 会话文件并写入临时 DSH_HOME，返回会话文件路径。 */
-function writeSession(
+async function writeSession(
   home: string,
   workspace: string,
   sessionId: string,
@@ -45,7 +73,7 @@ function writeSession(
     version?: number;
     filename?: string;
   } = {},
-): string {
+): Promise<string> {
   const dir = workspace ? join(home, 'sessions', workspace, sessionId) : join(home, 'sessions', sessionId);
   mkdirSync(dir, { recursive: true });
   const lines: unknown[] = [
@@ -110,7 +138,7 @@ function writeSession(
   const file = join(dir, opts.filename ?? defaultName);
   const contents = file.endsWith('.zstd')
     ? opts.multiFrame
-      ? zstdJsonlMultiFrame(lines)
+      ? await zstdJsonlMultiFrame(lines)
       : zstdJsonl(lines)
     : Buffer.from(lines.map((line) => JSON.stringify(line)).join('\n') + '\n');
   writeFileSync(file, contents);
@@ -134,11 +162,11 @@ test('dshHome defaults to ~/.dsh and honors DSH_HOME', () => {
   assert.equal(dshHome(), '/x/custom');
 });
 
-test('listDshSessionFiles discovers session files', () => {
+test('listDshSessionFiles discovers session files', async () => {
   const home = mkdtempSync(join(tmpdir(), 'tud-dsh-list-'));
   try {
-    writeSession(home, 'ws-a', 's1', '/tmp/proj/a', []);
-    writeSession(home, 'ws-b', 's2', '/tmp/proj/b', [], { plain: true });
+    await writeSession(home, 'ws-a', 's1', '/tmp/proj/a', []);
+    await writeSession(home, 'ws-b', 's2', '/tmp/proj/b', [], { plain: true });
     const files = listDshSessionFiles(home);
     assert.equal(files.length, 2);
     assert.ok(files.some((f) => f.endsWith('session.jsonl.zstd')));
@@ -153,7 +181,7 @@ test('parseDshIncremental parses usage, model, project from zstd sessions', asyn
   const prev = process.env.DSH_HOME;
   process.env.DSH_HOME = home;
   try {
-    writeSession(home, 'ws-a', 's1', '/tmp/proj/foo', [
+    await writeSession(home, 'ws-a', 's1', '/tmp/proj/foo', [
       {
         model: 'deepseek-v4-pro',
         input: 100,
@@ -191,7 +219,7 @@ test('parseDshIncremental reads plain JSONL and falls back to request/header mod
   const prev = process.env.DSH_HOME;
   process.env.DSH_HOME = home;
   try {
-    writeSession(home, 'ws-a', 's1', '/tmp/proj/plain', [
+    await writeSession(home, 'ws-a', 's1', '/tmp/proj/plain', [
       { model: '', input: 10, output: 5, cacheRead: 2, id: 'm1', time: 1787830861590 },
     ], {
       plain: true,
@@ -216,7 +244,7 @@ test('parseDshIncremental is idempotent for unchanged files', async () => {
   const prev = process.env.DSH_HOME;
   process.env.DSH_HOME = home;
   try {
-    writeSession(home, 'ws-a', 's1', '/tmp/proj/foo', [
+    await writeSession(home, 'ws-a', 's1', '/tmp/proj/foo', [
       { model: 'deepseek-v4-pro', input: 100, output: 50, cacheRead: 200, id: 'm1', time: 1787830861590 },
     ]);
 
@@ -241,7 +269,7 @@ test('parseDshIncremental only emits newly appended messages after a file change
   process.env.DSH_HOME = home;
   try {
     let cursors: CursorsFile = {};
-    writeSession(home, 'ws-a', 's1', '/tmp/proj/foo', [
+    await writeSession(home, 'ws-a', 's1', '/tmp/proj/foo', [
       { model: 'deepseek-v4-pro', input: 100, output: 50, cacheRead: 200, id: 'm1', time: 1787830861590 },
     ]);
 
@@ -250,7 +278,7 @@ test('parseDshIncremental only emits newly appended messages after a file change
     cursors = first.cursors;
 
     // DSH 会重写/追加同一个多帧文件；重扫时旧消息不能再次累计。
-    writeSession(home, 'ws-a', 's1', '/tmp/proj/foo', [
+    await writeSession(home, 'ws-a', 's1', '/tmp/proj/foo', [
       { model: 'deepseek-v4-pro', input: 100, output: 50, cacheRead: 200, id: 'm1', time: 1787830861590 },
       { model: 'deepseek-v4-pro', input: 7, output: 3, cacheRead: 11, id: 'm2', time: 1787830862590 },
     ]);
@@ -276,7 +304,7 @@ test('parseDshIncremental decodes multi-frame zstd (streamed session files)', as
   process.env.DSH_HOME = home;
   try {
     // 多点消息，模拟真实流式追加的会话文件。
-    writeSession(home, 'ws-a', 's1', '/tmp/proj/multi', [
+    await writeSession(home, 'ws-a', 's1', '/tmp/proj/multi', [
       { model: 'deepseek-v4-pro', input: 10, output: 5, cacheRead: 20, id: 'm1', time: 1787830861590 },
       { model: 'glm-5.2', input: 7, output: 3, cacheRead: 11, id: 'm2', time: 1787830862590 },
       { model: 'deepseek-v4-pro', input: 8, output: 2, cacheRead: 9, id: 'm3', time: 1787830863590 },
@@ -302,16 +330,16 @@ test('parseDshIncremental decodes multi-frame zstd (streamed session files)', as
   }
 });
 
-test('listDshSessionFiles supports session.v3.jsonl.zstd and picks higher version', () => {
+test('listDshSessionFiles supports session.v3.jsonl.zstd and picks higher version', async () => {
   const home = mkdtempSync(join(tmpdir(), 'tud-dsh-v3-'));
   try {
     // 真实 DSH 目录结构：sessions/<workspace>/<sessionId>/session.v3.jsonl.zstd
-    writeSession(home, '--workspace-sample--', 'session-s1', '/tmp/proj/sample', [], { version: 3 });
+    await writeSession(home, '--workspace-sample--', 'session-s1', '/tmp/proj/sample', [], { version: 3 });
     // 单层目录结构：sessions/<sessionId>/session.v3.jsonl.zstd
-    writeSession(home, '', 'session-single', '/tmp/proj/single', [], { version: 3 });
+    await writeSession(home, '', 'session-single', '/tmp/proj/single', [], { version: 3 });
     // 同一目录存在 v2 和 v3，应选更高版本的 v3
-    writeSession(home, 'ws-multi', 'session-multi', '/tmp/proj/multi', [], { filename: 'session.v2.jsonl.zstd' });
-    writeSession(home, 'ws-multi', 'session-multi', '/tmp/proj/multi', [], { filename: 'session.v3.jsonl.zstd' });
+    await writeSession(home, 'ws-multi', 'session-multi', '/tmp/proj/multi', [], { filename: 'session.v2.jsonl.zstd' });
+    await writeSession(home, 'ws-multi', 'session-multi', '/tmp/proj/multi', [], { filename: 'session.v3.jsonl.zstd' });
 
     const files = listDshSessionFiles(home);
     assert.equal(files.length, 3);
@@ -328,7 +356,7 @@ test('parseDshIncremental parses session.v3.jsonl.zstd with reasoning tokens', a
   const prev = process.env.DSH_HOME;
   process.env.DSH_HOME = home;
   try {
-    writeSession(
+    await writeSession(
       home,
       '--workspace-demo--',
       'session-demo-7b06',
@@ -364,6 +392,57 @@ test('parseDshIncremental parses session.v3.jsonl.zstd with reasoning tokens', a
     assert.equal(b.reasoning_output_tokens, 74);
     assert.equal(b.total_tokens, 8693 + 189 + 500 + 20);
     assert.equal(b.conversation_count, 1);
+  } finally {
+    if (prev === undefined) delete process.env.DSH_HOME;
+    else process.env.DSH_HOME = prev;
+  }
+});
+
+test('parseDshIncremental keeps completed frames when the trailing frame is truncated', async () => {
+  const home = mkdtempSync(join(tmpdir(), 'tud-dsh-trunc-'));
+  const prev = process.env.DSH_HOME;
+  process.env.DSH_HOME = home;
+  try {
+    const file = await writeSession(home, 'ws-a', 's1', '/tmp/proj/trunc', [
+      { model: 'deepseek-v4-pro', input: 10, output: 5, cacheRead: 20, id: 'm1', time: 1787830861590 },
+      { model: 'deepseek-v4-pro', input: 7, output: 3, cacheRead: 11, id: 'm2', time: 1787830862590 },
+      { model: 'glm-5.2', input: 8, output: 2, cacheRead: 9, id: 'm3', time: 1787830863590 },
+    ], { multiFrame: true });
+
+    const intact = readFileSync(file);
+    // 截断末帧中部，模拟写入中的半帧文件。
+    // writeSession 末帧为无用量的 tool/result；前缀应仍解析出 3 条 assistant 用量
+    //（整文件丢弃则会 eventsParsed=0）。
+    let offset = 0;
+    let lastStart = 0;
+    let lastLen = 0;
+    while (offset < intact.length) {
+      const res = zlib.zstdDecompressSync(intact.subarray(offset), { info: true }) as unknown as {
+        buffer: Buffer;
+        engine?: { bytesWritten?: number };
+      };
+      const consumed = res.engine?.bytesWritten ?? 0;
+      assert.ok(consumed > 0);
+      lastStart = offset;
+      lastLen = consumed;
+      offset += consumed;
+    }
+    assert.ok(lastLen > 8, 'expected a non-trivial trailing frame');
+    writeFileSync(file, intact.subarray(0, lastStart + Math.floor(lastLen / 2)));
+
+    const { result } = await parseDshIncremental(emptyCursors(), SINCE);
+    assert.equal(result.eventsParsed, 3);
+    assert.equal(result.filesProcessed, 1);
+    const totals = result.buckets.reduce(
+      (acc, b) => {
+        acc.input += b.input_tokens;
+        acc.output += b.output_tokens;
+        acc.cache += b.cached_input_tokens;
+        return acc;
+      },
+      { input: 0, output: 0, cache: 0 },
+    );
+    assert.deepEqual(totals, { input: 25, output: 10, cache: 40 });
   } finally {
     if (prev === undefined) delete process.env.DSH_HOME;
     else process.env.DSH_HOME = prev;

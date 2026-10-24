@@ -113,6 +113,15 @@ test('deepseek-flash resolves the current official V4.1 Flash price', () => {
   assert.equal(p.cache_read, 0.003);
 });
 
+test('deepseek-v4.1-flash-1017 resolves the official Flash price instead of the generic DeepSeek price', () => {
+  for (const model of ['deepseek-v4.1-flash-1017', 'deepseek/deepseek-v4.1-flash-1017']) {
+    const p = getModelPricing(model);
+    assert.equal(p.input, 0.15);
+    assert.equal(p.output, 0.6);
+    assert.equal(p.cache_read, 0.003);
+  }
+});
+
 test('qwen3.8-flash resolves current global and China-region prices', () => {
   const global = getModelPricing('alibaba/qwen3.8-flash');
   assert.equal(global.input, 0.15);
@@ -131,6 +140,49 @@ test('grok-4.20 resolves to 1.25/2.5, not the grok-4 rule', () => {
   const p = getModelPricing('grok-4.20');
   assert.equal(p.input, 1.25);
   assert.equal(p.output, 2.5);
+});
+
+test('grok-4.7 resolves the current official xAI price', () => {
+  const p = getModelPricing('grok-4.7');
+  assert.equal(p.input, 2);
+  assert.equal(p.output, 6);
+  assert.equal(p.cache_read, 0.5);
+});
+
+test('Xiaomi/Mimo v2.6 series resolves to current official prices', () => {
+  const flash = getModelPricing('mimo-v2.6-flash', { source: 'mimo' });
+  assert.equal(flash.input, 0.14);
+  assert.equal(flash.output, 0.28);
+  assert.equal(flash.cache_read, 0.0028);
+
+  const pro = getModelPricing('mimo-v2.6-pro', { source: 'mimo' });
+  assert.equal(pro.input, 0.435);
+  assert.equal(pro.output, 0.87);
+  assert.equal(pro.cache_read, 0.0036);
+
+  const ultra = getModelPricing('mimo-v2.6-pro-ultraspeed', { source: 'mimo' });
+  assert.equal(ultra.input, 4.35);
+  assert.equal(ultra.output, 8.7);
+  assert.equal(ultra.cache_read, 0.036);
+});
+
+test('mimo-v2.6-pro-ultraspeed does not fall through to the v2-pro catch-all', () => {
+  const p = getModelPricing('mimo-v2.6-pro-ultraspeed', { source: 'mimo' });
+  // v2-pro is 0.435/0.87 — guard against the catch-all shadow regression
+  assert.notEqual(p.input, 0.435);
+  assert.notEqual(p.output, 0.87);
+});
+
+test('GLM 5.3 Flash and FlashX resolve current official-channel prices', () => {
+  const flash = getModelPricing('glm-5.3-flash');
+  assert.equal(flash.input, 0.15);
+  assert.equal(flash.output, 0.5);
+  assert.equal(flash.cache_read, 0.03);
+
+  const flashx = getModelPricing('glm-5.3-flashx');
+  assert.equal(flashx.input, 0.37);
+  assert.equal(flashx.output, 1.25);
+  assert.equal(flashx.cache_read, 0.075);
 });
 
 test('kimi-k2.7-code resolves to 0.95/4, not the kimi-k2 rule', () => {
@@ -218,6 +270,26 @@ test('gpt-6-astra carries official cache read/write rates for every name variant
     assert.equal(p.cache_read, 1, m);
     assert.equal(p.cache_write, 12.5, m);
   }
+});
+
+test('new Claude and OpenAI models resolve their official bundled prices', () => {
+  const opus = getModelPricing('claude-opus-5-5', { source: 'claude' });
+  assert.equal(opus.input, 4);
+  assert.equal(opus.output, 20);
+  assert.equal(opus.cache_read, 0.2);
+  assert.equal(opus.cache_write, 5);
+
+  const sol = getModelPricing('gpt-6-sol', { source: 'codex' });
+  assert.equal(sol.input, 2);
+  assert.equal(sol.output, 10);
+  assert.equal(sol.cache_read, 0.2);
+  assert.equal(sol.cache_write, 2.5);
+
+  const luna = getModelPricing('gpt-6-luna', { source: 'codex' });
+  assert.equal(luna.input, 0.1);
+  assert.equal(luna.output, 0.5);
+  assert.equal(luna.cache_read, 0.01);
+  assert.equal(luna.cache_write, 0.125);
 });
 
 test('gpt-6-astra codex row bills cached input at the cache-read rate, not zero', () => {

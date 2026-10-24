@@ -7,6 +7,7 @@ import type { CursorsFile, QueueBucket, TokenTotals } from '../types.js';
 import { commandCodeProjectsDirs } from '../paths.js';
 import { resolveProjectName } from '../project-name.js';
 import { toUtcHalfHourStart } from '../queue/keys.js';
+import { createJsonlLineReader } from './jsonl-tail.js';
 import {
   accumulateBucket,
   bucketsFromState,
@@ -240,12 +241,11 @@ export async function parseCommandCodeIncremental(
         ? prev.project
         : await resolveCommandCodeProject(filePath);
 
-    const stream = createReadStream(filePath, { start: startOffset });
-    const rl = createInterface({ input: stream, crlfDelay: Infinity });
+    const reader = createJsonlLineReader(filePath, startOffset);
     const keyedRows = new Map<string, PendingCommandCodeRow>();
     const unkeyedRows: PendingCommandCodeRow[] = [];
 
-    for await (const line of rl) {
+    for await (const line of reader) {
       if (!line.includes('"usage"')) continue;
       let obj: CommandCodeMessage;
       try {
@@ -290,7 +290,7 @@ export async function parseCommandCodeIncremental(
 
     ccCursor.files[filePath] = {
       inode,
-      offset: st.size,
+      offset: reader.nextOffset,
       project,
     };
     filesProcessed += 1;

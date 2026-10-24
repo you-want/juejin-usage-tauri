@@ -1,5 +1,6 @@
+import { subscriptionApi } from '../lib/subscription-api';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { deepSeekRemainingPercent, type DeepSeekSubscriptionSnapshot } from '../../shared/deepseek-subscription';
+import { type DeepSeekSubscriptionSnapshot } from '../../shared/deepseek-subscription';
 import { SubscriptionUsageCard } from './SubscriptionUsageCard';
 import { SubscriptionBrandIcon } from './SubscriptionBrandIcon';
 
@@ -13,20 +14,21 @@ const INITIAL_SNAPSHOT: DeepSeekSubscriptionSnapshot = {
 };
 
 /**
- * Compact DeepSeek account balance summary for the macOS tray.
+ * Compact DeepSeek account balance summary for macOS desktop surfaces.
  *
- * DeepSeek reports a CNY balance using the same compact meter treatment as TRAE.
+ * DeepSeek reports a currency balance, not a quota percentage.
  */
 export function DeepSeekSubscriptionCard() {
   const [snapshot, setSnapshot] = useState<DeepSeekSubscriptionSnapshot>(INITIAL_SNAPSHOT);
   const [loading, setLoading] = useState(true);
   const requestInFlight = useRef(false);
 
-  const reload = useCallback(async () => {
+  const reload = useCallback(async (forceRefresh = false) => {
     if (requestInFlight.current) return;
     requestInFlight.current = true;
+    setLoading(true);
     try {
-      setSnapshot(await window.tud.getDeepSeekSubscription());
+      setSnapshot(await subscriptionApi.getDeepSeekSubscription({ forceRefresh }));
     } catch {
       setSnapshot({ ...INITIAL_SNAPSHOT, message: '暂时无法读取 DeepSeek 余额信息' });
     } finally {
@@ -46,16 +48,19 @@ export function DeepSeekSubscriptionCard() {
     <SubscriptionUsageCard
       data={{
         icon: <SubscriptionBrandIcon brand="deepseek" />,
-        metrics: snapshot.limits.map((balance) => ({
-          color: deepSeekRemainingPercent(balance.usedPercent) > 25 ? '#4f7dff' : '#ff7a45',
-          label: '余额',
-          remainingPercent: deepSeekRemainingPercent(balance.usedPercent),
-          valueText: balance.remaining === null ? '—' : `¥${balance.remaining.toFixed(2)}`,
-        })),
+        metrics: [],
+        summaryRows: snapshot.limits.flatMap((balance) => [
+          { label: '赠送余额', amount: balance.granted },
+          { label: '充值余额', amount: balance.toppedUp },
+        ].flatMap(({ label, amount }) => typeof amount === 'number' && Number.isFinite(amount) && amount >= 0
+          ? [{ label, value: `¥${amount.toFixed(2)}` }] : [])),
         stale: snapshot.stale,
+        hasAccount: snapshot.status === 'expired' || snapshot.status === 'temporarily-unavailable',
+        message: snapshot.message,
         title: 'DeepSeek',
       }}
       loading={loading}
+      onRefresh={() => void reload(true)}
     />
   );
 }

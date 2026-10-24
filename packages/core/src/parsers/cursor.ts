@@ -1,3 +1,4 @@
+import { localEvidence, validUsageFields } from '../local-metrics.js';
 import { readFile } from 'node:fs/promises';
 import { existsSync, readFileSync } from 'node:fs';
 
@@ -15,7 +16,14 @@ import { isSqliteLockError, queryDbJson, readSqliteWithSnapshot } from './sqlite
 
 const ACCESS_TOKEN_KEY = 'cursorAuth/accessToken';
 const SESSION_COOKIE = 'WorkosCursorSessionToken';
-const FETCH_TIMEOUT_MS = 30_000;
+const DEFAULT_FETCH_TIMEOUT_MS = 180_000;
+
+function cursorFetchTimeoutMs(): number {
+  const configuredTimeoutMs = Number(process.env.JUSAGE_CURSOR_FETCH_TIMEOUT_MS);
+  return Number.isSafeInteger(configuredTimeoutMs) && configuredTimeoutMs > 0
+    ? configuredTimeoutMs
+    : DEFAULT_FETCH_TIMEOUT_MS;
+}
 
 /** Re-read the session cookie from state.vscdb at most this often (invalidated on 401). */
 const COOKIE_CACHE_TTL_MS = 30 * 60_000;
@@ -146,7 +154,7 @@ async function fetchUsageCsv(cookie: string): Promise<string> {
         'User-Agent':
           'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
       },
-      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+      signal: AbortSignal.timeout(cursorFetchTimeoutMs()),
     });
   } catch (err) {
     const reason = err instanceof Error && err.name === 'TimeoutError' ? 'timeout' : 'network';
@@ -162,7 +170,12 @@ async function fetchUsageCsv(cookie: string): Promise<string> {
     }
     throw new Error(`Cursor API 返回 ${resp.status}`);
   }
-  return resp.text();
+  try {
+    return await resp.text();
+  } catch (err) {
+    const reason = err instanceof Error && err.name === 'TimeoutError' ? 'timeout' : 'network';
+    throw new CursorSyncSkippedError(`Cursor 用量拉取跳过 (${reason})`);
+  }
 }
 
 function parseCsvLine(line: string): string[] {
@@ -218,6 +231,7 @@ function toFloat(value: string | undefined): number {
 }
 
 interface CursorCsvRecord {
+  cacheComplete?: boolean;
   date: string;
   model: string;
   inputTokens: number;
@@ -260,6 +274,11 @@ export function parseCursorCsv(csvText: string): CursorCsvRecord[] {
     const inputWithCache = toNum(fields[inputWithIdx!]);
     const inputWithoutCache = toNum(fields[inputWithoutIdx!]);
     const record: CursorCsvRecord = {
+      cacheComplete:
+        [inputWithIdx!, inputWithoutIdx!, cacheReadIdx!].every((idx) => {
+          const value = fields[idx]?.replace(/,/g, '').trim();
+          return !!value && validUsageFields([Number(value)]);
+        }) && inputWithCache >= inputWithoutCache,
       date: stripQuotes(fields[dateIdx!]!),
       model: stripQuotes(fields[modelIdx!]!),
       inputTokens: inputWithoutCache,
@@ -291,10 +310,23 @@ function normalizeCursorRecord(record: CursorCsvRecord): TokenTotals | null {
   };
   const total = computeTotalTokens(totals);
   if (total === 0) return null;
-  return { ...totals, total_tokens: total, conversation_count: 1 };
+  return {
+    ...totals,
+    total_tokens: total,
+    conversation_count: 1,
+    local_metrics: localEvidence(
+      1,
+      true,
+      record.cacheComplete !== false,
+      record.cacheComplete !== false,
+    ),
+  };
 }
 
-export function recordsToBuckets(records: CursorCsvRecord[], statsSince: string): QueueBucket[] {
+export function recordsToBuckets(
+  records: CursorCsvRecord[],
+  statsSince: string,
+): QueueBucket[] {
   const sinceMs = new Date(statsSince).getTime();
   const bucketState: BucketAccumulator = new Map();
   const costByKey = new Map<string, number>();
@@ -401,8 +433,18 @@ export async function parseCursorIncremental(
 
   try {
     const cookies: string[] = [];
-    if (cachedCookie) cookies.push(cachedCookie);
-    else {
+    if (cachedCookie) {
+      const loaded = loadCookies();
+      if ('skip' in loaded) {
+        cookieCache = null;
+        cursors.cursor.lastError = loaded.skip;
+        return {
+          result: { buckets: [], eventsParsed: 0, filesProcessed: 0, skipped: true, error: loaded.skip },
+          cursors,
+        };
+      }
+      cookies.push(cachedCookie);
+    } else {
       const loaded = loadCookies();
       if ('skip' in loaded) {
         cursors.cursor.lastError = loaded.skip;

@@ -15,6 +15,9 @@ release/
 .vite/
 .heroui-docs/
 
+# Local agent plans
+.plans/
+
 # Env & secrets
 .env
 .env.*

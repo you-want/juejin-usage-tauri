@@ -22,6 +22,7 @@
   --source-trae: #0d9488;
   --source-gemini: #4285f4;
   --source-opencode: #ff5c00;
+  --source-deveco: #d93842;
   --source-copilot: #6e40c9;
   --source-antigravity: #1a73e8;
   --source-openclaw: #0ea5e9;
@@ -50,6 +51,10 @@
   --source-dsh: #4d6bfe;
   --source-qwenwork: #7c3aed;
   --source-command-code: #06b6d4;
+  --source-minimax-code: #ef4444;
+  --source-wps-comate: #e34d59;
+  --source-teleagent: #0077be;
+  --source-kinetaios: #7c5cff;
   /* Heatmap scale uses HeroUI semantic tokens, so it follows the active theme. */
   --heatmap-0: var(--default);
   --heatmap-1: color-mix(in oklab, var(--accent) 18%, var(--surface));
@@ -75,6 +80,7 @@
   --source-trae: #2dd4bf;
   --source-gemini: #6ba4f8;
   --source-opencode: #ff7a33;
+  --source-deveco: #f06b73;
   --source-copilot: #8b5cf6;
   --source-antigravity: #4d9af5;
   --source-openclaw: #38bdf8;
@@ -103,6 +109,10 @@
   --source-dsh: #6b85fe;
   --source-qwenwork: #a78bfa;
   --source-command-code: #22d3ee;
+  --source-minimax-code: #f87171;
+  --source-wps-comate: #ff6b6b;
+  --source-teleagent: #3d9be8;
+  --source-kinetaios: #9d85ff;
 }
 
 @theme inline {
@@ -130,7 +140,30 @@
   }
 }
 
+.subscription-usage-card {
+  transition: opacity 180ms ease-out;
+}
+
+.subscription-usage-card[data-visible="false"] {
+  opacity: 0;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .subscription-usage-card[data-visible="true"] {
+    animation: subscription-card-appear 220ms ease-out;
+  }
+}
+
+@keyframes subscription-card-appear {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
 @media (prefers-reduced-motion: reduce) {
+  .subscription-usage-card {
+    transition: none;
+  }
+
   ::view-transition-old(root),
   ::view-transition-new(root) {
     animation: none;

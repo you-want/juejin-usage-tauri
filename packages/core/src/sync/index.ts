@@ -1,3 +1,4 @@
+import { localEvidence, mergeLocalEvidence } from '../local-metrics.js';
 import { resolveLocalCollectSince, setLastSyncAt } from '../config.js';
 import type { CursorsFile, QueueBucket, TudConfig } from '../types.js';
 import { CURSOR_POLL_MIN_FETCH_INTERVAL_MS, SYNC_SOURCE_GAP_MS, syncLogPath } from '../paths.js';
@@ -11,6 +12,7 @@ import { parseQoderIncremental } from '../parsers/qoder.js';
 import { parseTraeIncremental } from '../parsers/trae.js';
 import { parseGeminiIncremental } from '../parsers/gemini.js';
 import { parseOpencodeIncremental } from '../parsers/opencode.js';
+import { parseDevecoIncremental } from '../parsers/deveco.js';
 import { parseCopilotIncremental } from '../parsers/copilot.js';
 import { parseAntigravityIncremental } from '../parsers/antigravity.js';
 import { parseOpenclawIncremental } from '../parsers/openclaw.js';
@@ -18,6 +20,7 @@ import { parseAutoclawIncremental } from '../parsers/autoclaw.js';
 import { parseHermesIncremental } from '../parsers/hermes.js';
 import { parseZcodeIncremental } from '../parsers/zcode.js';
 import { parseDshIncremental } from '../parsers/dsh.js';
+import { parseKinetaiosIncremental } from '../parsers/kinetaios.js';
 import { parsePiIncremental } from '../parsers/pi.js';
 import { parseKimiIncremental } from '../parsers/kimi.js';
 import { parseRoocodeIncremental } from '../parsers/roocode.js';
@@ -37,7 +40,10 @@ import { parseKilocodeIncremental } from '../parsers/kilocode.js';
 import { parseGooseIncremental } from '../parsers/goose.js';
 import { parseZedIncremental } from '../parsers/zed.js';
 import { parseWarpIncremental } from '../parsers/warp.js';
+import { parseTeleagentIncremental } from '../parsers/teleagent.js';
 import { parseQwenworkIncremental } from '../parsers/qwenwork.js';
+import { parseMiniMaxCodeIncremental } from '../parsers/minimax-code.js';
+import { parseWpsComateIncremental } from '../parsers/wps-comate.js';
 import {
   appendBuckets,
   loadBucketsForRange,
@@ -93,6 +99,9 @@ function mergeBuckets(a: QueueBucket, b: QueueBucket): QueueBucket {
     reasoning_output_tokens: a.reasoning_output_tokens + b.reasoning_output_tokens,
     total_tokens: a.total_tokens + b.total_tokens,
     conversation_count: a.conversation_count + b.conversation_count,
+    ...(a.local_metrics || b.local_metrics
+      ? { local_metrics: mergeLocalEvidence(a.local_metrics, b.local_metrics) }
+      : {}),
     ...(a.reported_cost_usd != null || b.reported_cost_usd != null
       ? {
           reported_cost_usd:
@@ -104,6 +113,13 @@ function mergeBuckets(a: QueueBucket, b: QueueBucket): QueueBucket {
 
 function bucketChanged(a: QueueBucket, b: QueueBucket): boolean {
   return (
+    a.input_tokens !== b.input_tokens ||
+    a.output_tokens !== b.output_tokens ||
+    a.cached_input_tokens !== b.cached_input_tokens ||
+    a.cache_creation_input_tokens !== b.cache_creation_input_tokens ||
+    a.reasoning_output_tokens !== b.reasoning_output_tokens ||
+    a.reported_cost_usd !== b.reported_cost_usd ||
+    JSON.stringify(a.local_metrics) !== JSON.stringify(b.local_metrics) ||
     a.total_tokens !== b.total_tokens ||
     a.conversation_count !== b.conversation_count
   );
@@ -306,6 +322,10 @@ export async function syncGemini(dataDir: string, config: TudConfig, opts?: Sync
   return syncSourceBuckets(dataDir, config, 'gemini', parseGeminiIncremental, { sharedCursors: opts?.sharedCursors });
 }
 
+export async function syncDeveco(dataDir: string, config: TudConfig, opts?: SyncSourceOptions): Promise<SyncResult> {
+  return syncSourceBuckets(dataDir, config, 'deveco', parseDevecoIncremental, { sharedCursors: opts?.sharedCursors });
+}
+
 export async function syncOpencode(dataDir: string, config: TudConfig, opts?: SyncSourceOptions): Promise<SyncResult> {
   return syncSourceBuckets(dataDir, config, 'opencode', parseOpencodeIncremental, { sharedCursors: opts?.sharedCursors });
 }
@@ -449,6 +469,10 @@ export async function syncZcode(dataDir: string, config: TudConfig, opts?: SyncS
 
 export async function syncDsh(dataDir: string, config: TudConfig, opts?: SyncSourceOptions): Promise<SyncResult> {
   return syncSourceBuckets(dataDir, config, 'dsh', parseDshIncremental, { sharedCursors: opts?.sharedCursors });
+}
+
+export async function syncKinetaios(dataDir: string, config: TudConfig, opts?: SyncSourceOptions): Promise<SyncResult> {
+  return syncSourceBuckets(dataDir, config, 'kinetaios', parseKinetaiosIncremental, { sharedCursors: opts?.sharedCursors });
 }
 
 export async function syncPi(dataDir: string, config: TudConfig, opts?: SyncSourceOptions): Promise<SyncResult> {
@@ -679,6 +703,13 @@ export async function syncQwenwork(dataDir: string, config: TudConfig, opts?: Sy
   return syncSourceBuckets(dataDir, config, 'qwenwork', parseQwenworkIncremental, { sharedCursors: opts?.sharedCursors });
 }
 
+export async function syncWpsComate(dataDir: string, config: TudConfig, opts?: SyncSourceOptions): Promise<SyncResult> {
+  return syncSourceBuckets(dataDir, config, 'wps-comate', parseWpsComateIncremental, { sharedCursors: opts?.sharedCursors });
+}
+export async function syncTeleagent(dataDir: string, config: TudConfig, opts?: SyncSourceOptions): Promise<SyncResult> {
+  return syncSourceBuckets(dataDir, config, 'teleagent', parseTeleagentIncremental, { sharedCursors: opts?.sharedCursors });
+}
+
 export async function syncCommandCode(dataDir: string, config: TudConfig, opts?: SyncSourceOptions): Promise<SyncResult> {
   return syncSourceBuckets(dataDir, config, 'command-code', parseCommandCodeIncremental, { sharedCursors: opts?.sharedCursors });
 }
@@ -758,6 +789,7 @@ export async function syncCursor(
         reasoning_output_tokens: 0,
         total_tokens: 0,
         conversation_count: 0,
+        ...(row.local_metrics ? { local_metrics: localEvidence(0) } : {}),
       };
       const prev = existingMap.get(key);
       if (!prev || bucketChanged(prev, zeroed)) {
@@ -804,6 +836,7 @@ export const SYNC_SOURCE_IDS = [
   'trae',
   'gemini',
   'opencode',
+  'deveco',
   'copilot',
   'antigravity',
   'openclaw',
@@ -811,6 +844,7 @@ export const SYNC_SOURCE_IDS = [
   'hermes',
   'zcode',
   'dsh',
+  'kinetaios',
   'pi',
   'kimi',
   'roocode',
@@ -832,12 +866,16 @@ export const SYNC_SOURCE_IDS = [
   'warp',
   'qwenwork',
   'command-code',
+  'minimax-code',
+  'wps-comate',
+  'teleagent',
 ] as const;
 
 export type SyncSourceId = (typeof SYNC_SOURCE_IDS)[number];
 
 /** Accepted spellings that map onto a canonical source id (see syncOneSource). */
 const SYNC_SOURCE_ALIASES: Record<string, SyncSourceId> = {
+  'deveco-code': 'deveco',
   'roo-code': 'roocode',
   'qwen-code': 'qwen',
   'grok-build': 'grok',
@@ -845,6 +883,8 @@ const SYNC_SOURCE_ALIASES: Record<string, SyncSourceId> = {
   everycode: 'every-code',
   kilo: 'kilo-cli',
   'kilo-code': 'kilocode',
+  minimax: 'minimax-code',
+  mcode: 'minimax-code',
 };
 
 /**
@@ -878,6 +918,8 @@ async function syncOneSource(
       return syncClaude(dataDir, config, opts);
     case 'codex':
       return syncCodex(dataDir, config, opts);
+    case 'minimax-code':
+      return syncSourceBuckets(dataDir, config, 'minimax-code', parseMiniMaxCodeIncremental, { sharedCursors: opts?.sharedCursors });
     case 'cursor':
       return syncCursor(dataDir, config, opts);
     case 'qoder':
@@ -886,6 +928,8 @@ async function syncOneSource(
       return syncTrae(dataDir, config, opts);
     case 'gemini':
       return syncGemini(dataDir, config, opts);
+    case 'deveco':
+      return syncDeveco(dataDir, config, opts);
     case 'opencode':
       return syncOpencode(dataDir, config, opts);
     case 'copilot':
@@ -902,6 +946,8 @@ async function syncOneSource(
       return syncZcode(dataDir, config, opts);
     case 'dsh':
       return syncDsh(dataDir, config, opts);
+    case 'kinetaios':
+      return syncKinetaios(dataDir, config, opts);
     case 'pi':
       return syncPi(dataDir, config, opts);
     case 'kimi':
@@ -952,6 +998,11 @@ async function syncOneSource(
     case 'command-code':
     case 'commandcode':
       return syncCommandCode(dataDir, config, opts);
+    case 'wps-comate':
+    case 'wpscomate':
+      return syncWpsComate(dataDir, config, opts);
+    case 'teleagent':
+      return syncTeleagent(dataDir, config, opts);
     default:
       return {
         source,
@@ -1123,6 +1174,10 @@ export function countGeminiRows(rows: QueueBucket[]): number {
   return rows.filter((r) => r.source === 'gemini').length;
 }
 
+export function countDevecoRows(rows: QueueBucket[]): number {
+  return rows.filter((r) => r.source === 'deveco').length;
+}
+
 export function countOpencodeRows(rows: QueueBucket[]): number {
   return rows.filter((r) => r.source === 'opencode').length;
 }
@@ -1153,6 +1208,10 @@ export function countZcodeRows(rows: QueueBucket[]): number {
 
 export function countDshRows(rows: QueueBucket[]): number {
   return rows.filter((r) => r.source === 'dsh').length;
+}
+
+export function countKinetaiosRows(rows: QueueBucket[]): number {
+  return rows.filter((r) => r.source === 'kinetaios').length;
 }
 
 export function countPiRows(rows: QueueBucket[]): number {
@@ -1229,4 +1288,11 @@ export function countZedRows(rows: QueueBucket[]): number {
 
 export function countWarpRows(rows: QueueBucket[]): number {
   return rows.filter((r) => r.source === 'warp').length;
+}
+
+export function countWpsComateRows(rows: QueueBucket[]): number {
+  return rows.filter((r) => r.source === 'wps-comate').length;
+}
+export function countTeleagentRows(rows: QueueBucket[]): number {
+  return rows.filter((r) => r.source === 'teleagent').length;
 }

@@ -1,5 +1,41 @@
 # @juejin-opensource/jusage-dashboard
 
+## 0.1.15
+
+### Patch Changes
+
+- 支持生成可嵌入博客 / GitHub README 的 SVG 用量卡片：多样式、链接复制、公开展示标识停用与重置。
+- 新增 DevEco Code 用量展示；下载页等工具图标对齐官方品牌。
+- Updated dependencies
+  - @juejin-opensource/jusage-core@0.1.15
+
+## 0.1.14
+
+### Patch Changes
+
+- 新增 TeleAgent、KinetAios、Kimi 桌面版用量展示；Kimi 图标适配浅色主题，Codex 改用官方彩色图标。
+- 同步 core：跨零点空闲日期补记、数据校对跳过事件等修复。
+- Updated dependencies
+  - @juejin-opensource/jusage-core@0.1.14
+
+## 0.1.13
+
+### Patch Changes
+
+- 新增 MiniMax Code、WPS 灵犀（WPS Comate）用量展示；WorkBuddy 改用官方品牌图标。
+- 同步 core：OpenCode 2.0、CodeBuddy 整轮用量、Command Code 上报、多项目少报与缺失日期等修复。
+- Updated dependencies
+  - @juejin-opensource/jusage-core@0.1.13
+
+## 0.1.12
+
+### Patch Changes
+
+- 概览卡副文案展示请求数与缓存命中率。
+- 同步 core：CodeBuddy / Cline / Hermes / ZCode / DSH / Codex 账本与 JSONL 等相关修复。
+- Updated dependencies
+  - @juejin-opensource/jusage-core@0.1.12
+
 ## 0.1.11
 
 ### Patch Changes

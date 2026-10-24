@@ -17,6 +17,7 @@ import { StatusBanner } from '@/components/StatusBanner';
 import { ProjectUsagePanel } from '@/components/ProjectUsagePanel';
 import { ToolModelUsagePanel } from '@/components/ToolModelUsagePanel';
 import { UsageDistributionCard } from '@/components/UsageDistributionCard';
+import { SubscriptionUsageGrid } from '@/components/SubscriptionUsageGrid';
 import { useDashboardData } from '@/hooks/useDashboardData';
 import { useLocalStorage } from '@/hooks/useLocalStorage';
 import { projectDashboardForDate } from '@/lib/dashboard-data';
@@ -34,7 +35,7 @@ import {
   filterTrendRowsBySources,
   summarizeTrendRows,
 } from '@/lib/usage-filter';
-import { LOCAL_RUNTIME_RECOVERING_HINT } from '@/lib/api';
+import { isCliBackend, LOCAL_RUNTIME_RECOVERING_HINT } from '@/lib/api';
 import {
   DASHBOARD_RANGE_LABELS,
   DEFAULT_DASHBOARD_RANGE,
@@ -303,6 +304,9 @@ export function DashboardPage() {
         <div className="relative isolate min-h-48">
           <DashboardRangeSyncOverlay visible={refreshing} />
           <DashboardOverviewCard
+            belowMetrics={
+              <SubscriptionUsageGrid className="mt-4 grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3 [&>*]:order-3 [&>*]:self-stretch [&>[data-metric-count='3']]:order-1 [&>[data-metric-count='2']]:order-2" />
+            }
             heatmapDays={visibleHeatmapDays}
             metricTrendPeriodLabel={metricTrendPeriodLabel}
             metricTrendRows={metricTrendRows}
@@ -310,6 +314,7 @@ export function DashboardPage() {
             modelRows={visibleModelRows}
             onSelectDate={handleSelectDate}
             selectedDate={selectedDate}
+            showLocalMetrics={isCliBackend()}
             summary={visibleSummary}
           />
 
