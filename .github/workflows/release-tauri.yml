@@ -77,12 +77,14 @@ jobs:
         run: |
           BUNDLE=apps/desktop-tauri/src-tauri/target/${{ matrix.target }}/release/bundle
           mkdir -p dist-upload
-          # macOS: dmg + updater .app.tar.gz/.sig；Windows: nsis + .zip/.sig
-          find "$BUNDLE/macos" -name '*.dmg' -exec cp {} dist-upload/ \; 2>/dev/null || true
-          find "$BUNDLE/macos" -name '*.app.tar.gz*' -exec cp {} dist-upload/ \; 2>/dev/null || true
-          find "$BUNDLE/nsis" \( -name '*.exe' -o -name '*.zip' -o -name '*.sig' \) -exec cp {} dist-upload/ \; 2>/dev/null || true
-          # Windows 的 nsis updater 产物是 -setup.exe（本体即更新包，附 .sig）
-          find "$BUNDLE/nsis" -name '*-setup.exe.sig' -exec cp {} dist-upload/ \; 2>/dev/null || true
+          PLAT=${{ matrix.platform }}
+          # macOS: dmg 在 bundle/dmg/；更新包 .app.tar.gz 按架构重命名防互相覆盖
+          find "$BUNDLE/dmg" -name '*.dmg' -exec cp {} dist-upload/ \; 2>/dev/null || true
+          find "$BUNDLE/macos" -name 'Juejin Usage.app.tar.gz' -exec cp {} "dist-upload/Juejin-Usage-$PLAT.app.tar.gz" \; 2>/dev/null || true
+          find "$BUNDLE/macos" -name 'Juejin Usage.app.tar.gz.sig' -exec cp {} "dist-upload/Juejin-Usage-$PLAT.app.tar.gz.sig" \; 2>/dev/null || true
+          # Windows: nsis 安装器即更新包，附 .sig
+          find "$BUNDLE/nsis" \( -name '*-setup.exe' -o -name '*-setup.exe.sig' \) -exec cp {} dist-upload/ \; 2>/dev/null || true
+          ls -la dist-upload
           ls -la dist-upload
 
       - uses: actions/upload-artifact@v4
@@ -127,7 +129,7 @@ jobs:
           };
           for (const f of files) {
             if (f.endsWith(".app.tar.gz") && !f.endsWith(".sig")) {
-              const key = f.includes("aarch64") ? "darwin-aarch64" : "darwin-x86_64";
+              const key = f.includes("arm64") || f.includes("aarch64") ? "darwin-aarch64" : "darwin-x86_64";
               platforms[key] = { signature: need(f, sigFor(f)), url: `${baseUrl}/${encodeURIComponent(f)}` };
             }
             if (f.endsWith("-setup.exe") || (f.endsWith(".exe") && !f.endsWith(".sig"))) {
