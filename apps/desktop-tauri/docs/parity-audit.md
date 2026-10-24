@@ -22,7 +22,7 @@
 | local-api 契约（`/functions/tud-*` 19 端点） | 内存 Hono + IPC 直调 | sidecar HTTP 8462 + Rust 代理 | ✅ | 同一 `createLocalApiApp`，契约天然一致（`packages/core/src/server/local-api.ts:250`） |
 | sync（采集/上传/退避轮询） | main + utilityProcess | sidecar 进程内 | ✅ | 轮询退避 1/2/5min、信号驱动同步均已移植（`desktop-host.ts:197-319`） |
 | 心跳（`tud.heartbeat` 30s/90s） | 主进程 watchdog 续期 + owner 易主 recover | 每个轮询回合 touch | 🟡 | 续期有；**watchdog「owner 易主自动 recover」未移植**（`local-runtime.ts:568-619` 对照） |
-| sync worker 崩溃自愈 | 崩溃重启 ≤5 次 + 回退主进程 | 无 | 🟡 | **sidecar 挂掉后无监控/自动重启**，应用将无数据且无提示 |
+| sidecar 崩溃自愈 | 崩溃重启 ≤5 次 + 回退主进程 | ✅（2026-10-24，monitor 线程 + 指数退避 0.5–8s + 稳定 60s 重置预算；实测 kill -9 后 500ms 恢复） | ✅ | |
 | CLI 互斥（停 CLI 抢 owner + 驱逐 CLI 自启） | main 进程内 | desktop-host 内 | ✅ | launchd/计划任务/systemd 全覆盖（`packages/cli/src/evict-cli-autostart.ts`） |
 | 定价覆盖刷新 / 损坏配置恢复通知 | ✅ | ✅ | ✅ | `RUNTIME_NOTICE=CONFIG_RESET:` 已转发为 `app:runtime-notice` |
 | 前台聚焦 poke-sync | ✅ 30s 去抖 | ✅ | ✅ | `lib.rs:157-169` |
@@ -164,7 +164,7 @@
 1. 桌面设置面板进 desktop-ui（pet/sync/app/about 4 tab），主窗注入层挂载；连带解决：宠物开关、自启/静默启动开关、更新操作入口、关于页。
 2. ~~订阅解析器~~ ✅ 2026-10-24 完成：上游 v0.1.15 已把 12 个 reader 下沉 core + dashboard 出卡；本仓库补桥 fetcher 与 sidecar dev 解析，12 channel 端到端验证全通。余项：trae/workbuddy（Electron 专属）、托盘 popover 订阅卡，移入 P2。
 3. 宠物本地目录扫描 + 远程目录安装 + 本地图集协议加载 + 选中回落。
-4. sidecar 崩溃监控与自动重启（对齐 Electron watchdog 自愈能力）。
+4. ~~sidecar 崩溃自愈~~ ✅ 2026-10-24 完成。**P0 阶段全部收官**。
 
 **P1 —— OS 集成收尾**
 5. tauri-plugin-deep-link：scheme 注册 + macOS open-url + Windows 二实例转发。

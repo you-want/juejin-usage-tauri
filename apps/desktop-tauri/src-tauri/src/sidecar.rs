@@ -33,22 +33,26 @@ use tauri::{path::BaseDirectory, AppHandle, Emitter, Manager, State};
 pub const DEFAULT_DESKTOP_PORT: u16 = 8462;
 
 /// Shared, managed across Tauri. `port` is an `Arc` so the stdout-reading
-/// thread and the Tauri state can both observe it.
+/// thread and the Tauri state can both observe it; `child` is an `Arc` so the
+/// monitor thread can watch it without borrowing the managed state.
 pub struct SidecarState {
     /// The port the sidecar actually bound, once its `PORT=` line has been read.
     pub port: Arc<Mutex<Option<u16>>>,
     /// The live child handle, used to kill it on app exit.
-    pub child: Mutex<Option<Child>>,
+    pub child: Arc<Mutex<Option<Child>>>,
     /// Guards against double-spawn.
     pub started: AtomicBool,
+    /// Set by `stop()`; the monitor thread stops respawning once it sees this.
+    pub shutting_down: Arc<AtomicBool>,
 }
 
 impl Default for SidecarState {
     fn default() -> Self {
         Self {
             port: Arc::new(Mutex::new(None)),
-            child: Mutex::new(None),
+            child: Arc::new(Mutex::new(None)),
             started: AtomicBool::new(false),
+            shutting_down: Arc::new(AtomicBool::new(false)),
         }
     }
 }
@@ -142,13 +146,129 @@ fn repo_cli_entry() -> Option<String> {
     Some(path.to_string_lossy().into_owned())
 }
 
-/// Spawn the sidecar and start reading its stdout. No-op if already started.
+/// Spawn the sidecar and hand it to the monitor thread. No-op if already
+/// started. The monitor owns the whole lifecycle: unexpected exits are
+/// restarted with capped backoff (port of Electron's sync-worker crash
+/// recovery), `stop()` tears everything down once.
 pub fn start(state: &SidecarState, app: AppHandle) -> Result<(), String> {
     if state.started.swap(true, Ordering::SeqCst) {
         return Ok(());
     }
-
+    // Fail fast on an obviously missing build so `tauri dev` reports it
+    // immediately; the monitor re-resolves on every (re)spawn, so a later
+    // `pnpm build:cli` is picked up without an app restart.
     let script = sidecar_script(&app)
+        .ok_or_else(|| "could not resolve a sidecar script path".to_string())?;
+    if !std::path::Path::new(&script).exists() {
+        state.started.store(false, Ordering::SeqCst);
+        return Err(format!(
+            "sidecar script not found at {script} (build it with `pnpm build:cli`)"
+        ));
+    }
+
+    let child = Arc::clone(&state.child);
+    let port = Arc::clone(&state.port);
+    let shutting_down = Arc::clone(&state.shutting_down);
+    std::thread::spawn(move || {
+        monitor_loop(child, port, shutting_down, app);
+    });
+    Ok(())
+}
+
+/// Repeatedly spawn the sidecar and watch it. Crashes restart with exponential
+/// backoff; the budget is ≤5 consecutive crashes (reset after 60s of stable
+/// uptime), mirroring Electron's `MAX_WORKER_RESTARTS` sync-worker policy.
+fn monitor_loop(
+    child_ref: Arc<Mutex<Option<Child>>>,
+    port: Arc<Mutex<Option<u16>>>,
+    shutting_down: Arc<AtomicBool>,
+    app: AppHandle,
+) {
+    const MAX_CONSECUTIVE_CRASHES: u32 = 5;
+    const STABLE_UPTIME_RESET: std::time::Duration = std::time::Duration::from_secs(60);
+    let mut consecutive_crashes: u32 = 0;
+    loop {
+        if shutting_down.load(Ordering::SeqCst) {
+            return;
+        }
+        let spawn_time = std::time::Instant::now();
+        if let Err(err) = spawn_once(&child_ref, &port, &app) {
+            eprintln!("[tud-desktop] sidecar spawn failed: {err}");
+            consecutive_crashes += 1;
+            if consecutive_crashes >= MAX_CONSECUTIVE_CRASHES {
+                eprintln!(
+                    "[tud-desktop] sidecar spawn failed {consecutive_crashes}x in a row — giving up (data/sync offline until app restart)"
+                );
+                return;
+            }
+            std::thread::sleep(backoff_for(consecutive_crashes));
+            continue;
+        }
+
+        // Poll for exit without holding the child lock — `stop()` needs it to kill.
+        let exit = loop {
+            if shutting_down.load(Ordering::SeqCst) {
+                return; // stop() owns teardown
+            }
+            let status = {
+                let mut guard = child_ref.lock().unwrap();
+                match guard.as_mut() {
+                    Some(child) => child.try_wait(),
+                    None => break None, // taken away (e.g. by stop's kill path)
+                }
+            };
+            match status {
+                Ok(Some(status)) => break Some(status),
+                Ok(None) => {}
+                Err(_) => break None,
+            }
+            std::thread::sleep(std::time::Duration::from_millis(500));
+        };
+
+        let uptime = spawn_time.elapsed();
+        let code_desc = exit
+            .map(|status| {
+                format!(
+                    "code={}",
+                    status
+                        .code()
+                        .map(|n| n.to_string())
+                        .unwrap_or_else(|| "signal".to_string())
+                )
+            })
+            .unwrap_or_else(|| "no status".to_string());
+        if uptime >= STABLE_UPTIME_RESET {
+            consecutive_crashes = 0;
+        }
+        consecutive_crashes += 1;
+        if consecutive_crashes >= MAX_CONSECUTIVE_CRASHES {
+            eprintln!(
+                "[tud-desktop] sidecar exited ({code_desc}) after {uptime:.0?}; {consecutive_crashes} consecutive crashes — giving up (data/sync offline until app restart)"
+            );
+            return;
+        }
+        let backoff = backoff_for(consecutive_crashes);
+        eprintln!(
+            "[tud-desktop] sidecar exited ({code_desc}) after {uptime:.0?}; restarting in {backoff:.0?} (attempt {consecutive_crashes}/{MAX_CONSECUTIVE_CRASHES})"
+        );
+        std::thread::sleep(backoff);
+    }
+}
+
+fn backoff_for(attempt: u32) -> std::time::Duration {
+    // 0.5s, 1s, 2s, 4s, 8s (capped) — attempt is always ≥1 here.
+    let shift = (attempt - 1).min(4);
+    std::time::Duration::from_millis(500u64.saturating_mul(1 << shift))
+}
+
+/// Spawn one sidecar instance and wire its stdout reader. Returns Err when the
+/// process could not even be started.
+fn spawn_once(
+    child_ref: &Arc<Mutex<Option<Child>>>,
+    port: &Arc<Mutex<Option<u16>>>,
+    app: &AppHandle,
+) -> Result<(), String> {
+    let script = sidecar_script(app)
         .ok_or_else(|| "could not resolve a sidecar script path".to_string())?;
     if !std::path::Path::new(&script).exists() {
         return Err(format!(
@@ -156,7 +276,7 @@ pub fn start(state: &SidecarState, app: AppHandle) -> Result<(), String> {
         ));
     }
 
-    let node = node_bin(&app).ok_or_else(|| "no Node runtime resolvable".to_string())?;
+    let node = node_bin(app).ok_or_else(|| "no Node runtime resolvable".to_string())?;
     let mut child = Command::new(&node)
         .arg(&script)
         // Pin the port up-front so the main window (created by Tauri from
@@ -181,10 +301,11 @@ pub fn start(state: &SidecarState, app: AppHandle) -> Result<(), String> {
         .take()
         .ok_or_else(|| "no stdout from sidecar".to_string())?;
     let stderr = child.stderr.take();
-    *state.child.lock().unwrap() = Some(child);
+    *child_ref.lock().unwrap() = Some(child);
 
     // The stdout thread shares the port with the Tauri state via the Arc.
-    let port = Arc::clone(&state.port);
+    let port = Arc::clone(port);
+    let app = app.clone();
     std::thread::spawn(move || {
         read_stdout(stdout, stderr, port, app);
     });
@@ -303,8 +424,9 @@ mod tests {
     }
 }
 
-/// Kill the sidecar child on app exit.
+/// Kill the sidecar child on app exit and stop the monitor from respawning.
 pub fn stop(state: &SidecarState) {
+    state.shutting_down.store(true, Ordering::SeqCst);
     let mut child = state.child.lock().unwrap();
     if let Some(c) = child.as_mut() {
         let _ = c.kill();
