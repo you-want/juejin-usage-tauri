@@ -30,8 +30,25 @@
 
 ## 安装
 
-- **Tauri 社区版**：安装包发布于 [Releases](https://github.com/you-want/juejin-usage-tauri/releases)（发版基建准备中，当前可按下方「开发」本地构建运行）
+- **Tauri 社区版**：安装包发布于 [Releases](https://github.com/you-want/juejin-usage-tauri/releases)
 - **官方 Electron 版 / CLI**：见官方[下载页](https://juejin.cn/aiusage/download)与 [juejin-cn/juejin-usage](https://github.com/juejin-cn/juejin-usage)
+
+### macOS「无法验证/未打开」提示
+
+社区版暂无 Apple 开发者签名（$99/年），首次打开会被 Gatekeeper 拦截。两种放行方式：
+
+```bash
+# 方式一（推荐）：清除隔离标记后直接打开
+sudo xattr -dr com.apple.quarantine /Applications/Juejin\ Usage.app
+
+# 方式二：系统设置 → 隐私与安全性 → 底部「仍要打开」按钮
+```
+
+> 弹窗出现时请点「完成」，**不要**点「移到废纸篓」；应用本身无害，只是未经苹果公证。
+
+### Windows SmartScreen 提示
+
+安装器/应用首次运行可能弹「已保护你的电脑」——点「更多信息 → 仍要运行」即可（同样是未签名导致）。
 
 首次启动会自动采集本机已产生的 AI 编码工具用量；面板展示费用、Token、请求数和趋势。macOS 可从菜单栏查看今日用量，Windows 从托盘进入。
 
