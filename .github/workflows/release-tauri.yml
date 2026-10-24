@@ -114,19 +114,30 @@ jobs:
           const dir = "artifacts";
           const files = fs.readdirSync(dir);
           const platforms = {};
-          const sigFor = (base) => fs.readFileSync(path.join(dir, base + ".sig"), "utf8").trim();
+          const sigFor = (base) => {
+            for (const c of [base + ".sig", base + ".zip.sig"]) {
+              if (fs.existsSync(path.join(dir, c))) return fs.readFileSync(path.join(dir, c), "utf8").trim();
+            }
+            return null;
+          };
           const baseUrl = `https://github.com/${process.env.GITHUB_REPOSITORY}/releases/download/${process.env.GITHUB_REF_NAME}`;
+          const need = (f, sig) => {
+            if (!sig) { console.error("no .sig found for", f, "- files:", files.join(" | ")); process.exit(1); }
+            return sig;
+          };
           for (const f of files) {
             if (f.endsWith(".app.tar.gz") && !f.endsWith(".sig")) {
               const key = f.includes("aarch64") ? "darwin-aarch64" : "darwin-x86_64";
-              platforms[key] = { signature: sigFor(f), url: `${baseUrl}/${encodeURIComponent(f)}` };
+              platforms[key] = { signature: need(f, sigFor(f)), url: `${baseUrl}/${encodeURIComponent(f)}` };
             }
             if (f.endsWith("-setup.exe") || (f.endsWith(".exe") && !f.endsWith(".sig"))) {
-              const key = "windows-x86_64";
-              platforms[key] = { signature: sigFor(f + ".zip") || sigFor(f), url: `${baseUrl}/${encodeURIComponent(f)}` };
+              platforms["windows-x86_64"] = {
+                signature: need(f, sigFor(f) || sigFor(f.replace(/\.exe$/, ".zip"))),
+                url: `${baseUrl}/${encodeURIComponent(f)}`,
+              };
             }
             if (f.endsWith(".msi.zip") && !f.endsWith(".sig")) {
-              platforms["windows-x86_64"] = { signature: sigFor(f), url: `${baseUrl}/${encodeURIComponent(f)}` };
+              platforms["windows-x86_64"] = { signature: need(f, sigFor(f)), url: `${baseUrl}/${encodeURIComponent(f)}` };
             }
           }
           if (Object.keys(platforms).length === 0) { console.error("no updater artifacts found:", files.join(", ")); process.exit(1); }
