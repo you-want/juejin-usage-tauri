@@ -59,28 +59,8 @@ jobs:
       - name: Build core + cli
         run: pnpm run build:cli
 
-      - name: Download Node runtime for sidecar staging
-        shell: bash
-        run: |
-          NODE_VER=v20.18.1
-          case "${{ matrix.platform }}" in
-            darwin-arm64) ART=node-$NODE_VER-darwin-arm64; EXE=node/bin/node ;;
-            darwin-x64)   ART=node-$NODE_VER-darwin-x64;   EXE=node/bin/node ;;
-            win32-x64)    ART=node-$NODE_VER-win-x64;      EXE=node/node.exe ;;
-          esac
-          if [[ "${{ matrix.platform }}" == win32-x64 ]]; then
-            curl -fsSL -o node.zip "https://nodejs.org/dist/$NODE_VER/$ART.zip"
-            unzip -q node.zip
-          else
-            curl -fsSL -o node.tar.gz "https://nodejs.org/dist/$NODE_VER/$ART.tar.gz"
-            tar xzf node.tar.gz
-          fi
-          echo "TUD_NODE_BIN=$PWD/$ART/$EXE" >> "$GITHUB_ENV"
-
+      # stage 复用 runner 自带的官方 node（架构与构建目标一致），无需单独下载
       - name: Stage node runtime + cli dist + dashboard into node-app/
-        shell: bash
-        env:
-          TUD_NODE_BIN: ${{ env.TUD_NODE_BIN }}
         run: pnpm stage:desktop:tauri
 
       - name: Build Tauri bundle (signed)
