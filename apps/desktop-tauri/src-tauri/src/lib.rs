@@ -568,9 +568,9 @@ pub fn run() {
             // cursor poll (Win32 GetCursorPos returns physical pixels).
             #[cfg(target_os = "windows")]
             if let Ok(Some(monitor)) = app.primary_monitor() {
-                if let Ok(scale) = monitor.scale_factor() {
-                    let _ = pet::PRIMARY_SCALE.set(scale);
-                }
+                // Windows 后端 scale_factor() 直接返回 f64（macOS 是 Result）；
+                // 此块仅 Windows 编译，按 f64 使用。
+                let _ = pet::PRIMARY_SCALE.set(monitor.scale_factor());
             }
 
             // Resolve `system` theme mode against the actual OS appearance once

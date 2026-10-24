@@ -30,7 +30,11 @@
 /// `TUD_INSTANCE_FILE` (dev/CI) redirects the lock to an arbitrary path so the
 /// guard is testable outside the (possibly TCC-blocked) app config dir.
 pub fn acquire(app: &tauri::AppHandle) -> Result<(), String> {
-    use tauri::Manager;
+
+    // flock 路径解析需要 Manager trait；Windows 走具名互斥体不使用
+    // （cfg 门控避免 Windows 侧的 unused-import 警告）。
+    #[cfg(not(target_os = "windows"))]
+    use tauri::Manager as _;
 
     #[cfg(unix)]
     {
