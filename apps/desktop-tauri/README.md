@@ -29,6 +29,21 @@
 
 ⚠️ **不要给 `tauri.conf.json` 加回 `devUrl`、也不要去掉 `--no-dev-server`**：WKWebView 在部分 macOS 环境下无法加载任何 `http://127.0.0.1` 回环页面（永久 about:blank 白屏），dev 必须与 release 同走 `tauri://localhost` 自定义协议。详见 [docs/troubleshooting.md](docs/troubleshooting.md) 案例 1。
 
+## 为什么安装包 44MB？（体积构成）
+
+解包 `.app` 实测（v0.2.0）：
+
+| 组件 | 体积 | 占比 |
+|---|---|---|
+| Node.js 运行时二进制（node-app/node） | 110MB | 92% |
+| Rust 壳（desktop-tauri） | 10MB | 8% |
+| CLI/core dist + node_modules | 6.7MB | ~5% |
+| dashboard 前端 dist | 2.6MB | 2% |
+
+「Tauri 应用 <10MB」对纯 Rust 应用成立——本项目的 Rust 壳恰好就是 10MB。大头是**内嵌的 Node 运行时**：这是「Rust 壳 + Node sidecar」架构的代价，换来的是原样复用官方 core 的解析器/同步/上传（以最小开发量对齐 Electron 版全部功能）。dmg 压缩后 127MB→44MB；官方 Electron 版安装包通常 100MB+。
+
+后续可选的瘦身路径（按性价比）：① `bun build --compile` 把 sidecar 编译为独立可执行（预计 dmg ~30MB 级）；② 裁剪版 node 二进制（~35MB，有兼容风险）；③ 数据层 Rust 化（<15MB，等于重写 core，不推荐）。
+
 ## 与上游同步（main 只做镜像）
 
 ```bash
