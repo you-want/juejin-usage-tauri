@@ -81,15 +81,8 @@ jobs:
           find "$BUNDLE/macos" -name '*.dmg' -exec cp {} dist-upload/ \; 2>/dev/null || true
           find "$BUNDLE/macos" -name '*.app.tar.gz*' -exec cp {} dist-upload/ \; 2>/dev/null || true
           find "$BUNDLE/nsis" \( -name '*.exe' -o -name '*.zip' -o -name '*.sig' \) -exec cp {} dist-upload/ \; 2>/dev/null || true
-          # CLI 生成的 latest.json（单平台，位于各平台 bundle 子目录）重命名为
-          # latest.<platform>.json 供合并
-          FOUND=$(find "$BUNDLE" -name latest.json -not -path '*/node-app/*' | head -1)
-          if [ -n "$FOUND" ]; then
-            cp "$FOUND" "dist-upload/latest.${{ matrix.platform }}.json"
-          else
-            echo "::warning::no latest.json under $BUNDLE"
-            find "$BUNDLE" -maxdepth 2 -type d || true
-          fi
+          # Windows 的 nsis updater 产物是 -setup.exe（本体即更新包，附 .sig）
+          find "$BUNDLE/nsis" -name '*-setup.exe.sig' -exec cp {} dist-upload/ \; 2>/dev/null || true
           ls -la dist-upload
 
       - uses: actions/upload-artifact@v4
@@ -109,25 +102,38 @@ jobs:
           path: artifacts
           merge-multiple: true
 
-      - name: Merge per-platform manifests into latest.json
+      # tauri CLI 只产出 *.tar.gz/.zip + .sig，latest.json 由本步骤生成
+      # （updater v1 格式：platforms.<key>.{signature, url}）
+      - name: Generate latest.json from artifacts
+        shell: bash
         run: |
-          node -e '
+          node - <<'EOF'
           const fs = require("fs");
-          const parts = fs.readdirSync("artifacts").filter(f => /^latest\.(?!json$).+\.json$/.test(f));
-          if (parts.length === 0) { console.error("no per-platform latest.json found"); process.exit(1); }
-          const merged = { version: "", pub_date: "", platforms: {} };
-          for (const part of parts) {
-            const body = JSON.parse(fs.readFileSync(`artifacts/${part}`, "utf8"));
-            merged.version = body.version || merged.version;
-            merged.pub_date = body.pub_date || merged.pub_date;
-            merged.notes = body.notes || merged.notes;
-            for (const [key, entry] of Object.entries(body.platforms || {})) {
-              merged.platforms[key] = entry;
+          const path = require("path");
+          const tag = process.env.GITHUB_REF_NAME.replace(/^v/, "");
+          const dir = "artifacts";
+          const files = fs.readdirSync(dir);
+          const platforms = {};
+          const sigFor = (base) => fs.readFileSync(path.join(dir, base + ".sig"), "utf8").trim();
+          const baseUrl = `https://github.com/${process.env.GITHUB_REPOSITORY}/releases/download/${process.env.GITHUB_REF_NAME}`;
+          for (const f of files) {
+            if (f.endsWith(".app.tar.gz") && !f.endsWith(".sig")) {
+              const key = f.includes("aarch64") ? "darwin-aarch64" : "darwin-x86_64";
+              platforms[key] = { signature: sigFor(f), url: `${baseUrl}/${encodeURIComponent(f)}` };
+            }
+            if (f.endsWith("-setup.exe") || (f.endsWith(".exe") && !f.endsWith(".sig"))) {
+              const key = "windows-x86_64";
+              platforms[key] = { signature: sigFor(f + ".zip") || sigFor(f), url: `${baseUrl}/${encodeURIComponent(f)}` };
+            }
+            if (f.endsWith(".msi.zip") && !f.endsWith(".sig")) {
+              platforms["windows-x86_64"] = { signature: sigFor(f), url: `${baseUrl}/${encodeURIComponent(f)}` };
             }
           }
-          fs.writeFileSync("artifacts/latest.json", JSON.stringify(merged, null, 2));
-          console.log(JSON.stringify(merged.platforms, null, 2));
-          '
+          if (Object.keys(platforms).length === 0) { console.error("no updater artifacts found:", files.join(", ")); process.exit(1); }
+          const manifest = { version: tag, notes: "Tauri community edition " + tag, pub_date: new Date().toISOString(), platforms };
+          fs.writeFileSync(path.join(dir, "latest.json"), JSON.stringify(manifest, null, 2));
+          console.log(JSON.stringify(platforms, null, 2));
+          EOF
 
       - uses: softprops/action-gh-release@v2
         with:
