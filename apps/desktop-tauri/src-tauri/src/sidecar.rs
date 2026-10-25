@@ -44,6 +44,9 @@ pub struct SidecarState {
     pub started: AtomicBool,
     /// Set by `stop()`; the monitor thread stops respawning once it sees this.
     pub shutting_down: Arc<AtomicBool>,
+    /// True when the Rust local-api owns the public port (TUD_API_ENGINE=rust);
+    /// the Node sidecar then runs as an admin worker on a private port.
+    pub rust_api: AtomicBool,
 }
 
 impl Default for SidecarState {
@@ -53,6 +56,7 @@ impl Default for SidecarState {
             child: Arc::new(Mutex::new(None)),
             started: AtomicBool::new(false),
             shutting_down: Arc::new(AtomicBool::new(false)),
+            rust_api: AtomicBool::new(false),
         }
     }
 }
@@ -175,8 +179,9 @@ pub fn start(state: &SidecarState, app: AppHandle) -> Result<(), String> {
     let child = Arc::clone(&state.child);
     let port = Arc::clone(&state.port);
     let shutting_down = Arc::clone(&state.shutting_down);
+    let rust_api = Arc::new(AtomicBool::new(state.rust_api.load(Ordering::SeqCst)));
     std::thread::spawn(move || {
-        monitor_loop(child, port, shutting_down, app);
+        monitor_loop(child, port, shutting_down, rust_api, app);
     });
     Ok(())
 }
@@ -188,6 +193,7 @@ fn monitor_loop(
     child_ref: Arc<Mutex<Option<Child>>>,
     port: Arc<Mutex<Option<u16>>>,
     shutting_down: Arc<AtomicBool>,
+    rust_api: Arc<AtomicBool>,
     app: AppHandle,
 ) {
     const MAX_CONSECUTIVE_CRASHES: u32 = 5;
@@ -198,7 +204,7 @@ fn monitor_loop(
             return;
         }
         let spawn_time = std::time::Instant::now();
-        if let Err(err) = spawn_once(&child_ref, &port, &app) {
+        if let Err(err) = spawn_once(&child_ref, &port, &rust_api, &app) {
             eprintln!("[tud-desktop] sidecar spawn failed: {err}");
             consecutive_crashes += 1;
             if consecutive_crashes >= MAX_CONSECUTIVE_CRASHES {
@@ -272,6 +278,7 @@ fn backoff_for(attempt: u32) -> std::time::Duration {
 fn spawn_once(
     child_ref: &Arc<Mutex<Option<Child>>>,
     port: &Arc<Mutex<Option<u16>>>,
+    rust_api: &AtomicBool,
     app: &AppHandle,
 ) -> Result<(), String> {
     let script = sidecar_script(app)
@@ -293,7 +300,14 @@ fn spawn_once(
         // `http://127.0.0.1:{DEFAULT_DESKTOP_PORT}/` always resolves to this
         // child — the random-port fallback (only hit on bind failure) is a
         // separate edge case we surface via the `PORT=` line as before.
-        .env("TUD_SIDECAR_PORT", DEFAULT_DESKTOP_PORT.to_string())
+        .env(
+            "TUD_SIDECAR_PORT",
+            if rust_api.load(Ordering::SeqCst) {
+                (DEFAULT_DESKTOP_PORT + 1).to_string()
+            } else {
+                DEFAULT_DESKTOP_PORT.to_string()
+            },
+        )
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
@@ -340,6 +354,7 @@ fn read_stdout(
             if let Ok(n) = p.trim().parse::<u16>() {
                 *port.lock().unwrap() = Some(n);
                 eprintln!("[tud-desktop] sidecar bound to PORT={n}");
+                eprintln!("[tud-desktop] sidecar role: admin worker");
                 // First capsule refresh once the summary endpoint is up.
                 crate::tray::refresh_usage_title(&app);
                 // Verify the main webview (now the bundled dashboard, not the

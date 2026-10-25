@@ -15,6 +15,7 @@ use tauri::{AppHandle, Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder
 
 mod autostart;
 mod bridge;
+mod local_api;
 mod clipboard;
 mod dashboard_range;
 mod deeplink;
@@ -530,6 +531,27 @@ pub fn run() {
             // P1: spawn the Node sidecar (data core). Failures are non-fatal —
             // the frontend shows "recovering" until the sidecar reports its port.
             let state = app.state::<SidecarState>();
+            // 阶段②：TUD_API_ENGINE=rust 时，Rust(axum) 先抢占 8462 公开端口，
+            // Node 以 8463 作为 admin 端口（写路径 + parsers）。默认 node 引擎，
+            // 行为与 0.3.x 完全一致。
+            let rust_engine = std::env::var("TUD_API_ENGINE")
+                .map(|v| v.trim().eq_ignore_ascii_case("rust"))
+                .unwrap_or(false);
+            if rust_engine {
+                let api_state = local_api::LocalApiState {
+                    admin_port: std::sync::Arc::clone(&state.port),
+                };
+                state.rust_api.store(true, std::sync::atomic::Ordering::SeqCst);
+                tauri::async_runtime::spawn(async move {
+                    if let Err(err) =
+                        local_api::serve(api_state, crate::sidecar::DEFAULT_DESKTOP_PORT).await
+                    {
+                        eprintln!("[tud-desktop] rust local-api failed: {err}");
+                    }
+                });
+                // 给 axum 一点绑定时间，避免 Node 意外抢占 8462（Node 被固定在 8463）
+                std::thread::sleep(std::time::Duration::from_millis(300));
+            }
             let handle = app.handle().clone();
             let _ = sidecar::start(&state, handle);
 
