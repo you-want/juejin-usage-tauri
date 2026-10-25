@@ -152,6 +152,11 @@ jobs:
           path: artifacts
           merge-multiple: true
 
+      # node-small-icu 构建作业的产物（裸 node 二进制）会随 download-artifact
+      # 混进发布目录——它只是 staging 的输入，不属于 Release 资产
+      - name: Drop non-release artifacts
+        run: rm -f artifacts/node && ls artifacts
+
       # tauri CLI 只产出 *.tar.gz/.zip + .sig，latest.json 由本步骤生成
       # （updater v1 格式：platforms.<key>.{signature, url}）
       - name: Generate latest.json from artifacts
