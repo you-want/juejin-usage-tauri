@@ -33,6 +33,18 @@ const VOLATILE = [
   ['data', 'lastUploadAt'],
 ];
 
+/** 浮点归一：1-ULP 级差异（重密封重算）视为等价。 */
+function normalizeFloats(node) {
+  if (typeof node === 'number' && !Number.isInteger(node)) {
+    return Number(node.toFixed(10));
+  }
+  if (Array.isArray(node)) return node.map(normalizeFloats);
+  if (node && typeof node === 'object') {
+    for (const k of Object.keys(node)) node[k] = normalizeFloats(node[k]);
+  }
+  return node;
+}
+
 function stripVolatile(envelope) {
   // body 存的是字符串：先解析再剥离易变字段（data.lastSyncAt 等嵌套路径）
   let parsed;
@@ -49,7 +61,15 @@ function stripVolatile(envelope) {
     }
     if (cur && typeof cur === 'object') delete cur[path.at(-1)];
   }
-  return { status: envelope.status, body: parsed };
+  // 键序无关的规范化序列化（serde_json 与 V8 的键序策略不同，语义等价即可）
+  const canonical = (node) => {
+    if (Array.isArray(node)) return node.map(canonical);
+    if (node && typeof node === 'object') {
+      return Object.fromEntries(Object.keys(node).sort().map((k) => [k, canonical(node[k])]));
+    }
+    return node;
+  };
+  return { status: envelope.status, body: canonical(normalizeFloats(parsed)) };
 }
 
 const [cmd, ...args] = process.argv.slice(2);

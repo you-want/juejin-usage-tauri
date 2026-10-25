@@ -21,7 +21,11 @@ use std::net::SocketAddr;
 /// 本模块原生已实现的端点（精确匹配）；其余一律代理。
 /// 迁移新端点时：实现 handler + 把路径加进这里 + golden diff 通过。
 #[allow(dead_code)] // 迁移进度清单：每原生实现一个端点就勾一条
-const NATIVE_ROUTES: &[&str] = &["/health", "/functions/tud-usage-daily"];
+const NATIVE_ROUTES: &[&str] = &[
+    "/health",
+    "/functions/tud-usage-daily",
+    "/functions/tud-usage-hourly",
+];
 
 #[derive(Clone)]
 pub struct LocalApiState {
@@ -34,6 +38,7 @@ pub async fn serve(state: LocalApiState, port: u16) -> Result<(), String> {
     let app = Router::new()
         .route("/health", get(health))
         .route("/functions/tud-usage-daily", get(daily))
+        .route("/functions/tud-usage-hourly", get(hourly))
         .fallback(proxy)
         .with_state(state);
     let addr = SocketAddr::new(std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST), port);
@@ -60,7 +65,34 @@ async fn daily(State(state): State<LocalApiState>, uri: Uri) -> Response {
         .unwrap_or(90)
         .clamp(1, 365);
     let files = load_day_files();
-    let body = native_daily(&files, days);
+    // 镜像 Node 的 c.json(ok(...)) 信封 —— local-api 契约的一部分
+    let body = serde_json::json!({
+        "success": true,
+        "message": "ok",
+        "data": native_daily(&files, days),
+    });
+    json_response(StatusCode::OK, &body)
+}
+
+/// 原生 /functions/tud-usage-hourly —— getHourly 的 Rust 移植。
+async fn hourly(State(state): State<LocalApiState>, uri: Uri) -> Response {
+    let _ = (&state, &uri);
+    let days = uri
+        .query()
+        .and_then(|q| {
+            q.split('&').find_map(|kv| {
+                let (k, v) = kv.split_once('=')?;
+                (k == "days").then(|| v.parse::<u32>().ok())?
+            })
+        })
+        .unwrap_or(1)
+        .clamp(1, 365);
+    let files = load_day_files();
+    let body = serde_json::json!({
+        "success": true,
+        "message": "ok",
+        "data": native_hourly(&files, days),
+    });
     json_response(StatusCode::OK, &body)
 }
 
@@ -514,6 +546,41 @@ fn local_date_days_ago(days: u32, today: &str) -> String {
     let d: i64 = today[8..10].parse().unwrap_or(1);
     let base = days_from_civil(y, m, d) - (days.max(1) - 1) as i64;
     civil_from_days(base)
+}
+
+/// getHourly 的 Rust 移植：密封小时拼接 + today 追加 + (date,hour,source) 排序。
+fn native_hourly(files: &DayFiles, days: u32) -> Value {
+    let today = local_now_date(files);
+    let from_date = local_date_days_ago(days, &today);
+    let stats_date = stats_since_date(&files.stats_since, tz_offset_seconds(&files.time_zone));
+
+    let mut hours: Vec<&Value> = Vec::new();
+    for (date, entry) in sealed_days(files) {
+        if date < from_date.as_str() || date < stats_date.as_str() || date >= today.as_str() {
+            continue;
+        }
+        if let Some(arr) = entry.get("hourly").and_then(|h| h.as_array()) {
+            for row in arr {
+                hours.push(row);
+            }
+        }
+    }
+    if today.as_str() >= from_date.as_str() && today.as_str() >= stats_date.as_str() {
+        if let Some(arr) = files.today.as_ref().and_then(|t| t.get("hourly")).and_then(|h| h.as_array()) {
+            for row in arr {
+                hours.push(row);
+            }
+        }
+    }
+    hours.sort_by(|a, b| {
+        let key = |v: &Value, f: &str| v.get(f).and_then(|x| x.as_str()).unwrap_or("").to_string();
+        let num = |v: &Value, f: &str| v.get(f).and_then(|x| x.as_i64()).unwrap_or(0);
+        key(a, "date")
+            .cmp(&key(b, "date"))
+            .then(num(a, "hour").cmp(&num(b, "hour")))
+            .then(key(a, "source").cmp(&key(b, "source")))
+    });
+    serde_json::json!({ "hours": hours, "timeZone": files.time_zone })
 }
 
 fn civil_from_days(days: i64) -> String {
