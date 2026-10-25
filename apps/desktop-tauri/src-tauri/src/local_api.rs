@@ -34,6 +34,8 @@ const NATIVE_ROUTES: &[&str] = &[
 pub struct LocalApiState {
     /// Node admin 端口（写路径/未迁移端点的代理目标）。None = Node 未就绪。
     pub admin_port: std::sync::Arc<std::sync::Mutex<Option<u16>>>,
+    /// 读路径文件缓存（sealed/today/config，按 mtime 失效）。
+    pub cache: std::sync::Arc<CachedFiles>,
 }
 
 /// 启动 axum 服务（绑定 8462）。失败返回 Err（调用方决定是否致命）。
@@ -70,12 +72,13 @@ async fn daily(State(state): State<LocalApiState>, uri: Uri) -> Response {
         })
         .unwrap_or(90)
         .clamp(1, 365);
-    let files = load_day_files();
+    let files = load_day_files(&state.cache);
     // 镜像 Node 的 c.json(ok(...)) 信封 —— local-api 契约的一部分
+    let data = memoized_response(&state.cache, "daily", || native_daily(&files, days));
     let body = serde_json::json!({
         "success": true,
         "message": "ok",
-        "data": native_daily(&files, days),
+        "data": data,
     });
     json_response(StatusCode::OK, &body)
 }
@@ -93,11 +96,12 @@ async fn hourly(State(state): State<LocalApiState>, uri: Uri) -> Response {
         })
         .unwrap_or(1)
         .clamp(1, 365);
-    let files = load_day_files();
+    let files = load_day_files(&state.cache);
+    let data = memoized_response(&state.cache, "hourly", || native_hourly(&files, days));
     let body = serde_json::json!({
         "success": true,
         "message": "ok",
-        "data": native_hourly(&files, days),
+        "data": data,
     });
     json_response(StatusCode::OK, &body)
 }
@@ -115,10 +119,11 @@ async fn breakdown(State(state): State<LocalApiState>, uri: Uri) -> Response {
         })
         .unwrap_or(30)
         .clamp(1, 365);
-    let files = load_day_files();
+    let files = load_day_files(&state.cache);
+    let data = memoized_response(&state.cache, "breakdown", || native_breakdown(&files, days));
     let body = serde_json::json!({
         "success": true, "message": "ok",
-        "data": native_breakdown(&files, days),
+        "data": data,
     });
     json_response(StatusCode::OK, &body)
 }
@@ -126,8 +131,8 @@ async fn breakdown(State(state): State<LocalApiState>, uri: Uri) -> Response {
 /// 原生 /functions/tud-*-usage-summary —— getUsageSummary 移植。
 async fn summary(State(state): State<LocalApiState>, uri: Uri) -> Response {
     let _ = (&state, &uri);
-    let files = load_day_files();
-    let data = native_summary(&files);
+    let files = load_day_files(&state.cache);
+    let data = memoized_response(&state.cache, "summary", || native_summary(&files));
     json_response(StatusCode::OK, &data)
 }
 
@@ -378,6 +383,39 @@ fn read_json(path: &std::path::Path) -> Option<Value> {
     serde_json::from_slice(&bytes).ok()
 }
 
+/// 按文件 mtime 缓存的 JSON 解析结果——sealed 文件 ~1MB，逐请求重解析
+/// 是读路径的主要开销（实测 ~200ms），Node 引擎的热内存聚合是 ~50ms。
+fn cached_json(path: &std::path::Path, cache: &CachedFiles) -> Option<Value> {
+    let meta = std::fs::metadata(path).ok()?;
+    let mtime = meta
+        .modified()
+        .ok()?
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()?
+        .as_millis();
+    let key = path.to_string_lossy().into_owned();
+    if let Some((cached_mtime, cached_value)) = cache.map.lock().unwrap().get(&key) {
+        if *cached_mtime == mtime {
+            return Some(cached_value.clone());
+        }
+    }
+    let value = read_json(path)?;
+    cache
+        .map
+        .lock()
+        .unwrap()
+        .insert(key, (mtime, value.clone()));
+    Some(value)
+}
+
+#[derive(Default)]
+pub struct CachedFiles {
+    pub map: std::sync::Mutex<std::collections::HashMap<String, (u128, Value)>>,
+    /// 响应级记忆化：key = 路由 + 三份数据文件的 mtime。数据文件不变则响应不变
+    /// （summary 的 106 天折叠 ~200ms → 热请求 ~0.5ms）。
+    pub responses: std::sync::Mutex<std::collections::HashMap<String, Value>>,
+}
+
 /// sealed cache 的 timeZone（现网恒为 Asia/Shanghai，UTC+8 无夏令时）。
 /// 返回相对 UTC 的固定秒偏移；未知时区回退 +8。
 fn tz_offset_seconds(tz: &str) -> i32 {
@@ -506,10 +544,37 @@ struct DayFiles {
 }
 
 /// 读取三份输入文件；任一缺失即降级（sealed 缺 → 空 map；today 缺 → 不追加）。
-fn load_day_files() -> DayFiles {
+/// 三份数据文件的 mtime 指纹（响应记忆化的 key）。
+fn data_fingerprint(cache: &CachedFiles) -> String {
     let dir = data_dir();
-    let sealed = read_json(&dir.join("cache/daily-sealed.json"));
-    let today = read_json(&dir.join("cache/today-live.json"));
+    let mut key = String::new();
+    for rel in ["cache/daily-sealed.json", "cache/today-live.json", "config.json"] {
+        let m = std::fs::metadata(dir.join(rel))
+            .ok()
+            .and_then(|m| m.modified().ok())
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|d| d.as_millis())
+            .unwrap_or(0);
+        key.push_str(&format!("{rel}:{m};"));
+    }
+    key
+}
+
+/// 响应级记忆化：数据文件 mtime 不变则直接返回上次计算结果。
+fn memoized_response(cache: &CachedFiles, route: &str, compute: impl FnOnce() -> Value) -> Value {
+    let key = format!("{route}|{}", data_fingerprint(cache));
+    if let Some(v) = cache.responses.lock().unwrap().get(&key) {
+        return v.clone();
+    }
+    let value = compute();
+    cache.responses.lock().unwrap().insert(key, value.clone());
+    value
+}
+
+fn load_day_files(cache: &CachedFiles) -> DayFiles {
+    let dir = data_dir();
+    let sealed = cached_json(&dir.join("cache/daily-sealed.json"), cache);
+    let today = cached_json(&dir.join("cache/today-live.json"), cache);
     let time_zone = sealed
         .as_ref()
         .and_then(|s| s.get("timeZone"))

@@ -540,6 +540,7 @@ pub fn run() {
             if rust_engine {
                 let api_state = local_api::LocalApiState {
                     admin_port: std::sync::Arc::clone(&state.port),
+                    cache: std::sync::Arc::new(local_api::CachedFiles::default()),
                 };
                 state.rust_api.store(true, std::sync::atomic::Ordering::SeqCst);
                 tauri::async_runtime::spawn(async move {
