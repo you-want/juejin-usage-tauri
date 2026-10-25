@@ -6,6 +6,10 @@ import type { CursorsFile, QueueBucket, TokenTotals } from '../types.js';
 import { cursorCliConfigPath, cursorStateVscdbPath } from '../paths.js';
 import { toUtcHalfHourStart } from '../queue/keys.js';
 import {
+  CursorSafeStorageError,
+  unwrapCursorAccessToken,
+} from '../subscription/readers/cursor-safe-storage.js';
+import {
   accumulateBucket,
   bucketStateKey,
   bucketsFromState,
@@ -412,10 +416,10 @@ export async function parseCursorIncremental(
   const cachedCookie =
     cookieCache && Date.now() - cookieCache.cachedAt < COOKIE_CACHE_TTL_MS ? cookieCache.cookie : null;
 
-  const loadCookies = (): { cookies: string[] } | { skip: string } => {
-    let jwt: string | null;
+  const loadCookies = async (): Promise<{ cookies: string[] } | { skip: string }> => {
+    let rawToken: string | null;
     try {
-      jwt = readAccessToken(dbPath);
+      rawToken = readAccessToken(dbPath);
     } catch (err) {
       if (err instanceof Error && err.message.includes('ENOENT')) {
         return { skip: '需要 sqlite3 CLI 或 Node >= 22.5 以读取 Cursor 数据库' };
@@ -425,7 +429,18 @@ export async function parseCursorIncremental(
       }
       throw err;
     }
-    if (!jwt) return { skip: 'Cursor 未登录' };
+    if (!rawToken) return { skip: 'Cursor 未登录' };
+    let jwt: string;
+    try {
+      // Never prompt for Keychain during background CSV sync; reuse an in-process
+      // cache from a prior manual subscription refresh when available.
+      jwt = await unwrapCursorAccessToken(rawToken, { allowKeychainPrompt: false });
+    } catch (err) {
+      if (err instanceof CursorSafeStorageError) {
+        return { skip: err.message };
+      }
+      return { skip: '暂时无法读取 Cursor 登录信息' };
+    }
     const cookies = sessionCookiesFromJwt(jwt);
     if (cookies.length === 0) return { skip: '无法解析 Cursor 会话凭证' };
     return { cookies };
@@ -434,7 +449,7 @@ export async function parseCursorIncremental(
   try {
     const cookies: string[] = [];
     if (cachedCookie) {
-      const loaded = loadCookies();
+      const loaded = await loadCookies();
       if ('skip' in loaded) {
         cookieCache = null;
         cursors.cursor.lastError = loaded.skip;
@@ -445,7 +460,7 @@ export async function parseCursorIncremental(
       }
       cookies.push(cachedCookie);
     } else {
-      const loaded = loadCookies();
+      const loaded = await loadCookies();
       if ('skip' in loaded) {
         cursors.cursor.lastError = loaded.skip;
         return {
@@ -462,7 +477,7 @@ export async function parseCursorIncremental(
     } catch (err) {
       if (!(cachedCookie && err instanceof CursorNotLoggedInError)) throw err;
       cookieCache = null;
-      const loaded = loadCookies();
+      const loaded = await loadCookies();
       if ('skip' in loaded) {
         cursors.cursor.lastError = loaded.skip;
         return {

@@ -40,6 +40,7 @@ export function desktopMockClaudeSubscription(): ClaudeSubscriptionSnapshot {
 export function desktopMockCursorSubscription(): CursorSubscriptionSnapshot {
   return {
     status: 'ready',
+    hasAccount: true,
     planLabel: 'Pro',
     cursorModels: { usedPercent: 22, resetsAt: hoursFromNow(24 * 12) },
     otherModels: { usedPercent: 71, resetsAt: hoursFromNow(24 * 12) },

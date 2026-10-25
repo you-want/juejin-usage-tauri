@@ -17,6 +17,8 @@ export interface CursorRateLimitWindow {
 
 export interface CursorSubscriptionSnapshot {
   status: CursorSubscriptionStatus;
+  /** True when a local Cursor login was detected, even if Keychain decrypt is still pending. */
+  hasAccount: boolean;
   planLabel: string | null;
   /** autoPercentUsed pool; UI label Auto. */
   cursorModels: CursorRateLimitWindow | null;
@@ -29,6 +31,11 @@ export interface CursorSubscriptionSnapshot {
   fetchedAt: number | null;
   stale: boolean;
   message: string | null;
+}
+
+/** Keeps a confirmed Cursor login visible while Keychain decrypt or quota lookup is pending. */
+export function cursorSubscriptionHasAccount(snapshot: CursorSubscriptionSnapshot): boolean {
+  return snapshot.hasAccount === true;
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -138,5 +145,35 @@ export function mapCursorGrokBotUsage(value: unknown, now = Date.now()): CursorR
     resetsAt: included ? parseTimestamp(root.nextResetTimestampUtc) : null,
     ...(startsAt === null ? {} : { startsAt }),
     ...(trial && expiresAt !== null ? { expiresAt } : {}),
+  };
+}
+
+/** Premium and similar plans bill included usage weekly instead of Auto/API pools. */
+export function isCursorWeeklyIncludedUsage(value: unknown): boolean {
+  const root = asRecord(value);
+  if (!root) return false;
+  const planInfo = asRecord(root.planInfo) ?? root;
+  const period = planInfo.includedUsagePeriod ?? planInfo.included_usage_period;
+  if (period === 2 || period === 'INCLUDED_USAGE_PERIOD_WEEKLY') return true;
+  if (typeof period !== 'string') return false;
+  const normalized = period.trim().toLowerCase().replace(/[\s_-]+/g, '');
+  return normalized === 'weekly' || normalized === 'includedusageperiodweekly';
+}
+
+/** Normalize get-current-period-usage into the combined Plan window. */
+export function mapCursorPeriodUsage(value: unknown): CursorRateLimitWindow | null {
+  const root = asRecord(value);
+  if (!root) return null;
+  const planUsage = asRecord(root.planUsage) ?? root;
+  const usedPercent = boundedPercent(planUsage.totalPercentUsed);
+  if (usedPercent === null) return null;
+  const resetsAt = parseTimestamp(
+    root.billingCycleEnd ?? planUsage.billingCycleEnd ?? planUsage.includedUsageResetsAt,
+  );
+  const start = parseTimestamp(root.billingCycleStart ?? planUsage.billingCycleStart);
+  return {
+    usedPercent,
+    resetsAt,
+    ...(start === null ? {} : { startsAt: start }),
   };
 }

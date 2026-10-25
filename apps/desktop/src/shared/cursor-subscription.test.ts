@@ -74,3 +74,15 @@ test('Grok Bot trial expiry is never displayed as a recurring reset', async () =
   assert.equal(mapCursorGrokBotUsage(trial, Date.parse('2026-10-09T00:00:00Z')), null);
   assert.equal(mapCursorGrokBotUsage({ ...trial, includedLimitZero: false }, now)?.resetsAt, 1791590400);
 });
+
+test('detects weekly included-usage plans and maps period totals', async () => {
+  const { isCursorWeeklyIncludedUsage, mapCursorPeriodUsage } = await import('./cursor-subscription.js');
+  assert.equal(isCursorWeeklyIncludedUsage({ planInfo: { includedUsagePeriod: 'INCLUDED_USAGE_PERIOD_WEEKLY' } }), true);
+  assert.equal(isCursorWeeklyIncludedUsage({ planInfo: { includedUsagePeriod: 2 } }), true);
+  assert.equal(isCursorWeeklyIncludedUsage({ planInfo: { includedUsagePeriod: 'INCLUDED_USAGE_PERIOD_MONTHLY' } }), false);
+  assert.deepEqual(mapCursorPeriodUsage({
+    billingCycleStart: '2026-10-01T00:00:00Z',
+    billingCycleEnd: '2026-10-08T00:00:00Z',
+    planUsage: { totalPercentUsed: 35.5 },
+  }), { usedPercent: 35.5, startsAt: 1_790_812_800, resetsAt: 1_791_417_600 });
+});

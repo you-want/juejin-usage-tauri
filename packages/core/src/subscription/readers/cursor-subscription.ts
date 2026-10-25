@@ -6,13 +6,24 @@ import { queryDbJson } from '../../parsers/sqlite.js';
 import {
   mapCursorUsageSummary,
   mapCursorGrokBotUsage,
+  isCursorWeeklyIncludedUsage,
+  mapCursorPeriodUsage,
   type CursorSubscriptionSnapshot,
 } from '../shared/cursor-subscription.js';
+import {
+  CursorSafeStorageError,
+  hasCursorKeychainUnlockGrant,
+  isCursorKeychainDenied,
+  unwrapCursorAccessToken,
+  type CursorSafeStorageOptions,
+} from './cursor-safe-storage.js';
 
 const REQUEST_TIMEOUT_MS = 10_000;
 const CACHE_TTL_MS = 60_000;
 const CURSOR_USAGE_URL = 'https://cursor.com/api/usage-summary';
 const CURSOR_GROK_BOT_URL = 'https://cursor.com/api/dashboard/get-sand-usage-status';
+const CURSOR_PLAN_INFO_URL = 'https://cursor.com/api/dashboard/get-plan-info';
+const CURSOR_PERIOD_USAGE_URL = 'https://cursor.com/api/dashboard/get-current-period-usage';
 const ACCESS_TOKEN_KEY = 'cursorAuth/accessToken';
 
 interface CursorCredentials {
@@ -20,14 +31,30 @@ interface CursorCredentials {
   userId: string;
 }
 
+export type CursorSubscriptionReadOptions = {
+  forceRefresh?: boolean;
+} & Pick<
+  CursorSafeStorageOptions,
+  | 'decryptString'
+  | 'readKeychainPassword'
+  | 'readWindowsOsCryptKey'
+  | 'readLinuxPassword'
+  | 'localStatePath'
+  | 'platform'
+>;
+
 class CursorCredentialError extends Error {
-  constructor(readonly kind: 'not-installed' | 'not-signed-in' | 'unavailable') {
-    super(kind);
+  constructor(
+    readonly kind: 'not-installed' | 'not-signed-in' | 'unavailable',
+    readonly detail?: string,
+  ) {
+    super(detail ?? kind);
   }
 }
 
 let lastSuccess: CursorSubscriptionSnapshot | null = null;
 let requestInFlight: Promise<CursorSubscriptionSnapshot> | null = null;
+let credentialOptions: CursorSubscriptionReadOptions = {};
 
 function expandHome(value: string): string {
   if (value === '~') return homedir();
@@ -58,9 +85,11 @@ function cursorCliConfigFile(): string {
 function unavailable(
   status: Exclude<CursorSubscriptionSnapshot['status'], 'ready'>,
   message: string,
+  hasAccount = false,
 ): CursorSubscriptionSnapshot {
   return {
     status,
+    hasAccount,
     planLabel: null,
     cursorModels: null,
     otherModels: null,
@@ -71,9 +100,9 @@ function unavailable(
   };
 }
 
-function staleFallback(message: string): CursorSubscriptionSnapshot {
-  if (!lastSuccess) return unavailable('temporarily-unavailable', message);
-  return { ...lastSuccess, stale: true, message };
+function staleFallback(message: string, hasAccount = false): CursorSubscriptionSnapshot {
+  if (!lastSuccess) return unavailable('temporarily-unavailable', message, hasAccount);
+  return { ...lastSuccess, hasAccount: true, stale: true, message };
 }
 
 /** Extract the provider account subject without exposing any other JWT claims. */
@@ -110,24 +139,100 @@ export function buildCursorSessionCookie(userId: string, token: string): string 
   return `WorkosCursorSessionToken=${userId}%3A%3A${token}`;
 }
 
-async function readCursorCredentials(): Promise<CursorCredentials> {
+async function readCursorCredentials(
+  options: CursorSubscriptionReadOptions = {},
+): Promise<CursorCredentials> {
   const dbPath = cursorStateDatabasePath();
   if (!existsSync(dbPath)) throw new CursorCredentialError('not-installed');
 
-  let token: string | null = null;
+  let rawToken: string | null = null;
   try {
     const row = queryDbJson(dbPath, `SELECT value FROM ItemTable WHERE key = '${ACCESS_TOKEN_KEY}' LIMIT 1`, { readOnly: true, timeout: 5000, maxBuffer: 1024 * 1024 })[0];
-    token = typeof row?.value === 'string' && row.value.trim() ? row.value.trim() : null;
+    rawToken = typeof row?.value === 'string' && row.value.trim() ? row.value.trim() : null;
   } catch {
     throw new CursorCredentialError('unavailable');
   }
-  if (!token) throw new CursorCredentialError('not-signed-in');
+  if (!rawToken) throw new CursorCredentialError('not-signed-in');
+
+  let token: string;
+  try {
+    // Open/focus Keychain policy:
+    // - Never authorized: do not call security (no forced dialog); card shows refresh hint.
+    // - Prior successful unlock (`cursor-keychain-ok`, usually after「始终允许」): try silently.
+    // - Denied this process: skip until manual refresh.
+    // CSV sync always uses allowKeychainPrompt:false on its own path.
+    const allowKeychainPrompt = options.forceRefresh === true
+      || (!isCursorKeychainDenied() && hasCursorKeychainUnlockGrant());
+    token = await unwrapCursorAccessToken(rawToken, {
+      platform: options.platform,
+      decryptString: options.decryptString,
+      readKeychainPassword: options.readKeychainPassword,
+      readWindowsOsCryptKey: options.readWindowsOsCryptKey,
+      readLinuxPassword: options.readLinuxPassword,
+      localStatePath: options.localStatePath,
+      allowKeychainPrompt,
+      forceKeychainRefresh: options.forceRefresh === true,
+    });
+  } catch (error) {
+    if (error instanceof CursorSafeStorageError) {
+      if (
+        error.kind === 'keychain-required'
+        || error.kind === 'keychain-denied'
+        || error.kind === 'decrypt-failed'
+        || error.kind === 'unsupported-platform'
+      ) {
+        throw new CursorCredentialError('unavailable', error.message);
+      }
+      throw new CursorCredentialError('not-signed-in', error.message);
+    }
+    throw new CursorCredentialError('unavailable', '暂时无法读取 Cursor 登录信息');
+  }
 
   // JWT subject first. cli-config.json can hold a different Cursor CLI account;
   // pairing that id with the desktop access token is a persistent 401.
   const userId = extractCursorUserId(token) ?? await readCursorCliUserId();
   if (!userId) throw new CursorCredentialError('not-signed-in');
   return { token, userId };
+}
+
+async function maybeApplyWeeklyPlanUsage(
+  mapped: ReturnType<typeof mapCursorUsageSummary>,
+  headers: Record<string, string>,
+  fetchImpl: typeof fetch,
+): Promise<ReturnType<typeof mapCursorUsageSummary>> {
+  try {
+    const planInfoResponse = await fetchImpl(CURSOR_PLAN_INFO_URL, {
+      method: 'POST',
+      headers: { ...headers, 'Content-Type': 'application/json' },
+      body: '{}',
+      redirect: 'error',
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    });
+    if (!planInfoResponse.ok) return mapped;
+    const planInfo = await planInfoResponse.json();
+    if (!isCursorWeeklyIncludedUsage(planInfo)) return mapped;
+
+    const periodResponse = await fetchImpl(CURSOR_PERIOD_USAGE_URL, {
+      method: 'POST',
+      headers: { ...headers, 'Content-Type': 'application/json' },
+      body: '{}',
+      redirect: 'error',
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    });
+    if (!periodResponse.ok) return mapped;
+    const weekly = mapCursorPeriodUsage(await periodResponse.json());
+    if (!weekly) return mapped;
+    // Weekly Premium (and similar) expose a single period window; Auto/API pools
+    // on usage-summary stay at 0% and would mislead the card.
+    return {
+      planLabel: mapped.planLabel,
+      cursorModels: null,
+      otherModels: null,
+      plan: weekly,
+    };
+  } catch {
+    return mapped;
+  }
 }
 
 export async function fetchCursorSubscription(
@@ -155,15 +260,17 @@ export async function fetchCursorSubscription(
       .catch(() => null),
   ]);
   if (response.status === 401 || response.status === 403) {
-    return unavailable('not-signed-in', '请先登录 Cursor');
+    return unavailable('not-signed-in', '请先登录 Cursor', false);
   }
   if (!response.ok) throw new Error(`Cursor usage API returned ${response.status}`);
-  const mapped = mapCursorUsageSummary(await response.json());
+  let mapped = mapCursorUsageSummary(await response.json());
+  mapped = await maybeApplyWeeklyPlanUsage(mapped, headers, fetchImpl);
   if (!mapped.cursorModels && !mapped.otherModels && !mapped.plan && !grokBot) {
     throw new Error('Cursor usage response contained no supported quota');
   }
   return {
     status: 'ready',
+    hasAccount: true,
     ...mapped,
     ...(grokBot ? { grokBot } : {}),
     fetchedAt: Math.floor(Date.now() / 1_000),
@@ -172,20 +279,26 @@ export async function fetchCursorSubscription(
   };
 }
 
-async function fetchFreshCursorSubscription(): Promise<CursorSubscriptionSnapshot> {
+async function fetchFreshCursorSubscription(
+  options: CursorSubscriptionReadOptions,
+): Promise<CursorSubscriptionSnapshot> {
   let credentials: CursorCredentials;
   try {
-    credentials = await readCursorCredentials();
+    credentials = await readCursorCredentials(options);
   } catch (error) {
     if (error instanceof CursorCredentialError) {
       if (error.kind === 'not-installed') {
-        return unavailable('not-installed', '未检测到本机 Cursor');
+        return unavailable('not-installed', '未检测到本机 Cursor', false);
       }
       if (error.kind === 'not-signed-in') {
-        return unavailable('not-signed-in', '请先登录 Cursor');
+        return unavailable('not-signed-in', error.detail ?? '请先登录 Cursor', false);
+      }
+      // Local login exists (possibly sealed); keep the card visible with refresh guidance.
+      if (error.kind === 'unavailable' && error.detail) {
+        return staleFallback(error.detail, true);
       }
     }
-    return staleFallback('暂时无法读取 Cursor 登录信息');
+    return staleFallback('暂时无法读取 Cursor 登录信息', true);
   }
 
   try {
@@ -193,19 +306,29 @@ async function fetchFreshCursorSubscription(): Promise<CursorSubscriptionSnapsho
     if (snapshot.status === 'ready') lastSuccess = snapshot;
     return snapshot;
   } catch {
-    return staleFallback('暂时无法读取 Cursor 订阅配额');
+    return staleFallback('暂时无法读取 Cursor 订阅配额', true);
   }
 }
 
+/** Configure decrypt hooks used by subsequent {@link readCursorSubscription} calls. */
+export function configureCursorSubscriptionReader(
+  options: CursorSubscriptionReadOptions = {},
+): void {
+  credentialOptions = options;
+}
+
 export async function readCursorSubscription(
-  options: { forceRefresh?: boolean } = {},
+  options: CursorSubscriptionReadOptions = {},
 ): Promise<CursorSubscriptionSnapshot> {
+  const merged = { ...credentialOptions, ...options };
   const cacheAge = lastSuccess?.fetchedAt
     ? Date.now() - lastSuccess.fetchedAt * 1_000
     : Number.POSITIVE_INFINITY;
-  if (!options.forceRefresh && lastSuccess && cacheAge <= CACHE_TTL_MS) return lastSuccess;
-  if (requestInFlight) return requestInFlight;
-  requestInFlight = fetchFreshCursorSubscription();
+  if (!merged.forceRefresh && lastSuccess && cacheAge <= CACHE_TTL_MS) return lastSuccess;
+  // Manual refresh must not join an in-flight auto load (may still be waiting on Keychain).
+  if (requestInFlight && !merged.forceRefresh) return requestInFlight;
+  if (requestInFlight && merged.forceRefresh) await requestInFlight.catch(() => {});
+  requestInFlight = fetchFreshCursorSubscription(merged);
   try {
     return await requestInFlight;
   } finally {

@@ -1217,6 +1217,52 @@ test('parseEveryCodeIncremental emits cumulative token_count deltas', async () =
   }
 });
 
+test('parseEveryCodeIncremental waits for a timestamp before advancing cumulative totals', async () => {
+  const home = await mkdtemp(join(tmpdir(), 'tud-ec-'));
+  const previousHome = process.env.AI_USAGE_EVERY_CODE_HOME;
+  process.env.AI_USAGE_EVERY_CODE_HOME = home;
+  try {
+    const sessions = join(home, 'sessions');
+    await mkdir(sessions, { recursive: true });
+    const rolloutPath = join(sessions, '2026_deferred_timestamp.jsonl');
+    const sessionLine = JSON.stringify({
+      type: 'session_meta',
+      payload: { id: 'sess-ec-deferred-timestamp', cwd: '/tmp/every-code' },
+    });
+    const totals = { input_tokens: 100, output_tokens: 50 };
+    const incompleteTokenLine = JSON.stringify({
+      type: 'event_msg',
+      payload: {
+        type: 'token_count',
+        info: { model: 'gpt-5', total_token_usage: totals },
+      },
+    });
+    await writeFile(rolloutPath, `${sessionLine}\n${incompleteTokenLine}\n`);
+
+    const cursors: CursorsFile = {};
+    const first = await parseEveryCodeIncremental(cursors, SINCE);
+    assert.equal(first.result.eventsParsed, 0);
+
+    const completedTokenLine = JSON.stringify({
+      type: 'event_msg',
+      timestamp: '2026-07-24T14:00:00.000Z',
+      payload: {
+        type: 'token_count',
+        info: { model: 'gpt-5', total_token_usage: totals },
+      },
+    });
+    await appendFile(rolloutPath, `${completedTokenLine}\n`);
+
+    const second = await parseEveryCodeIncremental(cursors, SINCE);
+    assert.equal(second.result.eventsParsed, 1);
+    assert.equal(second.result.buckets[0]!.input_tokens, 100);
+    assert.equal(second.result.buckets[0]!.output_tokens, 50);
+  } finally {
+    if (previousHome === undefined) delete process.env.AI_USAGE_EVERY_CODE_HOME;
+    else process.env.AI_USAGE_EVERY_CODE_HOME = previousHome;
+  }
+});
+
 test('parseEveryCodeIncremental persists lastModel across tail scans without info.model', async () => {
   const home = await mkdtemp(join(tmpdir(), 'tud-ec-'));
   const prev = process.env.AI_USAGE_EVERY_CODE_HOME;

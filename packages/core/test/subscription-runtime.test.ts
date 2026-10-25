@@ -48,9 +48,12 @@ test('SQLite subscription readers use isolated local fixtures, including Node 20
   assert.equal(readCopilotVscodeUser(db), 'fixture-user');
   const snapshot = await readCursorSubscription({ forceRefresh: true });
   assert.equal(snapshot.status, 'ready');
+  assert.equal(snapshot.hasAccount, true);
   assert.equal(snapshot.cursorModels?.usedPercent, 25);
   assert.equal(snapshot.otherModels?.usedPercent, 50);
-  assert.equal(calls.length, 2);
+  assert.equal(calls.length, 3);
+  assert.ok(calls.some((url) => url.includes('usage-summary')));
+  assert.ok(calls.some((url) => url.includes('get-plan-info')));
   assert.equal(JSON.stringify(snapshot).includes(token), false);
 });
 

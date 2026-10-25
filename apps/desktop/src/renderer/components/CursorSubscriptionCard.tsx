@@ -3,6 +3,7 @@ import { subscriptionDetails, subscriptionPoolKey } from '../lib/subscription-de
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   cursorRemainingPercent,
+  cursorSubscriptionHasAccount,
   type CursorSubscriptionSnapshot,
 } from '../../shared/cursor-subscription';
 import { SubscriptionUsageCard, type SubscriptionUsageMetric } from './SubscriptionUsageCard';
@@ -11,6 +12,7 @@ import { SubscriptionBrandIcon } from './SubscriptionBrandIcon';
 
 const INITIAL_SNAPSHOT: CursorSubscriptionSnapshot = {
   status: 'temporarily-unavailable',
+  hasAccount: false,
   planLabel: null,
   cursorModels: null,
   otherModels: null,
@@ -25,6 +27,8 @@ export function CursorSubscriptionCard() {
   const [snapshot, setSnapshot] = useState<CursorSubscriptionSnapshot>(INITIAL_SNAPSHOT);
   const [loading, setLoading] = useState(true);
   const requestInFlight = useRef(false);
+  const snapshotRef = useRef(snapshot);
+  snapshotRef.current = snapshot;
 
   const reload = useCallback(async (forceRefresh = false) => {
     if (isDesktopMockEnabled()) {
@@ -32,7 +36,8 @@ export function CursorSubscriptionCard() {
       setLoading(false);
       return;
     }
-    if (requestInFlight.current) return;
+    // Manual refresh must interrupt an in-flight auto load; auto loads can share one flight.
+    if (requestInFlight.current && !forceRefresh) return;
     requestInFlight.current = true;
     setLoading(true);
     try {
@@ -40,6 +45,7 @@ export function CursorSubscriptionCard() {
     } catch {
       setSnapshot({
         ...INITIAL_SNAPSHOT,
+        hasAccount: true,
         message: '暂时无法读取 Cursor 订阅信息',
       });
     } finally {
@@ -50,7 +56,12 @@ export function CursorSubscriptionCard() {
 
   useEffect(() => {
     void reload();
-    const onFocus = () => void reload();
+    const onFocus = () => {
+      // After a Keychain denial, keep the refresh hint; don't re-prompt on focus.
+      const current = snapshotRef.current;
+      if (current.hasAccount && current.message && current.status !== 'ready') return;
+      void reload();
+    };
     window.addEventListener('focus', onFocus);
     return () => window.removeEventListener('focus', onFocus);
   }, [reload]);
@@ -96,7 +107,9 @@ export function CursorSubscriptionCard() {
     <SubscriptionUsageCard
       data={{
         details: subscriptionDetails(snapshot, 'Cursor Dashboard', '账期结束'),
+        hasAccount: cursorSubscriptionHasAccount(snapshot),
         icon: <SubscriptionBrandIcon brand="cursor" />,
+        message: snapshot.message,
         metrics,
         planLabel: snapshot.planLabel,
         stale: snapshot.stale,
