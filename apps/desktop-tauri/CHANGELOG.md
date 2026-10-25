@@ -2,6 +2,15 @@
 
 本文件只记录 Tauri 社区版（`main` 分支）相对上游的增量；上游自身功能变化见其 CHANGELOG。
 
+## 0.3.0（体积瘦身，2026-10-25）
+
+- **安装包 44MB → ~32MB**：macOS 换用 small-icu 自建 node（-29MB；core 的 4 处
+  Intl 调用均为 formatToParts 构造，经 A/B 测试与 516 个 core 测试双跑验证
+  输出逐字节一致）；staging 剥离运行时无关产物（hono types/cjs、yaml browser、
+  sourcemap）
+- CI 新增 small-icu node 源码构建作业（actions/cache 缓存，仅构建一次）
+- Windows 暂用官方 node（安装器本就压缩良好，后续评估）
+
 ## 0.2.2（启动修复，2026-10-24）
 
 - **修复 v0.2.1 安装版 sidecar 无法启动**（应用有窗无数据）：上游 v0.1.15 给 core 新增 fzstd/yaml 依赖，
