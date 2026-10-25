@@ -532,6 +532,15 @@ export function traeSqlcipherKeyPath(dataDir: string, collector: string): string
   return join(dataDir, 'trae-keys', `${collector}.json`);
 }
 
+/**
+ * Live today entry (same shape as a sealed day), written by the sidecar after
+ * every apply so the Rust local-api can compose read responses without
+ * re-implementing today's live aggregation (phase ② strangler seam).
+ */
+export function todayLivePath(dataDir: string): string {
+  return join(dataDir, 'cache', 'today-live.json');
+}
+
 /** Gemini CLI session temp root (`~/.gemini/tmp` or `$GEMINI_HOME/tmp`). */
 export function geminiHome(): string {
   const env = process.env.GEMINI_HOME?.trim();

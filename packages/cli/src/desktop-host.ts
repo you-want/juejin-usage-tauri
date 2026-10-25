@@ -242,7 +242,9 @@ export async function boot(): Promise<void> {
   await evictCliAutostart();
   await evictRuntimeKind('cli', { exceptPid: process.pid });
 
-  const { dir, config, recoveredFromCorrupt } = await loadConfig();
+  // 阶段②测试法：TUD_DATA_DIR 重定向数据目录（冻结副本上做双引擎 golden diff）
+  const dataDirOverride = process.env.TUD_DATA_DIR?.trim() || undefined;
+  const { dir, config, recoveredFromCorrupt } = await loadConfig(dataDirOverride);
   ownedDir = dir;
   await touchStatsSince(dir, config);
 
@@ -280,11 +282,19 @@ export async function boot(): Promise<void> {
   const aggregateCache = await createAggregateCache(dir, bucketStore.getRows());
 
   runtime = { dir, config: refreshed, bucketStore, aggregateCache };
+  await aggregateCache.writeTodayLive(bucketStore.getRows());
 
   const applyAfterSync = createApplyAfterSync({
     getBucketStore: () => runtime!.bucketStore,
     getAggregateCache: () => runtime?.aggregateCache,
     onApplied: () => {
+      if (runtime) {
+        void runtime.aggregateCache
+          .writeTodayLive(runtime.bucketStore.getRows())
+          .catch((err) => {
+            console.error('[jusage desktop-host] writeTodayLive failed:', err instanceof Error ? err.message : err);
+          });
+      }
       void notifySynced();
     },
   });

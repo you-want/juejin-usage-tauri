@@ -13,7 +13,7 @@ import {
   aggregateModelBreakdown,
   aggregateUsageSummary,
 } from './aggregate.js';
-import { sealedDailyCachePath } from './paths.js';
+import { sealedDailyCachePath, todayLivePath } from './paths.js';
 import { normalizeProjectName } from './project-label.js';
 import { roundCostUsd } from './pricing/index.js';
 import {
@@ -383,6 +383,41 @@ export class AggregateCache {
     }
 
     await this.persist();
+  }
+
+  /**
+   * Phase ② seam: persist today's live aggregation as a sealed-day-shaped
+   * file (cache/today-live.json) so the Rust local-api can compose read
+   * responses (daily/hourly/breakdown/summary) without re-implementing
+   * today's live aggregation (pricing etc. stay in the Node layer).
+   */
+  async writeTodayLive(rows: QueueBucket[]): Promise<void> {
+    const today = localDateNow(this.timeZone);
+    const entry = buildSealedDay(rows, today, this.timeZone);
+    const path = todayLivePath(this.dataDir);
+    await mkdir(dirname(path), { recursive: true });
+    // No entry = no usage today; write an empty shell so readers see an
+    // authoritative file rather than a stale one.
+    const payload = entry ?? {
+      date: today,
+      daily: {
+        date: today,
+        tokens: 0,
+        costUsd: 0,
+        inputTokens: 0,
+        outputTokens: 0,
+        cachedInputTokens: 0,
+        cacheCreationInputTokens: 0,
+        localMetrics: emptyLocalMetrics(),
+        sources: [],
+        models: {},
+        projects: [],
+      },
+      hourly: [],
+      models: [],
+      projects: [],
+    };
+    await writeFile(path, `${JSON.stringify(payload)}\n`, 'utf8');
   }
 
   private todayRows(rows: QueueBucket[], today: string): QueueBucket[] {
