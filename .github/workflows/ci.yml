@@ -5,9 +5,21 @@ name: ✅ CI
 on:
   pull_request:
     branches: [main]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - 'LICENSE'
+      - '.gitignore'
   push:
     branches: [main]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - 'LICENSE'
+      - '.gitignore'
   workflow_dispatch:
+# 纯文档改动跳过 CI（paths-ignore 不作用于 workflow_dispatch，手动仍可触发）。
+# 注意：若某次推送同时含代码与文档，CI 正常运行，不会误跳过。
 
 # 同一分支上新推的 commit 取消上一次还在跑的 CI；main 上的不取消，保留完整历史。
 concurrency:
