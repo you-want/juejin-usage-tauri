@@ -29,6 +29,14 @@
 
 ⚠️ **不要给 `tauri.conf.json` 加回 `devUrl`、也不要去掉 `--no-dev-server`**：WKWebView 在部分 macOS 环境下无法加载任何 `http://127.0.0.1` 回环页面（永久 about:blank 白屏），dev 必须与 release 同走 `tauri://localhost` 自定义协议。详见 [docs/troubleshooting.md](docs/troubleshooting.md) 案例 1。
 
+## Rust 本地 API（阶段②，实验开关）
+
+设置环境变量 `TUD_API_ENGINE=rust` 启动，Rust(axum) 将接管本地 API 公开端口
+（8462）：daily/hourly/breakdown/summary 六条读路由原生实现（数据读
+`~/.ai-usage/cache/` 下由 Node 写入的 sealed cache 与 today-live 文件），
+未迁移端点透明代理给 Node admin 端口（8463）。默认 `node` 引擎行为与
+历史版本完全一致。验证方式与迁移进度见 [docs/roadmap.md](docs/roadmap.md)。
+
 ## 为什么安装包 33MB？（体积构成）
 
 解包 `.app` 实测（v0.3.0，经 small-icu node + staging 剥离瘦身，v0.2.x 为 44MB）：

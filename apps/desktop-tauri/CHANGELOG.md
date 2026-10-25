@@ -2,6 +2,21 @@
 
 本文件只记录 Tauri 社区版（`main` 分支）相对上游的增量；上游自身功能变化见其 CHANGELOG。
 
+## 0.4.0（阶段②：Rust 本地 API，2026-10-25）
+
+- **Rust 本地 API 落地（实验开关）**：`TUD_API_ENGINE=rust` 时，Rust(axum) 接管公开
+  端口 8462，原生实现 health / usage-daily / usage-hourly / model-breakdown /
+  usage-summary 六条读路由；未迁移端点透明代理给 Node admin 端口（绞杀者模式）。
+  默认引擎仍为 node，行为与 0.3.x 完全一致
+- **架构接缝**：Node 在 boot 与每次同步后写 `cache/today-live.json`（与密封天
+  同构），Rust 读端点由 sealed cache + today-live 两个文件组装——定价等
+  深水区逻辑留在 Node，阶段②零移植风险
+- **验证**：冻结数据 golden 工具（capture-golden.mjs）双引擎背靠背 11 端点
+  11 一致（含写路径冒烟：config PUT/GET、trigger-sync 真实执行）
+- **性能**：读路径双层缓存（文件 mtime 解析缓存 + 响应记忆化），热请求
+  4-8ms（与 Node 直连同量级）；每次同步后首轮重算 ~0.2s（与 Node 同构）
+- desktop-host 支持 `TUD_DATA_DIR` 数据目录重定向（测试基建）
+
 ## 0.3.0（体积瘦身，2026-10-25）
 
 - **安装包 44MB → 33MB**：macOS 换用 small-icu 自建 node（-29MB；core 的 4 处

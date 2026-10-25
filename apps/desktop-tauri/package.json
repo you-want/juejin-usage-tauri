@@ -1,6 +1,6 @@
 {
   "name": "@juejin-opensource/jusage-desktop-tauri",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "private": true,
   "license": "MIT",
   "description": "Juejin AI Usage 统计客户端（Tauri 版）：Token 用量明细追踪，本地记录、云端同步，还有线上排行榜。",
