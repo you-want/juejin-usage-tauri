@@ -4,7 +4,7 @@
 
 ## 0.3.0（体积瘦身，2026-10-25）
 
-- **安装包 44MB → ~32MB**：macOS 换用 small-icu 自建 node（-29MB；core 的 4 处
+- **安装包 44MB → 33MB**：macOS 换用 small-icu 自建 node（-29MB；core 的 4 处
   Intl 调用均为 formatToParts 构造，经 A/B 测试与 516 个 core 测试双跑验证
   输出逐字节一致）；staging 剥离运行时无关产物（hono types/cjs、yaml browser、
   sourcemap）
